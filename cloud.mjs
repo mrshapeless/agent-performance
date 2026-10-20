@@ -29,8 +29,9 @@ export function createHandler({ env, openStore, createProvider }) {
     const reply = (body, status = 200) => Response.json(body, {
       status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
     });
-    if (!authorized(request.headers.get('authorization'), env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     const url = new URL(request.url);
+    const publicRead = request.method === 'GET' && url.searchParams.get('view') === 'public';
+    if (!publicRead && !authorized(request.headers.get('authorization'), env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (!['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
     if (request.method === 'POST') {
@@ -44,6 +45,7 @@ export function createHandler({ env, openStore, createProvider }) {
     let store;
     try {
       store = await openStore();
+      if (publicRead) return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true' });
       if (request.method === 'GET') return reply(await store.status());
       return reply(await cloudRun(store, createProvider(), kind, id));
     } catch (error) {

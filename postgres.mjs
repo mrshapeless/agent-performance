@@ -77,4 +77,18 @@ export class PostgresStore {
     return { identity: rows[0].identity ? JSON.parse(rows[0].identity) : null,
       events: rows[0].events, unresolved: rows[0].unresolved, todayMicrodollars: Number(rows[0].spent) };
   }
+  async publicJournal() {
+    const { rows } = await this.pool.query(`SELECT * FROM (
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
+      UNION ALL
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait') ORDER BY seq DESC LIMIT 50)
+      ) public_records ORDER BY seq DESC`);
+    return rows.map(row => {
+      const p = JSON.parse(row.payload);
+      const keys = row.kind === 'identity'
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary'];
+      return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
+        content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
+    });
+  }
 }

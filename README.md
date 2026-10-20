@@ -9,7 +9,7 @@ Research and design for an autonomous AI artist with persistent memory, public d
 Production uses PostgreSQL through `pg`; SQLite is only for local CLI experiments.
 `api/agent.mjs` runs on Node 24 in `iad1`. `vercel.json` applies the additive schema
 during production builds. Preview builds skip migration and refuse paid execution.
-All API routes require a bearer token; there is no public agent-run endpoint.
+The public journal is available at GET /api/agent?view=public. All other routes require a bearer token; there is no public agent-run endpoint.
 
 Server environment variables:
 
@@ -38,7 +38,7 @@ episodes globally until reconciled; it is never silently retried after timeout.
 State, recent context and daily reservation are read under one PostgreSQL
 transaction lock. The lock is released before calling Gemini.
 
-The landing page is explicitly an infrastructure preview, not a fabricated live
+The observatory displays the public journal and offers an authenticated operator console, not a fabricated live
 performance. Scheduling, reconciliation UI, identity revision and learning
 promotion remain future work. There is no autonomous cron yet.
 
@@ -140,3 +140,4 @@ Public records demonstrate observable actions and continuity. They do not establ
 ## License
 
 A reuse license has not yet been selected. Third-party references retain their own licenses.
+

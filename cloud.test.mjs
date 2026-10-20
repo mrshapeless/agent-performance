@@ -38,7 +38,23 @@ test('Postgres schema and lifecycle: restart, replay, unresolved exclusion and d
     const rows = (await client.query('SELECT * FROM agent_events ORDER BY seq')).rows;
     assert.equal(rows.length, 6);
     assert.equal(rows[1].previous, rows[0].digest);
+    await client.query("INSERT INTO agent_events(kind,payload,created,previous,digest) VALUES('private_memory',$1,'now','','')", [JSON.stringify({text:'PRIVATE'})]);
+    const journal = await store.publicJournal();
+    assert.equal(journal.length, 2);
+    assert.equal(JSON.stringify(journal).includes('PRIVATE'), false);
+    assert.equal(journal.some(e => e.kind === 'operation_started'), false);
   } finally { await db.close(); }
+});
+
+test('public reads expose only journal; public flag never authorizes a POST', async () => {
+  const handler = createHandler({ env: {}, openStore: async () => ({
+    publicJournal: async () => [], close: async () => {},
+    status: () => { throw Error('must not expose status'); },
+  }) });
+  const result = await handler(new Request('https://example.com/api/agent?view=public'));
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { events: [], enabled: false });
+  assert.equal((await handler(new Request('https://example.com/api/agent?view=public',{method:'POST'}))).status,401);
 });
 
 test('HTTP gates deny unauthorized/preview/disabled requests before touching DB', async () => {
