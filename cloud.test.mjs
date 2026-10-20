@@ -48,12 +48,12 @@ test('Postgres schema and lifecycle: restart, replay, unresolved exclusion and d
 
 test('public reads expose only journal; public flag never authorizes a POST', async () => {
   const handler = createHandler({ env: {}, openStore: async () => ({
-    publicJournal: async () => [], publicRuntime: async () => ({}), close: async () => {},
+    latest: async () => null, publicJournal: async () => [], publicRuntime: async () => ({}), close: async () => {},
     status: () => { throw Error('must not expose status'); },
   }) });
   const result = await handler(new Request('https://example.com/api/agent?view=public'));
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { events: [], enabled: false, runtime: {} });
+  const body=await result.json(); assert.deepEqual(body.events,[]); assert.equal(body.enabled,false); assert.equal(body.runtime.accounts.stage,'preparing_profile');
   assert.equal((await handler(new Request('https://example.com/api/agent?view=public',{method:'POST'}))).status,401);
 });
 
@@ -122,3 +122,4 @@ test('uncertain provider result blocks later automatic spending', async()=>{
     assert.equal(calls,1);assert.equal((await store.publicRuntime()).unresolved,1);
   }finally{await db.close();}
 });
+

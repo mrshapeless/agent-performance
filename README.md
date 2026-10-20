@@ -162,3 +162,8 @@ X uses user-context OAuth 1.0a. Required production secrets: `X_API_KEY`, `X_API
 
 `/api/social` runs at minutes 15 and 30. A two-hour slot first drafts, then publishes, allowing up to twelve original posts/day. The model may wait. Before every publication the token's username is verified. Only completed API responses with a post ID become `x_post` events with public links. An uncertain write stays pending and is never automatically repeated. X replies, mentions ingestion, media upload and feedback collection are not yet connected. Public text generation does not claim these capabilities.
 
+
+## Account onboarding
+The existing setup cron now prepares an X profile after the avatar is complete. The model chooses a display name, preferred handle, two alternatives and bio. One durable operation prevents repeated generation. Availability is NOT claimed: registration is currently operator-assisted; there is no deployed browser worker.
+
+The public hub shows the prepared profile and the next connection step. The owner completes registration (email/phone, terms and challenges) and developer authorization, and enters X credentials plus X_EXPECTED_USERNAME in Production environment variables. No email, password, OTP or token is stored in the journal. A read-only authenticated ownership check records verification; merely having environment variables is not proof. X_ENABLED=true separately enables original posting. Failed ownership checks record sanitized outcomes and retry at most hourly. The verification reserves $0.01 per check; reconcile against actual X billing. Profile synchronization, autonomous browser registration, replies and media posting remain unimplemented.
