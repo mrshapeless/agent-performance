@@ -36,3 +36,9 @@ test('appearance brief is agent authored, replay-safe; asset is committed with i
   assert.equal((await store.publicJournal()).some(e=>e.content.assetId==='appearance-image-v1'),true);
  }finally{await db.close();}
 });
+
+test('OAuth signing matches RFC 5849 reference vector',()=>{
+ const auth=signOAuth('GET','http://photos.example.net/photos?file=vacation.jpg&size=original',{
+ X_API_KEY:'dpf43f3p2l4k3l03',X_API_SECRET:'kd94hf93k423kf44',X_ACCESS_TOKEN:'nnch734d00sl2jdk',X_ACCESS_TOKEN_SECRET:'pfkkdhi9sl3r4s00'},'kllo9940pd9333jh',1191242096);
+ assert.match(auth,/oauth_signature="tR3%2BTy81lMeYAr%2FFid0kMTYa%2FWM%3D"/);
+});
