@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+.vercel/
+*.log
+secrets/
+private/
+raw-data/
+production-dumps/
+work/
