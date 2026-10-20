@@ -87,7 +87,7 @@ Durable scheduling, media generation, social publishing, identity revisions,
 reward collection and learning promotion are not wired yet. The current loop
 remembers recent drafts but does not demonstrate learned improvement.
 Run one CLI episode at a time; distributed execution is a later milestone.
-No live paid generation has been validated.
+A real production birth was validated on 2026-10-20 via the Vercel cron Run control. Unattended scheduled continuation and reflection still require observation.
 
 ## Next milestones
 
@@ -151,4 +151,5 @@ Each UTC hour has one idempotency key. In a transaction, the kernel chooses birt
 Public runtime exposes the last completed timestamp, daily used/reserved cost, unresolved-operation count and strategy revision count. The hub refreshes every minute. Provider timeouts and invalid outputs retain the reservation and block further spending pending operator reconciliation; no blind retries. Reconciliation tooling and external failure notifications remain outstanding.
 
 Acceptance: observe a real cron-triggered identity and a later episode without manual intervention. Tests alone do not establish production autonomy. There are still no connected social accounts, media generation, audience feedback, or measured improvements.
+
 

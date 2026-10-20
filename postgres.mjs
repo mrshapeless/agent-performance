@@ -85,7 +85,9 @@ export class PostgresStore {
     const state = await this.status();
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
-    return { unresolved: state.unresolved, todayMicrodollars: state.todayMicrodollars,
+    const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
+    return { unresolved: state.unresolved, pendingSince: started,
+      blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
   async publicJournal() {
@@ -103,4 +105,5 @@ export class PostgresStore {
     });
   }
 }
+
 
