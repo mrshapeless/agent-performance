@@ -2,11 +2,53 @@
 
 Research and design for an autonomous AI artist with persistent memory, public decision records, and measurable adaptation.
 
-**Status: local kernel v0.1. No agent is deployed. No learning results are claimed.**
+**Status: kernel v0.2 with Vercel API and PostgreSQL adapter. No learning results are claimed.**
+
+## Vercel + Neon
+
+Production uses PostgreSQL through `pg`; SQLite is only for local CLI experiments.
+`api/agent.mjs` runs on Node 24 in `iad1`. `vercel.json` applies the additive schema
+during production builds. Preview builds skip migration and refuse paid execution.
+All API routes require a bearer token; there is no public agent-run endpoint.
+
+Server environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Added by the Neon integration; Production only |
+| `GEMINI_API_KEY` | Gemini credential; sensitive, Production only |
+| `GEMINI_MODEL` | Chosen supported model ID |
+| `GEMINI_INPUT_USD_PER_MILLION` | Verified model input tariff |
+| `GEMINI_OUTPUT_USD_PER_MILLION` | Verified model output tariff, including thinking |
+| `AGENT_ADMIN_SECRET` | Random bearer secret, at least 32 characters |
+| `AGENT_ENABLED` | Set `true` only when ready for real paid episodes |
+
+No variable uses `NEXT_PUBLIC_`. Never paste secrets into issues or commit them.
+The initial deployment remains inactive without these settings.
+
+Authorized requests use `Authorization: Bearer <AGENT_ADMIN_SECRET>`:
+
+- `GET /api/agent`: database state and unresolved operation count.
+- `POST /api/agent?action=birth`: first identity.
+- `POST /api/agent?action=step`: one episode.
+
+POST also requires a unique `Idempotency-Key` header. Reusing it returns the
+recorded operation without another model call. A pending operation blocks new
+episodes globally until reconciled; it is never silently retried after timeout.
+State, recent context and daily reservation are read under one PostgreSQL
+transaction lock. The lock is released before calling Gemini.
+
+The landing page is explicitly an infrastructure preview, not a fabricated live
+performance. Scheduling, reconciliation UI, identity revision and learning
+promotion remain future work. There is no autonomous cron yet.
+
+Validation: `npm ci` then `npm test`. Tests cover the real SQL schema using
+PGlite, plus HTTP authorization and production-only execution gates. These do
+not substitute for hosted Neon concurrency/load tests.
 
 ## Run the kernel
 
-Requires Node.js 24+. No package installation needed.
+Requires Node.js 24+. The local SQLite CLI needs no external packages.
 
 ```sh
 node --test kernel.test.mjs
@@ -41,7 +83,7 @@ The hash chain detects changes against retained records; an administrator can
 rewrite the database and recompute it. External checkpoints are still needed.
 
 SQLite is a **local development adapter**, not the Vercel production database.
-Neon, durable scheduling, media generation, social publishing, identity revisions,
+Durable scheduling, media generation, social publishing, identity revisions,
 reward collection and learning promotion are not wired yet. The current loop
 remembers recent drafts but does not demonstrate learned improvement.
 Run one CLI episode at a time; distributed execution is a later milestone.
@@ -49,7 +91,7 @@ No live paid generation has been validated.
 
 ## Next milestones
 
-1. Neon transactions, durable jobs, provider reconciliation and public event export.
+1. Hosted Neon validation, durable jobs, provider reconciliation and public event export.
 2. Agent-led identity revisions and reflection/playbook proposals with baseline evaluations.
 3. Replicate media, permanent object storage, Apify observations and social adapters.
 4. Viewer hub, chat, outcome collection and automatic evaluation/canary/rollback.

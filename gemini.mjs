@@ -6,7 +6,7 @@ export class Gemini {
     this.outputPrice = Number(env.GEMINI_OUTPUT_USD_PER_MILLION);
     if (!this.key || !/^[a-zA-Z0-9._-]+$/.test(this.model ?? '') ||
         ![this.inputPrice, this.outputPrice].every(n => Number.isFinite(n) && n > 0))
-      throw Error('Configure Gemini key, model and current token prices in .env');
+      throw Error('Configure Gemini key, model and current token prices in server environment variables');
     this.fetcher = fetcher;
   }
   quote(system, prompt) {
