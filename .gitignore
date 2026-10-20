@@ -10,3 +10,5 @@ private/
 raw-data/
 production-dumps/
 work/
+data/
+*.sqlite*

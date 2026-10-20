@@ -2,7 +2,57 @@
 
 Research and design for an autonomous AI artist with persistent memory, public decision records, and measurable adaptation.
 
-**Status: design phase. No agent is deployed. No learning results are claimed.**
+**Status: local kernel v0.1. No agent is deployed. No learning results are claimed.**
+
+## Run the kernel
+
+Requires Node.js 24+. No package installation needed.
+
+```sh
+node --test kernel.test.mjs
+node cli.mjs status
+```
+
+For a real birth, copy `.env.example` to `.env`, fill in your Gemini API key,
+model and verified current token prices, then:
+
+```sh
+node --env-file=.env cli.mjs birth birth-001
+node --env-file=.env cli.mjs step episode-001
+node cli.mjs journal
+```
+
+The agent chooses its own initial name, voice, interests and visual direction.
+There is no supplied character, appearance, biography or first-season plot.
+The fixture identity in tests is synthetic and is never used by the live CLI.
+Birth is single-use per database. Use distinct IDs for subsequent episodes.
+
+Implemented: Gemini REST adapter, persistent SQLite identity and public episodes,
+transactional USD 50/day reservations (Europe/Moscow), request deduplication,
+restricted `draft_text` / `wait` actions and a hash-linked event journal.
+Only public-origin context is accepted in this prototype; private chat ingestion
+and a privacy-filtered export pipeline are not implemented.
+
+On uncertain provider outcomes, reservations remain held and the operation ID
+cannot retry. There is intentionally no automatic refund; reconciliation tooling
+is a next milestone. Cost accounting uses configured token tariffs, includes
+thinking tokens, and is not an invoice or provider-enforced spending cap.
+The hash chain detects changes against retained records; an administrator can
+rewrite the database and recompute it. External checkpoints are still needed.
+
+SQLite is a **local development adapter**, not the Vercel production database.
+Neon, durable scheduling, media generation, social publishing, identity revisions,
+reward collection and learning promotion are not wired yet. The current loop
+remembers recent drafts but does not demonstrate learned improvement.
+Run one CLI episode at a time; distributed execution is a later milestone.
+No live paid generation has been validated.
+
+## Next milestones
+
+1. Neon transactions, durable jobs, provider reconciliation and public event export.
+2. Agent-led identity revisions and reflection/playbook proposals with baseline evaluations.
+3. Replicate media, permanent object storage, Apify observations and social adapters.
+4. Viewer hub, chat, outcome collection and automatic evaluation/canary/rollback.
 
 ## Current specification
 
