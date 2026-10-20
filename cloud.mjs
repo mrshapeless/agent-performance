@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { constitution, validate } from './domain.mjs';
+import { setupAppearance, socialStep } from './integrations.mjs';
 
 export async function cloudRun(store, provider, kind, id) {
   let reflectionDue = false;
@@ -37,9 +38,12 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
     });
     const url = new URL(request.url);
-    const tick = url.pathname === '/api/tick';
+    const setup = url.pathname === '/api/setup';
+    const social = url.pathname === '/api/social';
+    const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
+    const tick = ['/api/tick','/api/setup','/api/social'].includes(url.pathname);
     const publicRead = !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
-    if (!publicRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
+    if (!publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
     if (tick || request.method === 'POST') {
@@ -54,13 +58,24 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     let store;
     try {
       store = await openStore();
+      if (assetRead) {
+        const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
+        const asset=await store.asset(id);if(!asset)return reply({error:'NOT_FOUND'},404);
+        return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});
+      }
+      if (setup) return reply(await setupAppearance(store,createProvider(),env));
+      if (social) return reply(await socialStep(store,createProvider(),env,now()));
       if (publicRead) return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: await store.publicRuntime() });
       if (!tick && request.method === 'GET') return reply(await store.status());
       return reply(await cloudRun(store, createProvider(), kind, id));
     } catch (error) {
       const conflicts = ['UNRESOLVED_OPERATION', 'ALREADY_BORN', 'NOT_BORN', 'OPERATION_CONFLICT', 'DAILY_ALLOWANCE_EXHAUSTED'];
       if (conflicts.includes(error.message)) return reply({ error: error.message }, 409);
-      return reply({ error: 'OPERATION_FAILED_CHECK_STATE_BEFORE_RETRY' }, 503);
+            const safe = /^(IMAGE_HTTP_\d{3}|IMAGE_INCOMPLETE|IMAGE_INVALID|IMAGE_TOO_LARGE|IMAGE_USAGE_MISSING|X_HTTP_\d{3}|X_ACCOUNT_MISMATCH|X_NOT_CONFIGURED|X_TARIFF_NOT_CONFIGURED|X_UNCERTAIN_RESULT|INVALID_APPEARANCE_BRIEF|INVALID_X_DRAFT)$/.test(error.message) ? error.message : 'OPERATION_FAILED_CHECK_STATE_BEFORE_RETRY';
+      console.error('agent_operation_failed', safe);
+      return reply({ error: safe }, 503);
     } finally { if (store?.close) await store.close().catch(() => {}); }
   };
 }
+
+

@@ -153,3 +153,12 @@ Public runtime exposes the last completed timestamp, daily used/reserved cost, u
 Acceptance: observe a real cron-triggered identity and a later episode without manual intervention. Tests alone do not establish production autonomy. There are still no connected social accounts, media generation, audience feedback, or measured improvements.
 
 
+
+## Appearance and X integration
+
+`/api/setup` runs every five minutes, spending only until the fixed `appearance-brief-v1` and `appearance-image-v1` operations complete. Gemini writes its own brief; Nano Banana 2.1 renders one square image with the same Gemini key. The initial avatar (max 3.5 MB) is persisted in Neon and served by `/api/asset`. This bounded avatar storage is not the future video/media library. Image ledger estimates conservatively charge all output tokens at the higher image tariff. Google pricing checked 2026-10-20: input $1.50/M, image output $30/M, text/thought $7.50/M. https://ai.google.dev/gemini-api/docs/pricing
+
+X uses user-context OAuth 1.0a. Required production secrets: `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`; config: `X_EXPECTED_USERNAME`, `X_POST_RESERVATION_MICRODOLLARS` (optional upper estimate; default 210000 = $0.21 for verification + URL-bearing post, checked against https://docs.x.com/x-api/getting-started/pricing on 2026-10-20), `X_ENABLED=true`. The user's account must have a developer app with Read and Write permissions and funded API access where required. No credential is ever sent to the browser or the model. https://docs.x.com/x-api/posts/create-post
+
+`/api/social` runs at minutes 15 and 30. A two-hour slot first drafts, then publishes, allowing up to twelve original posts/day. The model may wait. Before every publication the token's username is verified. Only completed API responses with a post ID become `x_post` events with public links. An uncertain write stays pending and is never automatically repeated. X replies, mentions ingestion, media upload and feedback collection are not yet connected. Public text generation does not claim these capabilities.
+

@@ -18,3 +18,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS single_agent_birth
   ON agent_operations(kind) WHERE kind = 'birth';
 CREATE UNIQUE INDEX IF NOT EXISTS single_pending_episode
   ON agent_operations(status) WHERE status = 'pending';
+CREATE TABLE IF NOT EXISTS agent_assets (
+  id TEXT PRIMARY KEY,
+  mime TEXT NOT NULL CHECK (mime IN ('image/jpeg','image/png','image/webp')),
+  bytes BYTEA NOT NULL CHECK (octet_length(bytes) <= 3500000)
+);

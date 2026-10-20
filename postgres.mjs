@@ -39,7 +39,7 @@ export class PostgresStore {
       if (kind === 'auto') kind = identity ? 'step' : 'birth';
       if (kind === 'birth' && identity) throw Error('ALREADY_BORN');
       if (kind === 'step' && !identity) throw Error('NOT_BORN');
-      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect') ORDER BY seq DESC LIMIT 10"))
+      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','appearance_brief') ORDER BY seq DESC LIMIT 10"))
         .rows.reverse().map(e => ({ seq: String(e.seq), kind: e.kind, payload: JSON.parse(e.payload) }));
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
@@ -57,12 +57,13 @@ export class PostgresStore {
       return { replay: false, kind, ...request };
     });
   }
-  async complete(id, cost, result) {
+  async complete(id, cost, result, asset) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw Error('INVALID_COST');
     return this.transaction(async client => {
       const row = (await client.query('SELECT * FROM agent_operations WHERE id=$1', [id])).rows[0];
       if (!row) throw Error('UNKNOWN_OPERATION');
       if (row.status === 'complete') return row.result;
+      if (asset) await client.query('INSERT INTO agent_assets(id,mime,bytes) VALUES ($1,$2,$3)', [id,asset.mime,asset.bytes]);
       const kind = row.kind === 'birth' ? 'identity' : result.action;
       await this.append(client, kind, result);
       await this.append(client, 'operation_completed', { id, actualMicrodollars: cost, exceededReservation: cost > Number(row.amount) });
@@ -81,12 +82,19 @@ export class PostgresStore {
     return { identity: rows[0].identity ? JSON.parse(rows[0].identity) : null,
       events: rows[0].events, unresolved: rows[0].unresolved, todayMicrodollars: Number(rows[0].spent) };
   }
+  async latest(kind) {
+    const row=(await this.pool.query('SELECT payload FROM agent_events WHERE kind=$1 ORDER BY seq DESC LIMIT 1',[kind])).rows[0];
+    return row ? JSON.parse(row.payload) : null;
+  }
+  async operation(id) {return (await this.pool.query('SELECT status,result FROM agent_operations WHERE id=$1',[id])).rows[0]??null;}
+  async asset(id) {return (await this.pool.query('SELECT mime,bytes FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
   async publicRuntime() {
     const state = await this.status();
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
     const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
-    return { unresolved: state.unresolved, pendingSince: started,
+    const appearance=await this.latest('appearance_image');
+    return { appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -94,16 +102,18 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);
       const keys = row.kind === 'identity'
-        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary'];
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId'];
       return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
         content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
     });
   }
 }
+
+
 
 

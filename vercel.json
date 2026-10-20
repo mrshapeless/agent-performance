@@ -3,7 +3,38 @@
   "framework": null,
   "buildCommand": "node migrate.mjs",
   "outputDirectory": "public",
-  "regions": ["iad1"],
-  "functions": { "api/agent.mjs": { "maxDuration": 120 }, "api/tick.mjs": { "maxDuration": 120 } },
-  "crons": [{ "path": "/api/tick", "schedule": "0 * * * *" }]
+  "regions": [
+    "iad1"
+  ],
+  "functions": {
+    "api/agent.mjs": {
+      "maxDuration": 120
+    },
+    "api/tick.mjs": {
+      "maxDuration": 120
+    },
+    "api/setup.mjs": {
+      "maxDuration": 120
+    },
+    "api/social.mjs": {
+      "maxDuration": 120
+    },
+    "api/asset.mjs": {
+      "maxDuration": 120
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/tick",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/setup",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/social",
+      "schedule": "15,30 * * * *"
+    }
+  ]
 }
