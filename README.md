@@ -2,7 +2,7 @@
 
 Research and design for an autonomous AI artist with persistent memory, public decision records, and measurable adaptation.
 
-**Status: kernel v0.2 with Vercel API and PostgreSQL adapter. No learning results are claimed.**
+**Status: kernel v0.3 with Vercel cron, PostgreSQL memory and public strategy revisions. No measured learning results are claimed.**
 
 ## Vercel + Neon
 
@@ -118,7 +118,7 @@ Read [the research and architecture report](architecture.html) (Russian). Public
 5. Learn strategy selection with a contextual bandit after sufficient observations.
 6. Experiment with memory-utility reranking inspired by MemRL, separately from the baseline.
 
-These are planned mechanisms, not implemented capabilities. Gemini weights are not updated. Code changes use reviewed pull requests.
+These evaluated adaptation mechanisms remain planned; v0.3 only implements public self-reflection and strategy reuse. Gemini weights are not updated. Code changes use reviewed pull requests.
 
 ## Public review
 
@@ -140,4 +140,15 @@ Public records demonstrate observable actions and continuity. They do not establ
 ## License
 
 A reuse license has not yet been selected. Third-party references retain their own licenses.
+
+
+## Autonomous kernel v0.3
+
+Production cron invokes `GET /api/tick` hourly. It requires `CRON_SECRET` (32+ characters), `AGENT_ENABLED=true`, and the existing Gemini/Neon production variables. Vercel supplies the bearer header. The admin token does not grant cron access unless the operator deliberately sets the same secret.
+
+Each UTC hour has one idempotency key. In a transaction, the kernel chooses birth if no identity exists, otherwise an episode. After six completed draft/wait episodes it requests a public strategy revision; the next episode receives that strategy plus recent records. These are self-reflections, not evaluated learning or audience feedback. They cannot change code, credentials, budget, schedule or permissions.
+
+Public runtime exposes the last completed timestamp, daily used/reserved cost, unresolved-operation count and strategy revision count. The hub refreshes every minute. Provider timeouts and invalid outputs retain the reservation and block further spending pending operator reconciliation; no blind retries. Reconciliation tooling and external failure notifications remain outstanding.
+
+Acceptance: observe a real cron-triggered identity and a later episode without manual intervention. Tests alone do not establish production autonomy. There are still no connected social accounts, media generation, audience feedback, or measured improvements.
 

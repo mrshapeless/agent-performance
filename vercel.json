@@ -4,5 +4,6 @@
   "buildCommand": "node migrate.mjs",
   "outputDirectory": "public",
   "regions": ["iad1"],
-  "functions": { "api/agent.mjs": { "maxDuration": 120 } }
+  "functions": { "api/agent.mjs": { "maxDuration": 120 }, "api/tick.mjs": { "maxDuration": 120 } },
+  "crons": [{ "path": "/api/tick", "schedule": "0 * * * *" }]
 }

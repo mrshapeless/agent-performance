@@ -48,12 +48,12 @@ test('Postgres schema and lifecycle: restart, replay, unresolved exclusion and d
 
 test('public reads expose only journal; public flag never authorizes a POST', async () => {
   const handler = createHandler({ env: {}, openStore: async () => ({
-    publicJournal: async () => [], close: async () => {},
+    publicJournal: async () => [], publicRuntime: async () => ({}), close: async () => {},
     status: () => { throw Error('must not expose status'); },
   }) });
   const result = await handler(new Request('https://example.com/api/agent?view=public'));
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { events: [], enabled: false });
+  assert.deepEqual(await result.json(), { events: [], enabled: false, runtime: {} });
   assert.equal((await handler(new Request('https://example.com/api/agent?view=public',{method:'POST'}))).status,401);
 });
 
@@ -73,4 +73,52 @@ test('HTTP gates deny unauthorized/preview/disabled requests before touching DB'
   const error = await handler(req(`Bearer ${secret}`, 'GET'));
   assert.equal(error.status, 503);
   assert.equal((await error.text()).includes('secret-db-url'), false);
+});
+
+
+test('automatic birth, hourly replay, strategy revision and reuse in next episode', async () => {
+  const db = new PGlite();
+  await db.exec(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
+  const client = { query: async (sql,args) => { const r=await db.query(sql,args); return {...r,rowCount:r.affectedRows||r.rows.length}; }, release(){} };
+  const store = new PostgresStore({connect:async()=>client, query:client.query});
+  let calls=0, prompts=[];
+  const provider={quote:()=>100,generate:async(_,prompt)=>{
+    prompts.push(prompt);calls++;
+    return {costMicrodollars:20,value:prompt.startsWith('Choose your initial')?fixture:
+      prompt.startsWith('Review your recorded')?{action:'reflect',text:'Explore silence through short forms.',summary:'Change based on recent records.'}:
+      {action:'draft_text',text:'A test work.',summary:'A synthetic test decision.'}};
+  }};
+  const env={CRON_SECRET:secret,AGENT_ADMIN_SECRET:'b'.repeat(40),VERCEL_ENV:'production',AGENT_ENABLED:'true'};
+  let date=new Date('2026-10-20T10:00:00Z');
+  const handler=createHandler({env,openStore:async()=>store,createProvider:()=>provider,now:()=>date});
+  const req=()=>new Request('https://example.com/api/tick',{headers:{authorization:`Bearer ${secret}`}});
+  try {
+    assert.equal((await handler(new Request('https://example.com/api/tick?view=public'))).status,401);
+    assert.equal((await handler(new Request('https://example.com/api/tick',{headers:{authorization:`Bearer ${env.AGENT_ADMIN_SECRET}`}}))).status,401);
+    assert.equal((await handler(req())).status,200);
+    assert.equal((await handler(req())).status,200);
+    assert.equal(calls,1);
+    for(let h=11;h<=18;h++){date=new Date(`2026-10-20T${h}:00:00Z`);assert.equal((await handler(req())).status,200);}
+    assert.equal(calls,9);
+    assert.equal(prompts[7].startsWith('Review your recorded'),true);
+    assert.equal(prompts[8].includes('Explore silence through short forms.'),true);
+    const runtime=await store.publicRuntime();
+    assert.equal(runtime.strategyRevisions,1);
+    assert.equal(runtime.unresolved,0);
+    assert.equal((await store.publicJournal()).filter(e=>e.kind==='reflect').length,1);
+    env.AGENT_ENABLED='false';assert.equal((await handler(req())).status,409);
+    env.AGENT_ENABLED='true';env.VERCEL_ENV='preview';assert.equal((await handler(req())).status,403);
+  } finally {await db.close();}
+});
+
+test('uncertain provider result blocks later automatic spending', async()=>{
+  const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
+  const client={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};
+  const store=new PostgresStore({connect:async()=>client,query:client.query});let calls=0;
+  const provider={quote:()=>100,generate:async()=>{calls++;throw Error('timeout');}};
+  try{
+    await assert.rejects(cloudRun(store,provider,'auto','tick-1'),/timeout/);
+    await assert.rejects(cloudRun(store,provider,'auto','tick-2'),/UNRESOLVED_OPERATION/);
+    assert.equal(calls,1);assert.equal((await store.publicRuntime()).unresolved,1);
+  }finally{await db.close();}
 });

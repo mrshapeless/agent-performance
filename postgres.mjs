@@ -29,18 +29,22 @@ export class PostgresStore {
     return this.transaction(async client => {
       const existing = (await client.query('SELECT kind,status,result FROM agent_operations WHERE id=$1', [id])).rows[0];
       if (existing) {
-        if (existing.kind !== kind) throw Error('OPERATION_CONFLICT');
+        if (kind !== 'auto' && existing.kind !== kind) throw Error('OPERATION_CONFLICT');
         return { replay: true, status: existing.status, result: existing.result };
       }
       if ((await client.query("SELECT id FROM agent_operations WHERE status='pending' LIMIT 1")).rowCount)
         throw Error('UNRESOLVED_OPERATION');
       const identityRow = (await client.query("SELECT payload FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1")).rows[0];
       const identity = identityRow ? JSON.parse(identityRow.payload) : null;
+      if (kind === 'auto') kind = identity ? 'step' : 'birth';
       if (kind === 'birth' && identity) throw Error('ALREADY_BORN');
       if (kind === 'step' && !identity) throw Error('NOT_BORN');
-      const recent = (await client.query("SELECT kind,payload FROM agent_events WHERE kind IN ('draft_text','wait') ORDER BY seq DESC LIMIT 10"))
-        .rows.reverse().map(e => ({ kind: e.kind, payload: JSON.parse(e.payload) }));
-      const request = buildRequest(identity, recent);
+      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect') ORDER BY seq DESC LIMIT 10"))
+        .rows.reverse().map(e => ({ seq: String(e.seq), kind: e.kind, payload: JSON.parse(e.payload) }));
+      const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
+      const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
+      const request = buildRequest(identity, recent, { kind, reflectionDue: since >= 6,
+        strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT
         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date::text AS day,
@@ -50,7 +54,7 @@ export class PostgresStore {
       await client.query("INSERT INTO agent_operations(id,kind,day,amount,status) VALUES($1,$2,$3,$4,'pending')",
         [id, kind, day, request.maximum]);
       await this.append(client, 'operation_started', { id, kind, day, reservedMicrodollars: request.maximum });
-      return { replay: false, ...request };
+      return { replay: false, kind, ...request };
     });
   }
   async complete(id, cost, result) {
@@ -77,11 +81,18 @@ export class PostgresStore {
     return { identity: rows[0].identity ? JSON.parse(rows[0].identity) : null,
       events: rows[0].events, unresolved: rows[0].unresolved, todayMicrodollars: Number(rows[0].spent) };
   }
+  async publicRuntime() {
+    const state = await this.status();
+    const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
+    const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
+    return { unresolved: state.unresolved, todayMicrodollars: state.todayMicrodollars,
+      lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
+  }
   async publicJournal() {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);
@@ -92,3 +103,4 @@ export class PostgresStore {
     });
   }
 }
+
