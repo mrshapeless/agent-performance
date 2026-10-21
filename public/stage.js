@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id),el=(tag,text,cls)=>{const n=document.createElement(tag);n.textContent=text;if(cls)n.className=cls;return n};
 let events=[],filter='all',limit=6,lastSignature='',loading=false;
-const labels={identity:'Identity',draft_text:'Text work',wait:'Pause',reflect:'Strategy revision',appearance_brief:'Avatar decision',appearance_image:'Self-portrait',banner_brief:'Banner decision',banner_image:'Visual work',account_profile:'Profile decision',account_connection:'Connection',x_draft:'Post draft',x_post:'Published on X'};
+const labels={x_failed:'Publication blocked',identity:'Identity',draft_text:'Text work',wait:'Pause',reflect:'Strategy revision',appearance_brief:'Avatar decision',appearance_image:'Self-portrait',banner_brief:'Banner decision',banner_image:'Visual work',account_profile:'Profile decision',account_connection:'Connection',x_draft:'Post draft',x_post:'Published on X'};
 const groups={work:['draft_text','appearance_image','banner_image','x_post','x_draft'],decisions:['wait','reflect','appearance_brief','banner_brief'],identity:['identity','account_profile']};
 const date=s=>new Date(s).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'});
 const stamp=s=>date(s)+' / '+new Date(s).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC';
