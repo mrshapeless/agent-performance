@@ -30,10 +30,10 @@ test('appearance brief is agent authored, replay-safe; asset is committed with i
   await store.begin('birth','birth',()=>({maximum:100}));await store.complete('birth',1,{name:'Test',voice:'test',interests:'test',visualDirection:'test',summary:'test'});
   let calls=0;const provider={quote:()=>100,generate:async()=>{calls++;return {costMicrodollars:1,value:{prompt:'My own chosen form.',alt:'Chosen form',summary:'I chose this.'}}}};
   await setupAppearance(store,provider,{});assert.equal(calls,1);assert.equal((await store.latest('appearance_brief')).text,'My own chosen form.');
-  await store.begin('appearance-image-v1','step',()=>({maximum:100}));await store.complete('appearance-image-v1',1,{action:'appearance_image',text:'Chosen form',assetId:'appearance-image-v1',summary:'test'},{mime:'image/png',bytes:Buffer.from('fixture')});
+  await store.begin('appearance-image-v2','step',()=>({maximum:100}));await store.complete('appearance-image-v2',1,{action:'appearance_image',text:'Chosen form',assetId:'appearance-image-v2',summary:'test'},{mime:'image/png',bytes:Buffer.from('fixture')});
   assert.equal((await setupAppearance(store,provider,{})).status,'complete');assert.equal(calls,1);
-  const reopened=new PostgresStore({connect:async()=>client,query:client.query});assert.equal(Buffer.from((await reopened.asset('appearance-image-v1')).bytes).toString(),'fixture');
-  assert.equal((await store.publicJournal()).some(e=>e.content.assetId==='appearance-image-v1'),true);
+  const reopened=new PostgresStore({connect:async()=>client,query:client.query});assert.equal(Buffer.from((await reopened.asset('appearance-image-v2')).bytes).toString(),'fixture');
+  assert.equal((await store.publicJournal()).some(e=>e.content.assetId==='appearance-image-v2'),true);
  }finally{await db.close();}
 });
 
@@ -42,3 +42,4 @@ test('OAuth signing matches RFC 5849 reference vector',()=>{
  X_API_KEY:'dpf43f3p2l4k3l03',X_API_SECRET:'kd94hf93k423kf44',X_ACCESS_TOKEN:'nnch734d00sl2jdk',X_ACCESS_TOKEN_SECRET:'pfkkdhi9sl3r4s00'},'kllo9940pd9333jh',1191242096);
  assert.match(auth,/oauth_signature="tR3%2BTy81lMeYAr%2FFid0kMTYa%2FWM%3D"/);
 });
+

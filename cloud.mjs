@@ -1,7 +1,7 @@
 import { accountSetup, accountStatus } from './accounts.mjs';
 import { timingSafeEqual } from 'node:crypto';
 import { constitution, validate } from './domain.mjs';
-import { setupAppearance, socialStep } from './integrations.mjs';
+import { setupAppearance, setupBanner, socialStep } from './integrations.mjs';
 
 export async function cloudRun(store, provider, kind, id) {
   let reflectionDue = false;
@@ -64,7 +64,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
         const asset=await store.asset(id);if(!asset)return reply({error:'NOT_FOUND'},404);
         return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});
       }
-      if (setup) { const appearance=await setupAppearance(store,createProvider(),env); return reply(appearance.phase==='appearance' ? await accountSetup(store,createProvider(),env,now()) : appearance); }
+      if (setup) { const appearance=await setupAppearance(store,createProvider(),env); if(appearance.phase!=='appearance')return reply(appearance); const banner=await setupBanner(store,createProvider(),env); return reply(banner.phase==='banner' ? await accountSetup(store,createProvider(),env,now()) : banner); }
       if (social) return reply(await socialStep(store,createProvider(),env,now()));
       if (publicRead) return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), accounts: await accountStatus(store,env) } });
       if (!tick && request.method === 'GET') return reply(await store.status());
@@ -78,6 +78,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     } finally { if (store?.close) await store.close().catch(() => {}); }
   };
 }
+
 
 
 

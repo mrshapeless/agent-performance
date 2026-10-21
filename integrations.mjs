@@ -15,7 +15,7 @@ export async function setupAppearance(store,provider,env){
     return {phase:'brief',status:'complete'};
   }
   if(await store.latest('appearance_image'))return {phase:'appearance',status:'complete'};
-  const image=new AppearanceImage(env);const id='appearance-image-v1';
+  const image=new AppearanceImage(env);const id='appearance-image-v2';
   const req=await store.begin(id,'step',()=>({prompt:brief.text,maximum:image.quote(brief.text)}));
   if(req.replay)return {phase:'image',status:req.status};
   const output=await image.generate(req.prompt);
@@ -48,3 +48,24 @@ export async function socialStep(store,provider,env,now=new Date()){
   return {status:'published',url:post.url};
 }
 
+
+
+export async function setupBanner(store,provider,env){
+  const brief=await store.latest('banner_brief');
+  if(!brief){
+    const appearance=await store.latest('appearance_brief');
+    const id='banner-brief-v1';
+    const req=await store.begin(id,'step',identity=>{const prompt=`Design your own X profile banner, consistent with your chosen identity and avatar art direction. Return JSON strings prompt, alt, summary. Wide 21:9 composition; important subjects must fit the central 3:1 crop, keep the lower left unobtrusive for an avatar overlay. Choose your own imagery, colors and mood. No interface mockups or text that could be cropped. Identity: ${JSON.stringify(identity)} Your avatar brief: ${JSON.stringify(appearance)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
+    if(req.replay)return {phase:'banner_brief',status:req.status};
+    const answer=await provider.generate(constitution,req.prompt);const v=answer.value;
+    if(!validText(v?.prompt)||!validText(v?.alt,500)||!validText(v?.summary))throw Error('INVALID_APPEARANCE_BRIEF');
+    await store.complete(id,answer.costMicrodollars,{action:'banner_brief',text:v.prompt,alt:v.alt,summary:v.summary});return {phase:'banner_brief',status:'complete'};
+  }
+  if(await store.latest('banner_image'))return {phase:'banner',status:'complete'};
+  const image=new AppearanceImage(env);const id='banner-image-v1';
+  const req=await store.begin(id,'step',()=>({prompt:brief.text,maximum:image.quote(brief.text)}));
+  if(req.replay)return {phase:'banner_image',status:req.status};
+  const output=await image.generate(req.prompt,'21:9');
+  await store.complete(id,output.costMicrodollars,{action:'banner_image',text:brief.alt,summary:'Rendered from the agent-authored banner brief, composed for a central 3:1 profile-header crop.',assetId:id},output);
+  return {phase:'banner_image',status:'complete'};
+}

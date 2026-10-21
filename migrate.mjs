@@ -1,3 +1,4 @@
+import { ACTIVE_INSTANCE } from './instance.mjs';
 import pg from 'pg';
 import { readFile } from 'node:fs/promises';
 
@@ -11,6 +12,8 @@ if (process.env.VERCEL_ENV === 'preview') {
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(730201)');
+    await client.query(`CREATE SCHEMA IF NOT EXISTS "${ACTIVE_INSTANCE}"`);
+    await client.query(`SET LOCAL search_path TO "${ACTIVE_INSTANCE}"`);
     await client.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
     await client.query('COMMIT');
     console.log('Schema v1 ready.');
@@ -19,3 +22,4 @@ if (process.env.VERCEL_ENV === 'preview') {
     throw Error('Migration failed; check database configuration.');
   } finally { client.release(); await pool.end(); }
 }
+
