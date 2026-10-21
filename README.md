@@ -170,3 +170,14 @@ The public hub shows the prepared profile and the next connection step. The owne
 
 ## Fresh generation (2026-10-21)
 At the owner's request, generation_02 starts with no inherited identity, memories, strategies, assets, or X authorization. Its tables are isolated in the generation_02 PostgreSQL schema. The predecessor remains untouched in public; there is no destructive reset. All runtime table references are schema-qualified, and migration creates only the selected generation. X credentials are ignored unless X_ACCOUNT_INSTANCE matches generation_02, which must only be set when connecting the new account. The new artist chooses its own identity, avatar brief, banner brief and profile through the existing protected setup cycle. Banner generation uses 21:9 with a central 3:1 safe composition for X cropping. Public image links provide originals.
+
+## X OAuth 2.0 (2026-10-21)
+
+OAuth 2.0 is preferred when X_CLIENT_ID and X_CLIENT_SECRET are configured. Set X_EXPECTED_USERNAME to the new account, without @. Register this exact callback in the X app:
+https://agent-performance-mrshapeless.vercel.app/api/x-auth
+
+Open the public hub's OPERATOR ACCESS, enter AGENT_ADMIN_SECRET and click Connect X. POST /api/x-auth requires the operator bearer token and same-origin request; the callback validates a short-lived, single-use state bound to a Secure/HttpOnly/SameSite cookie and PKCE S256. The server verifies /2/users/me against the expected username before saving access. Requested scopes: tweet.read, tweet.write, users.read, media.write, offline.access. Media upload permission is prepared; media publishing is not yet implemented.
+
+Tokens and PKCE secrets live only in dedicated generation-scoped Neon tables, encrypted with AES-256-GCM using a key derived from AGENT_ADMIN_SECRET and the generation. They never enter model context or the public journal. Changing AGENT_ADMIN_SECRET requires reconnecting X. Refresh is serialized with a DB transaction; provider failures mark reconnect_required instead of repeatedly retrying rotation. The public status exposes only connection metadata. X_ENABLED=true remains the separate publication switch. Legacy OAuth 1.0a is supported when OAuth 2.0 client configuration is absent and X_ACCOUNT_INSTANCE matches the active generation; OAuth 2.0 uses explicit owner authorization into the active schema instead.
+
+Validation: 19 local tests passed, including callback replay/cookie mismatch, wrong account, encryption, refresh, and fail-closed recovery. Live owner consent and a real refresh remain production acceptance steps.

@@ -23,3 +23,6 @@ CREATE TABLE IF NOT EXISTS agent_assets (
   mime TEXT NOT NULL CHECK (mime IN ('image/jpeg','image/png','image/webp')),
   bytes BYTEA NOT NULL CHECK (octet_length(bytes) <= 3500000)
 );
+
+CREATE TABLE IF NOT EXISTS agent_oauth_states (state TEXT PRIMARY KEY, browser TEXT NOT NULL, secret TEXT NOT NULL, expires TIMESTAMPTZ NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_oauth_tokens (id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL, secret TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('connected','reconnect_required')));

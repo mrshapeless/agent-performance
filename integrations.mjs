@@ -1,6 +1,6 @@
 import { constitution } from './domain.mjs';
 import { AppearanceImage } from './appearance.mjs';
-import { XClient } from './x.mjs';
+import { xClient } from './x.mjs';
 const validText=(x,max=4000)=>typeof x==='string'&&x.trim()&&x.length<=max;
 
 export async function setupAppearance(store,provider,env){
@@ -25,7 +25,7 @@ export async function setupAppearance(store,provider,env){
 
 export async function socialStep(store,provider,env,now=new Date()){
   if(env.X_ENABLED!=='true')return {status:'not_connected'};
-  const x=new XClient(env);
+  const x=xClient(store,env);
   // A two-hour slot: at most twelve original publications per day.
   const slot=Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;const publishId='x-publish-'+slot;
   const published=await store.operation(publishId);if(published)return {status:published.status,replay:true};
