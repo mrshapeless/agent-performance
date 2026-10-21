@@ -21,8 +21,9 @@ test('encrypted OAuth flow: owner only, browser binding, one-time callback, acco
  assert.equal((await oauthRoute(callback(s.cookie),store,env,provider)).status,400);assert.equal(calls,2);
  const row=(await db.query('SELECT * FROM agent_oauth_tokens')).rows[0];assert.ok(!row.secret.includes('refresh'));assert.equal(unseal(row.secret,env.AGENT_ADMIN_SECRET).access,'access');assert.throws(()=>unseal(row.secret,'wrong'));
  assert.equal(await oauthAccess(store,env,provider),'access');assert.equal(calls,2);
- await store.pool.query('UPDATE agent_oauth_tokens SET secret=$1',[seal({access:'old',refresh:'refresh',expires:0},env.AGENT_ADMIN_SECRET)]);
- assert.equal(await oauthAccess(store,env,provider),'access');assert.equal(calls,3);
+ await store.pool.query('UPDATE agent_oauth_tokens SET secret=$1',[seal({access:'old',refresh:'refresh',expires:Date.now()+7200000},env.AGENT_ADMIN_SECRET)]);
+ assert.equal(await oauthAccess(store,env,provider,'old'),'access');assert.equal(calls,3);
+ assert.equal(await oauthAccess(store,env,provider,'old'),'access');assert.equal(calls,3);
  await store.pool.query('UPDATE agent_oauth_tokens SET secret=$1',[seal({access:'old',refresh:'refresh',expires:0},env.AGENT_ADMIN_SECRET)]);
  await assert.rejects(oauthAccess(store,env,async()=>{throw Error('timeout')}),/RECONNECT_REQUIRED/);
  await assert.rejects(oauthAccess(store,env,provider),/NOT_CONNECTED/);assert.equal(calls,3);

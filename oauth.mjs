@@ -28,13 +28,13 @@ export async function oauthStatus(store){
   const row=(await store.pool.query('SELECT username,status FROM agent_oauth_tokens WHERE id=1')).rows[0];
   return row??null;
 }
-export async function oauthAccess(store,env,fetcher=fetch){
+export async function oauthAccess(store,env,fetcher=fetch,rejectedAccess=null){
   let failure=false;
   const token=await store.transaction(async c=>{
     const row=(await c.query('SELECT * FROM agent_oauth_tokens WHERE id=1 FOR UPDATE')).rows[0];
     if(!row||row.status!=='connected'||row.username!==env.X_EXPECTED_USERNAME?.replace(/^@/,'').toLowerCase())throw Error('X_NOT_CONNECTED');
     let t=unseal(row.secret,env.AGENT_ADMIN_SECRET);
-    if(t.expires>Date.now()+60000)return t.access;
+    if(t.expires>Date.now()+60000 && t.access!==rejectedAccess)return t.access;
     // Commit a reconnect requirement after any ambiguous rotation. Never replay an old refresh token.
     try{t=await tokenRequest(env,{grant_type:'refresh_token',refresh_token:t.refresh},fetcher);await c.query('UPDATE agent_oauth_tokens SET secret=$1 WHERE id=1',[seal(t,env.AGENT_ADMIN_SECRET)]);return t.access;}
     catch{await c.query("UPDATE agent_oauth_tokens SET status='reconnect_required' WHERE id=1");failure=true;}

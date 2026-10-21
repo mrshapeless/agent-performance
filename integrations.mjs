@@ -48,6 +48,11 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   const req=await store.begin(publishId,'step',()=>({maximum}));if(req.replay)return {status:req.status,replay:true};
   let post;
   try{post=await x.post(plan.result.text);}catch(error){
+    if(['X_HTTP_401','X_RECONNECT_REQUIRED','X_NOT_CONNECTED'].includes(error.message)){
+      await store.pool.query("UPDATE agent_oauth_tokens SET status='reconnect_required' WHERE id=1");
+      await store.complete(publishId,maximum,{action:'x_failed',text:'X authorization failed; publication was not completed.',summary:'Reconnect X from the private control page. Other agent work can continue.',errorCode:error.message,phase:error.phase??'authorization'});
+      return {status:'reconnect_required'};
+    }
     if(error.message!=='X_HTTP_402')throw error;
     await store.complete(publishId,maximum,{action:'x_failed',text:'X rejected publication with HTTP 402. No published post was confirmed.',summary:'Billing requires attention. Retained the conservative reservation as estimated cost; other agent work can continue.'});
     return {status:'payment_required'};

@@ -43,3 +43,15 @@ test('OAuth signing matches RFC 5849 reference vector',()=>{
  assert.match(auth,/oauth_signature="tR3%2BTy81lMeYAr%2FFid0kMTYa%2FWM%3D"/);
 });
 
+
+test('OAuth2 refreshes a rejected token once and never retries an uncertain POST',async()=>{
+ const headers=[];let refreshes=0;
+ const bearer=async rejected=>{if(rejected){assert.equal(rejected,'old');refreshes++;return 'new';}return refreshes?'new':'old';};
+ const x=new XClient(env,async(url,opts)=>{headers.push(opts.headers.authorization);if(opts.headers.authorization==='Bearer old')return new Response('',{status:401});return Response.json(url.endsWith('/me')?{data:{username:'artist'}}:{data:{id:'456'}});},bearer);
+ assert.equal((await x.post('test')).id,'456');assert.equal(refreshes,1);assert.deepEqual(headers,['Bearer old','Bearer new','Bearer new']);
+ let writes=0;
+ const uncertain=new XClient(env,async url=>{if(url.endsWith('/me'))return Response.json({data:{username:'artist'}});writes++;throw Error('timeout');},async()=> 'token');
+ await assert.rejects(uncertain.post('test'),/timeout/);assert.equal(writes,1);
+ const denied=new XClient(env,async()=>new Response('',{status:401}),async()=> 'bad');
+ await assert.rejects(denied.post('test'),e=>e.message==='X_HTTP_401'&&e.phase==='verify');
+});
