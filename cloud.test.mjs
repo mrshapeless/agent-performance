@@ -53,7 +53,7 @@ test('public reads expose only journal; public flag never authorizes a POST', as
   }) });
   const result = await handler(new Request('https://example.com/api/agent?view=public'));
   assert.equal(result.status, 200);
-  const body=await result.json(); assert.deepEqual(body.events,[]); assert.equal(body.enabled,false); assert.equal(body.runtime.accounts.stage,'preparing_profile');
+  const body=await result.json(); assert.deepEqual(body.events,[]); assert.equal(body.enabled,false); assert.deepEqual(body.runtime.accounts,{connected:false,username:null}); assert.equal(JSON.stringify(body).includes('missing'),false); assert.equal(JSON.stringify(body).includes('nextAction'),false);
   assert.equal((await handler(new Request('https://example.com/api/agent?view=public',{method:'POST'}))).status,401);
 });
 

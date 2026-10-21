@@ -181,3 +181,9 @@ Open the public hub's OPERATOR ACCESS, enter AGENT_ADMIN_SECRET and click Connec
 Tokens and PKCE secrets live only in dedicated generation-scoped Neon tables, encrypted with AES-256-GCM using a key derived from AGENT_ADMIN_SECRET and the generation. They never enter model context or the public journal. Changing AGENT_ADMIN_SECRET requires reconnecting X. Refresh is serialized with a DB transaction; provider failures mark reconnect_required instead of repeatedly retrying rotation. The public status exposes only connection metadata. X_ENABLED=true remains the separate publication switch. Legacy OAuth 1.0a is supported when OAuth 2.0 client configuration is absent and X_ACCOUNT_INSTANCE matches the active generation; OAuth 2.0 uses explicit owner authorization into the active schema instead.
 
 Validation: 19 local tests passed, including callback replay/cookie mismatch, wrong account, encryption, refresh, and fail-closed recovery. Live owner consent and a real refresh remain production acceptance steps.
+
+## Public stage and operator separation (2026-10-21)
+
+The public site presents the artist, latest recorded text, self-authored visuals, identity and a filterable recent archive. Agent text is rendered as textContent, never trusted HTML. Drafts are labelled separately from verified X publications; conversation and video remain explicitly unfinished. Reduced-motion and mobile layouts are included. The public API omits operator checklist, configuration names and connection instructions.
+
+The unlinked /admin route is an operator login screen, excluded from indexing. The route name is not a security boundary: all private state and mutations still require AGENT_ADMIN_SECRET on the server, and the browser reveals controls only after successful authentication. Credentials remain in tab memory only. OAuth callbacks return to /admin. This iteration retains operator-secret authentication; GitHub owner login is not implemented.

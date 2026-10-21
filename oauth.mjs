@@ -74,5 +74,5 @@ export async function oauthRoute(request,store,env,fetcher=fetch){
       await store.append(c,'account_connection',{action:'account_connection',status:'verified',username:s.expected,text:`X account @${account.username} connected using OAuth 2.0.`,summary:'Owner authorized access. Publishing requires X_ENABLED=true.'});
     });result='connected';
   }catch{/* Never expose provider payloads, codes or tokens. */}
-  return new Response(null,{status:303,headers:{...headers,Location:'/?x_auth='+result+'#accounts'}});
+  return new Response(null,{status:303,headers:{...headers,Location:'/admin?x_auth='+result}});
 }
