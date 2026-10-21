@@ -1,3 +1,4 @@
+import { recoverRejectedX } from './recover-x.mjs';
 import { ACTIVE_INSTANCE } from './instance.mjs';
 import pg from 'pg';
 import { readFile } from 'node:fs/promises';
@@ -15,6 +16,7 @@ if (process.env.VERCEL_ENV === 'preview') {
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${ACTIVE_INSTANCE}"`);
     await client.query(`SET LOCAL search_path TO "${ACTIVE_INSTANCE}"`);
     await client.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
+    await recoverRejectedX(client,ACTIVE_INSTANCE);
     await client.query('COMMIT');
     console.log('Schema v1 ready.');
   } catch {

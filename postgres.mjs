@@ -102,7 +102,7 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','banner_brief','banner_image') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','banner_brief','banner_image') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

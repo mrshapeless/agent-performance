@@ -23,12 +23,15 @@ export async function setupAppearance(store,provider,env){
   return {phase:'image',status:'complete'};
 }
 
-export async function socialStep(store,provider,env,now=new Date()){
+export async function socialStep(store,provider,env,now=new Date(),makeClient=xClient){
   if(env.X_ENABLED!=='true')return {status:'not_connected'};
-  const x=xClient(store,env);
+  const x=makeClient(store,env);
   // A two-hour slot: at most twelve original publications per day.
-  const slot=Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;const publishId='x-publish-'+slot;
-  const published=await store.operation(publishId);if(published)return {status:published.status,replay:true};
+  const slot=Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
+  let published=await store.operation(publishId);
+  // Only an explicit rejected request can be retried, once per slot. Unknown writes stay pending.
+  if(published?.status==='complete'&&published.result?.action==='x_failed'){publishId+='-retry1';published=await store.operation(publishId);}
+  if(published)return {status:published.result?.action==='x_failed'?'payment_required':published.status,replay:true};
   let plan=await store.operation(planId);
   if(!plan){
     const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose whether to publish one original post to X now. Return JSON strings action (x_draft or wait), text (plain English, at most 240 ASCII characters), summary (public reason). No fabricated news, audience feedback or activity. Your art and ideas are welcome. A wait is allowed. Identity: ${JSON.stringify(identity)} Strategy: ${JSON.stringify(context.strategy)} Recent experience: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
@@ -43,7 +46,12 @@ export async function socialStep(store,provider,env,now=new Date()){
   const maximum=Number(env.X_POST_RESERVATION_MICRODOLLARS ?? 210000);
   if(!Number.isSafeInteger(maximum)||maximum<=0)throw Error('X_TARIFF_NOT_CONFIGURED');
   const req=await store.begin(publishId,'step',()=>({maximum}));if(req.replay)return {status:req.status,replay:true};
-  const post=await x.post(plan.result.text);
+  let post;
+  try{post=await x.post(plan.result.text);}catch(error){
+    if(error.message!=='X_HTTP_402')throw error;
+    await store.complete(publishId,maximum,{action:'x_failed',text:'X rejected publication with HTTP 402. No published post was confirmed.',summary:'Billing requires attention. Retained the conservative reservation as estimated cost; other agent work can continue.'});
+    return {status:'payment_required'};
+  }
   await store.complete(publishId,maximum,{action:'x_post',text:plan.result.text,summary:plan.result.summary,url:post.url,postId:post.id,costBasis:'reserved estimate; reconcile against X billing'});
   return {status:'published',url:post.url};
 }
