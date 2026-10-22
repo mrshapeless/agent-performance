@@ -14,7 +14,7 @@ export class Gemini {
     // This is a configured tariff estimate, not a provider billing guarantee.
     return Math.ceil((Buffer.byteLength(system + prompt) + 2048) * this.inputPrice + 8192 * this.outputPrice);
   }
-  async generate(system, prompt, media=null) {
+  async generate(system, prompt, media=null, responseJsonSchema=null) {
     const response = await this.fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
       {
@@ -24,7 +24,7 @@ export class Gemini {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }, ...(media?[{inlineData:{mimeType:media.mime,data:Buffer.from(media.bytes).toString('base64')}}]:[])] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}) },
         }),
       });
     if (!response.ok) throw Error(`Gemini HTTP ${response.status}; reservation retained`);

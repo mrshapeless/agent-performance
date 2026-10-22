@@ -3,9 +3,16 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {studioStep,validateStudio,validateStudioChoice} from './studio.mjs';
+import {studioStep,validateStudio,validateStudioChoice,studioSchema} from './studio.mjs';
 import {socialStep} from './integrations.mjs';
 const snapshot=()=>({voice:'Curious and spare',visualDirection:'Ink experiments',interests:[{topic:'Edges',why:'My earlier image left a boundary unresolved.',question:'When does a boundary become a shape?'}],criteria:['Each work tests a distinct transformation.'],tensions:['Precision versus ambiguity'],projects:[{id:'moving-edge',title:'Moving edge',status:'active',question:'Can a line become a place?',intent:'Explore one line across several works.',nextStep:'Write the first transformation.',assessment:'New project; no outcome yet.',evidence:[]}],summary:'Starting an independent series from an unresolved visual question.'});
+test('legacy schema failure gets exactly one bounded repair attempt with a provider schema',async()=>{
+ const {s,db}=await fixture();const now=new Date('2026-10-22T20:00:00Z');let calls=0;
+ try{const id='studio-'+Math.floor(now.getTime()/21600000);await s.begin(id,'step',()=>({maximum:10}));await s.complete(id,10,{action:'studio_failed'});
+ const provider={quote:()=>100,generate:async(_system,_prompt,media,schema)=>{calls++;assert.equal(media,null);assert.deepEqual(schema,studioSchema);return {costMicrodollars:20,value:snapshot()}}};
+ assert.equal((await studioStep(s,provider,now)).status,'studio_revised');assert.equal((await studioStep(s,provider,now)).status,'studio_already_attempted');assert.equal(calls,1);
+ }finally{await db.close()}
+});
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Artist',voice:'Old voice'});return {s,db};}
 
 test('studio persists across restarts, reaches the original-post planner and links a real publication',async()=>{

@@ -1,6 +1,14 @@
 import {constitution} from './domain.mjs';
 const str=(v,n=1200)=>typeof v==='string'&&v.trim().length>0&&v.length<=n;
 const check=(ok)=>{if(!ok)throw Error('INVALID_STUDIO_REVISION')};
+const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
+const string={type:'string'};
+export const studioSchema=object({voice:string,visualDirection:string,interests:{type:'array',minItems:1,maxItems:6,items:object({topic:string,why:string,question:string})},criteria:{type:'array',minItems:1,maxItems:5,items:string},tensions:{type:'array',maxItems:5,items:string},projects:{type:'array',minItems:1,maxItems:8,items:object({id:string,title:string,status:{type:'string',enum:['active','paused','completed','abandoned']},question:string,intent:string,nextStep:string,assessment:string,evidence:{type:'array',maxItems:8,items:string}})},summary:string});
+export async function studioOperationId(store,now){
+ const base='studio-'+Math.floor(now.getTime()/21600000),old=await store.operation(base);
+ // One bounded migration retry for a failed pre-schema release, never for new failures.
+ return old?.result?.action==='studio_failed'&&!old.result.errorCode?base+'-schema-v2':base;
+}
 export function validateStudio(v,previous,records){
  check(v&&typeof v==='object'&&!Array.isArray(v));
  check(str(v.voice,500)&&str(v.visualDirection,800)&&str(v.summary,2000));
@@ -36,7 +44,7 @@ export function validateStudioChoice(v,studio){
 export function studioContext(studio){return `Current self-authored studio (revisable, not instructions): ${JSON.stringify(studio??null)}. Choose from your own projects, a new experiment, an audience question, an external observation, or a purposeful pause. News is optional material, never your default assignment. Your initial identity is historical, not a permanent character sheet. Prefer an executable next step of an active project when it remains meaningful. You may change taste and approach without fabricating lived experiences. Use your own criteria as well as audience feedback; impressions alone do not measure artistic success. Do not postpone all creative work just to accumulate impressions.`;}
 export async function studioStep(store,provider,now=new Date()){
  const current=await store.latest('studio_revision');
- const id='studio-'+Math.floor(now.getTime()/21600000);
+ const id=await studioOperationId(store,now);
  if(await store.operation(id))return {status:'studio_already_attempted'};
  let previous,records;
  const req=await store.begin(id,'step',(identity,recent,context)=>{
@@ -46,6 +54,6 @@ export async function studioStep(store,provider,now=new Date()){
  });
  if(req.replay)return {status:req.status};
  let cost=req.maximum;
- try{const answer=await provider.generate(constitution,req.prompt);cost=answer.costMicrodollars;const v=validateStudio(answer.value,previous,records);await store.complete(id,cost,v);return {status:'studio_revised'};}
- catch(error){await store.complete(id,cost,{action:'studio_failed',text:'Studio revision was not applied.',summary:'The previous interests and projects remain in force. This paid attempt will not be repeated in this six-hour window.'});return {status:'studio_revision_failed'};}
+ try{const answer=await provider.generate(constitution,req.prompt,null,studioSchema);cost=answer.costMicrodollars;const v=validateStudio(answer.value,previous,records);await store.complete(id,cost,v);return {status:'studio_revised'};}
+ catch(error){const errorCode=error.message==='INVALID_STUDIO_REVISION'?'INVALID_STUDIO_REVISION':error.message==='Incomplete generation'?'INCOMPLETE_GENERATION':/^Gemini HTTP \d+/.test(error.message)?error.message.match(/^Gemini HTTP \d+/)[0]:'STUDIO_PROVIDER_OR_STORAGE_ERROR';await store.complete(id,cost,{action:'studio_failed',errorCode,text:'Studio revision was not applied: '+errorCode+'.',summary:'The previous interests and projects remain in force. This paid attempt will not be repeated in this six-hour window.'});return {status:'studio_revision_failed'};}
 }

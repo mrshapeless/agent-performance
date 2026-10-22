@@ -12,7 +12,7 @@ test('reconcile only the confirmed 402; retry once, preserve unknown writes and 
  const now=new Date('2026-10-21T19:20:00Z'),env={X_ENABLED:'true'};let calls=0;
  try{
  await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'test'});
- const studioId='studio-'+Math.floor(now.getTime()/21600000);await s.begin(studioId,'step',()=>({maximum:0}));await s.complete(studioId,0,{action:'studio_failed',text:'Studio is outside this recovery test.'});
+ const studioId='studio-'+Math.floor(now.getTime()/21600000);await s.begin(studioId,'step',()=>({maximum:0}));await s.complete(studioId,0,{action:'studio_failed',errorCode:'TEST_SKIP',text:'Studio is outside this recovery test.'});
  await s.begin('x-plan-248973','step',()=>({maximum:1}));await s.complete('x-plan-248973',1,{action:'x_draft',text:'original',summary:'choice'});
  await s.begin('x-publish-248973','step',()=>({maximum:210000}));
  await recoverRejectedX(c,'other');assert.equal((await s.status()).unresolved,1);

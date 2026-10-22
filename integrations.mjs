@@ -1,4 +1,4 @@
-import {studioStep,studioContext,validateStudioChoice} from './studio.mjs';
+import {studioStep,studioContext,validateStudioChoice,studioOperationId} from './studio.mjs';
 import {randomUUID} from 'node:crypto';
 import { constitution } from './domain.mjs';
 import { AppearanceImage } from './appearance.mjs';
@@ -35,7 +35,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   // A two-hour slot: at most twelve original publications per day.
   let media=await readyMedia(store);
   if(media&&now.getTime()>Number(media.data.expiresAt)){await store.pool.query("UPDATE agent_media_jobs SET state='failed',data=data || '{\"error\":\"X_MEDIA_EXPIRED\"}'::jsonb WHERE id=$1",[media.id]);media=null;}
-  if(!media&&!await store.operation('studio-'+Math.floor(now.getTime()/21600000)))return studioStep(store,provider,now);
+  if(!media&&!await store.operation(await studioOperationId(store,now)))return studioStep(store,provider,now);
   const launch=mediaCapabilities(env).image&&!await store.operation('x-publish-creative-launch-v1')&&!(await store.operation('x-plan-creative-launch-v1'))?.result?.action?.includes('wait');
   const launchJob=launch?(await store.pool.query("SELECT state FROM agent_media_jobs WHERE plan_id='x-plan-creative-launch-v1'")).rows[0]:null;
   const slot=media?media.plan_id.replace('x-plan-',''):launch&&!['failed','rejected','published'].includes(launchJob?.state)?'creative-launch-v1':Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
