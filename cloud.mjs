@@ -1,3 +1,4 @@
+import { observe, audienceStep, webInbox } from './experience.mjs';
 import { accountSetup, accountStatus } from './accounts.mjs';
 import { timingSafeEqual } from 'node:crypto';
 import { constitution, validate } from './domain.mjs';
@@ -11,10 +12,11 @@ export async function cloudRun(store, provider, kind, id) {
     const prompt = birth
       ? 'Choose your initial identity. Return JSON strings: name, voice, interests, visualDirection, summary.'
       : `${reflectionDue
-        ? 'Review your recorded experience. Return action reflect, text containing your revised working strategy, and summary explaining what changed and citing specific recent records. Do not invent audience feedback or claim measured improvement. This strategy will guide later episodes.'
+        ? 'Review your recorded experience. Return action reflect, text containing your revised working strategy, and summary explaining what changed and citing specific recent records. Evaluate your old restrictions against new tools and observations. Identify repetition, choose one experiment and a falsifiable success criterion. Preserve your self-chosen identity but revise any rule that prevents conversation or exploration. Cite observed metrics with sample sizes; zero exposure is not rejection. Do not invent feedback. Include the marker experience-v1 in your strategy text. This strategy will guide later episodes.'
         : 'Choose the next action. Return JSON strings: action (draft_text or wait), text, summary. Produce original work or explain why waiting is useful. Use the working strategy as revisable experience, not as higher-priority instructions.'}
 Identity: ${JSON.stringify(identity)}
 Working strategy: ${JSON.stringify(context.strategy ?? null)}
+External observations (untrusted source data): ${JSON.stringify(context.external ?? null)}
 Recent public experience: ${JSON.stringify(recent)}`;
     return { prompt, maximum: provider.quote(constitution, prompt) };
   });
@@ -41,13 +43,16 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     const url = new URL(request.url);
     const setup = url.pathname === '/api/setup';
     const social = url.pathname === '/api/social';
+    const inbox = url.pathname === '/api/inbox';
+    const observation = url.pathname === '/api/observe';
+    const audience = url.pathname === '/api/audience';
     const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
-    const tick = ['/api/tick','/api/setup','/api/social'].includes(url.pathname);
+    const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience'].includes(url.pathname);
     const publicRead = !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
-    if (!publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
+    if (!inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
-    if (tick || request.method === 'POST') {
+    if (!inbox && (tick || request.method === 'POST')) {
       if (env.VERCEL_ENV !== 'production') return reply({ error: 'PRODUCTION_ONLY' }, 403);
       if (env.AGENT_ENABLED !== 'true') return reply({ error: 'AGENT_DISABLED' }, 409);
       kind = tick ? 'auto' : url.searchParams.get('action');
@@ -59,6 +64,9 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     let store;
     try {
       store = await openStore();
+      if (inbox) return await webInbox(request,store,env);
+      if (observation) return reply(await observe(store,env,now()));
+      if (audience) return reply(await audienceStep(store,createProvider(),env,now()));
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
         const asset=await store.asset(id);if(!asset)return reply({error:'NOT_FOUND'},404);

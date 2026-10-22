@@ -37,7 +37,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   if(published)return {status:published.result?.action==='x_failed'?'payment_required':published.status,replay:true};
   let plan=await store.operation(planId);
   if(!plan){
-    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose whether to publish one original post to X now. Return JSON strings action (x_draft or wait), text (plain English, at most 240 ASCII characters), summary (public reason). No fabricated news, audience feedback or activity. Your art and ideas are welcome. A wait is allowed. Identity: ${JSON.stringify(identity)} Strategy: ${JSON.stringify(context.strategy)} Recent experience: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
+    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose whether to publish one original post to X now. Return JSON strings action (x_draft or wait), text (plain English, at most 240 ASCII characters), summary (public reason). No fabricated news, audience feedback or activity. Aim for 4-12 original posts/day; no need to fill every slot. Develop one specific observation or interaction. Vary form according to your intent instead of repeating your last template. Do not turn operational budget or arbitrary coordinates into default content. If responding to news, identify the source and distinguish your interpretation. Never issue unsolicited @mentions. Your art and ideas are welcome. A wait is allowed. Identity: ${JSON.stringify(identity)} Strategy (revisable, not mandatory): ${JSON.stringify(context.strategy)} Observations with timestamps and sources: ${JSON.stringify(context.external)} Recent experience: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
     if(req.replay)return {status:req.status};
     const answer=await provider.generate(constitution,req.prompt);const v=answer.value;
     if(!['x_draft','wait'].includes(v?.action)||!validText(v.text,240)||!/^[\x20-\x7e\r\n]+$/.test(v.text)||!validText(v.summary))throw Error('INVALID_X_DRAFT');
@@ -97,7 +97,7 @@ export async function reconcileX(store,x,now=new Date()){
  if(!row)return null;
  const started=(await store.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' AND payload::jsonb->>'id'=$1 ORDER BY seq DESC LIMIT 1",[row.id])).rows[0];
  if(!started||now.getTime()-Date.parse(started.created)<300000)return {status:'publication_pending'};
- const plan=await store.operation(row.id.replace(/^x-publish-(\d+).*$/,'x-plan-$1'));
+ const plan=await store.operation(row.id.replace(/^x-publish-/,'x-plan-').replace(/-retry1$/,''));
  if(!plan?.result?.text)return {status:'reconciliation_required'};
  // Reserve the read cost before any additional external call. Retain estimates.
  const amount=await store.transaction(async c=>{
@@ -111,10 +111,10 @@ export async function reconcileX(store,x,now=new Date()){
  if(amount===null)return {status:'reconciled'};
  const posts=await x.recentPosts(Date.parse(started.created)-60000);
  const normalize=t=>t.replace(/\r\n/g,'\n').trim();
- const match=posts.find(p=>normalize(p.text)===normalize(plan.result.text));
+ const match=posts.find(p=>normalize(p.text)===normalize(plan.result.text) && (!plan.result.replyTo || (p.referenced_tweets??p.referenced_posts??[]).some(r=>r.type==='replied_to'&&r.id===plan.result.replyTo)));
  if(match){
   const url='https://x.com/i/web/status/'+match.id;
-  await store.complete(row.id,amount,{action:'x_post',text:plan.result.text,summary:'Recovered publication by matching the authenticated account timeline.',postId:match.id,url});
+  await store.complete(row.id,amount,{action:plan.result.replyTo?'x_reply':'x_post',text:plan.result.text,summary:'Recovered publication by matching the authenticated account timeline.',postId:match.id,url});
   return {status:'reconciled_published',url};
  }
  await store.complete(row.id,amount,{action:'x_failed',text:'The interrupted post was not found in the authenticated account timeline.',summary:'Checked the complete returned timeline from one minute before the attempt, after a five-minute settling interval. No matching post found; publication lock released.'});

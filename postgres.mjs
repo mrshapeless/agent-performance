@@ -39,11 +39,13 @@ export class PostgresStore {
       if (kind === 'auto') kind = identity ? 'step' : 'birth';
       if (kind === 'birth' && identity) throw Error('ALREADY_BORN');
       if (kind === 'step' && !identity) throw Error('NOT_BORN');
-      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','appearance_brief') ORDER BY seq DESC LIMIT 10"))
+      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','x_reply','dialogue','appearance_brief') ORDER BY seq DESC LIMIT 10"))
         .rows.reverse().map(e => ({ seq: String(e.seq), kind: e.kind, payload: JSON.parse(e.payload) }));
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
-      const request = buildRequest(identity, recent, { kind, reflectionDue: since >= 6,
+      const observations=(await client.query("SELECT payload FROM agent_events WHERE kind='observation' ORDER BY seq DESC LIMIT 1")).rows[0];
+      const external=observations?JSON.parse(observations.payload):null;
+      const request = buildRequest(identity, recent, { kind, external, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
         strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT
@@ -102,7 +104,7 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','banner_brief','banner_image') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','banner_brief','banner_image') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

@@ -27,3 +27,10 @@ CREATE TABLE IF NOT EXISTS agent_assets (
 
 CREATE TABLE IF NOT EXISTS agent_oauth_states (state TEXT PRIMARY KEY, browser TEXT NOT NULL, secret TEXT NOT NULL, expires TIMESTAMPTZ NOT NULL);
 CREATE TABLE IF NOT EXISTS agent_oauth_tokens (id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL, secret TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('connected','reconnect_required')));
+
+CREATE TABLE IF NOT EXISTS agent_inbox (
+ id TEXT PRIMARY KEY, platform TEXT NOT NULL, author TEXT NOT NULL, text TEXT NOT NULL,
+ created TIMESTAMPTZ NOT NULL DEFAULT now(), status TEXT NOT NULL DEFAULT 'pending',
+ response TEXT, reply_url TEXT, metadata JSONB NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS agent_optouts (author TEXT PRIMARY KEY, created TIMESTAMPTZ DEFAULT now());

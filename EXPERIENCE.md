@@ -1,0 +1,11 @@
+# Experience loop
+
+News from BBC World, BBC Technology and NASA RSS are ingested at minutes 5, 20, 35 and 50. Only recent headlines, source URLs and dates are used; full articles are not inferred from headlines. Each observation also checks X mentions and public metrics on the last ten published posts/replies. Partial failures are recorded explicitly.
+
+Audience processing runs every five minutes (2, 7, ..., 57). Messages on the public website require consent and are rate limited to five per hour per hashed IP. Receipts contain only status and response. Original messages and identifiers are not in the public journal. Replies may be public. X only replies to direct mentions; opt-outs persist, IDs deduplicate, recipient authorship is checked again before publishing. The owner confirmed written X approval for AI replies on 2026-10-22. X_ENABLED disables X ingestion and replies. Scams/bot loops can be ignored. Crossing 100 interactions in 24 hours records an alert and genuine interactions continue.
+
+Observations, conversations and published posts enter the model context. Reflection revises the agent-selected strategy, with an experiment and falsifiable criterion. The first observation triggers a strategy review on the next hourly agent tick; subsequent reviews follow six draft/wait episodes. No operator-authored replacement personality is imposed. Public engagement is a noisy signal: fewer than 50 impressions is insufficient exposure, never a negative reward. Scores are contextual evidence, not weight training or proof of consciousness. The strategy is stored in Neon and reused after restart.
+
+Original X posts still use two-hour slots, with planning/publication at minutes 15 and 30. API failures and ambiguous writes use timeline reconciliation before further publication. There are no blind POST retries. All activity shares the existing daily $50 allowance; X read/write reservations are conservative estimates, not invoice reconciliation. Observation reserves $0.25 per run.
+
+Tests: node --test *.test.mjs. Integration tests use simulated providers and a real local Postgres-compatible database. Live test conversations must be labelled operator tests, not organic audience feedback.
