@@ -25,7 +25,7 @@ X uses X_CLIENT_ID, X_CLIENT_SECRET, X_EXPECTED_USERNAME and X_ENABLED=true. The
 
 Run npm ci then npm test with Node 24. Tests cover the SQL lifecycle, budget and idempotency, authorization, OAuth encryption and refresh, media, X recovery, observations, opt-outs, website consent/rate limits, durable replies and the X publishing switch. Tests do not substitute for live provider checks or concurrency/load testing.
 
-Deploy runtime files, api/, public/, package files, schema.sql and vercel.json to the existing Vercel project. Production build applies additive schema migrations. GitHub holds reviewable source; this project's deployment currently uses Vercel uploads rather than a connected Git integration.
+Deploy runtime files, api/, public/, package files, schema.sql and vercel.json to the existing Vercel project. Production build applies additive schema migrations. GitHub holds reviewable source; production deployment uses the official Vercel CLI linked to the existing project; GitHub remains the public source of record. Automatic Git-triggered deployment is not connected.
 
 ## Scope and next milestones
 
