@@ -34,3 +34,6 @@ CREATE TABLE IF NOT EXISTS agent_inbox (
  response TEXT, reply_url TEXT, metadata JSONB NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS agent_optouts (author TEXT PRIMARY KEY, created TIMESTAMPTZ DEFAULT now());
+
+ALTER TABLE agent_oauth_tokens DROP CONSTRAINT IF EXISTS agent_oauth_tokens_status_check;
+ALTER TABLE agent_oauth_tokens ADD CONSTRAINT agent_oauth_tokens_status_check CHECK (status IN ('connected','reconnect_required','disconnected'));

@@ -29,5 +29,18 @@ test('encrypted OAuth flow: owner only, browser binding, one-time callback, acco
  await assert.rejects(oauthAccess(store,env,provider),/NOT_CONNECTED/);assert.equal(calls,3);
  const mismatch=await session();const wrong=await oauthRoute(new Request(CALLBACK+'?state='+mismatch.state+'&code=c',{headers:{cookie:mismatch.cookie}}),store,env,async url=>url.endsWith('/token')?provider(url):Response.json({data:{id:'456',username:'wrong_account'}}));assert.match(wrong.headers.get('location'),/failed/);
  assert.equal((await db.query('SELECT status FROM agent_oauth_tokens')).rows[0].status,'reconnect_required');
+ const pending=await session();
+ const disconnect=(auth='Bearer '+env.AGENT_ADMIN_SECRET,origin=new URL(CALLBACK).origin)=>new Request(CALLBACK+'?action=disconnect',{method:'POST',headers:{authorization:auth,origin}});
+ assert.equal((await oauthRoute(disconnect('bad'),store,env)).status,401);
+ assert.equal((await oauthRoute(disconnect(undefined,'https://wrong.example'),store,env)).status,403);
+ assert.equal((await oauthRoute(disconnect(),store,env)).status,200);
+ await assert.rejects(oauthAccess(store,env,provider),/NOT_CONNECTED/);
+ assert.equal((await oauthRoute(new Request(CALLBACK+'?state='+pending.state+'&code=c',{headers:{cookie:pending.cookie}}),store,env,provider)).status,400);
+ const fresh=await session();
+ const linked=await oauthRoute(new Request(CALLBACK+'?state='+fresh.state+'&code=c',{headers:{cookie:fresh.cookie}}),store,env,provider);assert.match(linked.headers.get('location'),/connected/);
+ const racing=await session();
+ const raced=await oauthRoute(new Request(CALLBACK+'?state='+racing.state+'&code=c',{headers:{cookie:racing.cookie}}),store,env,async url=>{if(url.endsWith('/token'))await oauthRoute(disconnect(),store,env);return provider(url)});
+ assert.match(raced.headers.get('location'),/failed/);
+ await assert.rejects(oauthAccess(store,env,provider),/NOT_CONNECTED/);
  }finally{await db.close()}
 });

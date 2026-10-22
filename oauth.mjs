@@ -49,9 +49,18 @@ export async function oauthRoute(request,store,env,fetcher=fetch){
   if(request.method==='POST'){
     if(!authorized(request.headers.get('authorization'),env.AGENT_ADMIN_SECRET))return json({error:'UNAUTHORIZED'},401);
     if(request.headers.get('origin')!==new URL(CALLBACK).origin)return json({error:'INVALID_ORIGIN'},403);
+    if(url.searchParams.get('action')==='disconnect'){
+      await store.transaction(async c=>{
+        await c.query("UPDATE agent_oauth_tokens SET status='disconnected' WHERE id=1");
+        await c.query('DELETE FROM agent_oauth_states');
+        await store.append(c,'account_connection',{action:'account_connection',status:'disconnected',disconnectedAt:Date.now(),text:'X connection disabled by the operator.',summary:'Stored authorization is disabled and pending login sessions invalidated. This does not revoke the app grant in X settings. Already dispatched requests may finish.'});
+      });
+      return Response.json({status:'disconnected'},{headers:{...headers,'Set-Cookie':`${cookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`}});
+    }
+    if(url.searchParams.has('action'))return json({error:'INVALID_ACTION'},400);
     const state=randomBytes(32).toString('base64url'),browser=randomBytes(32).toString('base64url'),verifier=randomBytes(32).toString('base64url');
     await store.pool.query('DELETE FROM agent_oauth_states WHERE expires < now()');
-    await store.pool.query("INSERT INTO agent_oauth_states(state,browser,secret,expires) VALUES($1,$2,$3,now()+interval '10 minutes')",[hash(state),hash(browser),seal({verifier,expected:env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase()},env.AGENT_ADMIN_SECRET)]);
+    await store.pool.query("INSERT INTO agent_oauth_states(state,browser,secret,expires) VALUES($1,$2,$3,now()+interval '10 minutes')",[hash(state),hash(browser),seal({verifier,issuedAt:Date.now(),expected:env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase()},env.AGENT_ADMIN_SECRET)]);
     const target=new URL('https://x.com/i/oauth2/authorize');target.search=new URLSearchParams({response_type:'code',client_id:env.X_CLIENT_ID,redirect_uri:CALLBACK,scope:SCOPES,state,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}).toString();
     return Response.json({url:target.href},{headers:{...headers,'Set-Cookie':`${cookie}=${browser}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`}});
   }
@@ -70,6 +79,8 @@ export async function oauthRoute(request,store,env,fetcher=fetch){
     if(!r.ok)throw Error('VERIFY_FAILED');const account=(await r.json()).data;
     if(!account?.id||account.username?.toLowerCase()!==s.expected||s.expected!==env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase())throw Error('ACCOUNT_MISMATCH');
     await store.transaction(async c=>{
+      const reset=(await c.query("SELECT payload FROM agent_events WHERE kind='account_connection' AND payload::jsonb->>'status'='disconnected' ORDER BY seq DESC LIMIT 1")).rows[0];
+      if(reset&&(!s.issuedAt||JSON.parse(reset.payload).disconnectedAt>=s.issuedAt))throw Error('OAUTH_SESSION_RESET');
       await c.query("INSERT INTO agent_oauth_tokens(id,username,secret,status) VALUES(1,$1,$2,'connected') ON CONFLICT(id) DO UPDATE SET username=EXCLUDED.username,secret=EXCLUDED.secret,status='connected'",[s.expected,seal(t,env.AGENT_ADMIN_SECRET)]);
       await store.append(c,'account_connection',{action:'account_connection',status:'verified',username:s.expected,text:`X account @${account.username} connected using OAuth 2.0.`,summary:'Owner authorized access. Publishing requires X_ENABLED=true.'});
     });result='connected';
