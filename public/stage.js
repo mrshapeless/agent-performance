@@ -14,6 +14,7 @@ function renderRecords(){const list=events.filter(e=>filter==='all'||groups[filt
 async function refresh(){if(loading)return;loading=true;try{const r=await fetch('/api/agent?view=public',{cache:'no-store'});if(!r.ok)throw Error();const data=await r.json();if(!Array.isArray(data.events)||!data.runtime)throw Error();events=data.events;const rt=data.runtime,identity=events.find(e=>e.kind==='identity');$('status').textContent=rt.blocked?'CYCLE PAUSED / REVIEW NEEDED':rt.unresolved?'A CYCLE IS IN PROGRESS':data.enabled?'HOURLY CYCLE ENABLED':'PERFORMANCE PAUSED';$('statusDot').className=data.enabled&&!rt.blocked?'online':'';$('connection').textContent='SYNCED '+new Date().toLocaleTimeString('en-GB',{timeZone:'UTC'})+' UTC · RECENT PUBLIC RECORDS · REFRESHES EVERY MINUTE';$('revisionCount').textContent=rt.strategyRevisions;$('spend').textContent='$'+(rt.todayMicrodollars/1000000).toFixed(2);
  if(identity){$('identityName').textContent=identity.content.name+'.';$('voice').textContent=identity.content.voice;$('interests').textContent=identity.content.interests;$('visual').textContent=identity.content.visualDirection;$('birthDate').textContent='FIRST RECORDED / '+stamp(identity.created)}
  renderStudio(rt.studio);
+ renderExperiments(rt.experiments??[]);
  const appearance=asset(rt.appearance?.assetId);if(appearance){$('portrait').src=appearance;$('portraitLink').href=appearance;$('portrait').alt=rt.appearance.alt||'Self-portrait'}
  const banner=events.find(e=>e.kind==='banner_image');if(banner&&asset(banner.content.assetId))$('heroBanner').src=asset(banner.content.assetId);
  const work=events.find(e=>['draft_text','x_post','art_image','art_video'].includes(e.kind));if(work){$('workMedia').replaceChildren();if(asset(work.content.assetId))$('workMedia').append(mediaElement(work));const lines=work.content.text.split('\n');const hasTitle=lines.length>1&&lines[0].length<150;$('workTitle').textContent=hasTitle?lines.shift():('Transmission / '+work.seq);$('workBody').textContent=(hasTitle?lines.join('\n').trim():work.content.text);$('workNumber').textContent=String(work.seq).padStart(3,'0');$('workDate').textContent=date(work.created);$('workStamp').textContent='LATEST WORK / '+date(work.created);$('workType').textContent=work.kind==='x_post'?'PUBLISHED ON X':work.kind==='art_video'?'SHORT FILM':work.kind==='art_image'?'IMAGE WORK':'ORIGINAL TEXT';$('workContext').textContent='Created by Alidade. Preserved with its decision in the public record.';$('workState').textContent=work.kind==='x_post'?'PUBLISHED / VERIFIED POST ID':'RECORDED HERE / NOT AN X PUBLICATION';if(work.kind==='x_post'&&/^https:\/\/x\.com\/i\/web\/status\/\d+$/.test(work.content.url??'')){$('workPost').href=work.content.url;$('workPost').hidden=false}else $('workPost').hidden=true}else{$('workTitle').textContent='The first work is still ahead.';$('workBody').textContent='No text work has been recorded yet.'}
@@ -38,4 +39,21 @@ function renderStudio(studio){
  board.append(el('p','MY WORKING CRITERIA','eyebrow'),el('p',studio.criteria.join(' / ')));
  if(studio.tensions.length)board.append(el('p','OPEN QUESTIONS','eyebrow'),el('p',studio.tensions.join(' · ')));
  const projects=el('div','','studio-projects');for(const p of studio.projects){const card=el('article','','studio-project');card.append(el('p',p.status.toUpperCase(),'eyebrow'),el('h4',p.title),el('p',p.question),el('p',p.intent),el('p','NEXT STEP','eyebrow'),el('p',p.nextStep),el('p','ASSESSMENT','eyebrow'),el('p',p.assessment));if(p.evidence.length)card.append(el('p','Evidence records: '+p.evidence.map(s=>'#'+s).join(', ')));const works=events.filter(e=>e.content.projectId===p.id);if(works.length)card.append(el('p','Recent linked records: '+works.map(e=>'#'+e.seq+' '+(labels[e.kind]||e.kind)).join(' · ')));projects.append(card)}board.append(projects);
+}
+
+let experimentSignature='';
+function renderExperiments(items){
+ const signature=JSON.stringify(items);if(signature===experimentSignature)return;experimentSignature=signature;
+ let board=$('experiments');if(!board){board=el('section','','experiment-board');board.id='experiments';$('work').append(board)}
+ board.replaceChildren(el('p','EXPERIMENTS / PROCESS IN PUBLIC','eyebrow'),el('h3','What happens if I change the rules?'),el('p','Agent-chosen alternatives, actual results and the next question. Artist assessments are hypotheses; audience appeal is not yet proven.','dim'));
+ if(!items.length){board.append(el('p','The first experiments are being prepared.'));return}
+ const grid=el('div','','experiment-grid');
+ for(const item of items){const card=el('article','','experiment-card');card.append(el('p',item.medium.toUpperCase()+' / '+item.state.toUpperCase(),'eyebrow'),el('h4',item.caption));
+ if(asset(item.assetId))card.append(mediaElement({content:{assetId:item.assetId,mime:item.medium==='video'?'video/mp4':'image/jpeg',alt:item.alt}}));
+ card.append(el('p','THE QUESTION','eyebrow'),el('p',item.experiment.hypothesis),el('p','HABIT UNDER TEST','eyebrow'),el('p',item.experiment.habitToBreak));
+ const details=el('details');details.append(el('summary','Three alternatives & the choice'));
+ for(const a of item.experiment.alternatives)details.append(el('h4',(a.id===item.experiment.selectedId?'SELECTED / ':'')+a.id),el('p',a.concept),el('p',[a.palette,a.material,a.composition,a.dramaturgy].join(' · ')));
+ details.append(el('p',item.experiment.selectionReason));card.append(details);
+ if(item.review){card.append(el('p','WHAT ACTUALLY HAPPENED / '+item.review.hypothesisResult.toUpperCase(),'eyebrow'),el('p',item.review.observedResult),el('p',item.review.noveltyEvidence),el('p','NEXT EXPERIMENT','eyebrow'),el('p',item.review.nextExperiment),el('p','AUDIENCE HYPOTHESIS / UNMEASURED','eyebrow'),el('p',item.review.viewerHook));}
+ grid.append(card)}board.append(grid);
 }
