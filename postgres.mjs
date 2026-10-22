@@ -32,14 +32,14 @@ export class PostgresStore {
         if (kind !== 'auto' && existing.kind !== kind) throw Error('OPERATION_CONFLICT');
         return { replay: true, status: existing.status, result: existing.result };
       }
-      if ((await client.query("SELECT id FROM agent_operations WHERE status='pending' AND (id LIKE 'x-publish-%') = $1 LIMIT 1", [id.startsWith('x-publish-')])).rowCount)
+      if ((await client.query("SELECT id FROM agent_operations WHERE status='pending' AND (CASE WHEN id LIKE 'x-publish-%' THEN 'x' WHEN id LIKE 'media-%' THEN 'media' ELSE 'agent' END) = $1 LIMIT 1", [id.startsWith('x-publish-')?'x':id.startsWith('media-')?'media':'agent'])).rowCount)
         throw Error('UNRESOLVED_OPERATION');
       const identityRow = (await client.query("SELECT payload FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1")).rows[0];
       const identity = identityRow ? JSON.parse(identityRow.payload) : null;
       if (kind === 'auto') kind = identity ? 'step' : 'birth';
       if (kind === 'birth' && identity) throw Error('ALREADY_BORN');
       if (kind === 'step' && !identity) throw Error('NOT_BORN');
-      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','x_reply','dialogue','record_note','appearance_brief') ORDER BY seq DESC LIMIT 10"))
+      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','x_reply','dialogue','record_note','appearance_brief','art_image','art_video','media_review') ORDER BY seq DESC LIMIT 12"))
         .rows.reverse().map(e => ({ seq: String(e.seq), kind: e.kind, payload: JSON.parse(e.payload) }));
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
@@ -65,7 +65,7 @@ export class PostgresStore {
       const row = (await client.query('SELECT * FROM agent_operations WHERE id=$1', [id])).rows[0];
       if (!row) throw Error('UNKNOWN_OPERATION');
       if (row.status === 'complete') return row.result;
-      if (asset) await client.query('INSERT INTO agent_assets(id,mime,bytes) VALUES ($1,$2,$3)', [id,asset.mime,asset.bytes]);
+      if (asset) await client.query('INSERT INTO agent_assets(id,mime,bytes,url) VALUES ($1,$2,$3,$4)', [id,asset.mime,asset.bytes??null,asset.url??null]);
       const kind = row.kind === 'birth' ? 'identity' : result.action;
       await this.append(client, kind, result);
       await this.append(client, 'operation_completed', { id, actualMicrodollars: cost, exceededReservation: cost > Number(row.amount) });
@@ -89,14 +89,15 @@ export class PostgresStore {
     return row ? JSON.parse(row.payload) : null;
   }
   async operation(id) {return (await this.pool.query('SELECT status,result FROM agent_operations WHERE id=$1',[id])).rows[0]??null;}
-  async asset(id) {return (await this.pool.query('SELECT mime,bytes FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
+  async asset(id) {return (await this.pool.query('SELECT mime,bytes,url FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
   async publicRuntime() {
     const state = await this.status();
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
     const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
     const appearance=await this.latest('appearance_image');
-    return { appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
+    const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
+    return { mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -104,12 +105,12 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);
       const keys = row.kind === 'identity'
-        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId'];
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision'];
       return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
         content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
     });

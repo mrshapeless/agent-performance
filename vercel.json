@@ -30,6 +30,9 @@
     },
     "api/inbox.mjs": {
       "maxDuration": 120
+    },
+    "api/media.mjs": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -43,7 +46,7 @@
     },
     {
       "path": "/api/social",
-      "schedule": "15,30 * * * *"
+      "schedule": "1-56/5 * * * *"
     },
     {
       "path": "/api/observe",
@@ -52,6 +55,10 @@
     {
       "path": "/api/audience",
       "schedule": "2-57/5 * * * *"
+    },
+    {
+      "path": "/api/media",
+      "schedule": "*/2 * * * *"
     }
   ],
   "rewrites": [

@@ -3,7 +3,7 @@ export class AppearanceImage {
   constructor(env,fetcher=fetch){this.key=env.GEMINI_API_KEY;this.fetcher=fetcher;if(!this.key)throw Error('GEMINI_NOT_CONFIGURED');}
   quote(prompt){return Math.ceil((Buffer.byteLength(prompt)+2048)*1.5+8192*30);}
   async generate(prompt,ratio='1:1'){
-    if(!['1:1','21:9'].includes(ratio))throw Error('IMAGE_INVALID_RATIO');
+    if(!['1:1','21:9','16:9','9:16'].includes(ratio))throw Error('IMAGE_INVALID_RATIO');
     const r=await this.fetcher('https://generativelanguage.googleapis.com/v1beta/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':this.key},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:'gemini-nano-banana-2.1',store:false,input:prompt,response_format:{type:'image',aspect_ratio:ratio,image_size:'1K',mime_type:'image/jpeg'},generation_config:{max_output_tokens:8192}})});
     if(!r.ok)throw Error('IMAGE_HTTP_'+r.status);const data=await r.json();
     if(data.status!=='completed')throw Error('IMAGE_INCOMPLETE');

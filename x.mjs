@@ -20,19 +20,24 @@ export class XClient {
       if(r.status===401&&this.bearer&&attempt===0){access=await this.bearer(access);continue;}
       if(method==='GET' && [429,502,503,504].includes(r.status) && attempt===0){await new Promise(resolve=>setTimeout(resolve,1000));continue;}
       if(!r.ok){const error=Error('X_HTTP_'+r.status);error.phase=method==='GET'?'verify':'publish';error.status=r.status;throw error;}
-      return r.json();
+      if(r.status===204)return {};
+      const raw=await r.text();return raw?JSON.parse(raw):{};
     }
   }
   async verify(){const r=await this.request('GET','/2/users/me');if(r.data?.username?.toLowerCase()!==this.env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase())throw Error('X_ACCOUNT_MISMATCH');return r.data;}
   async recentPosts(start){
     const account=await this.verify();
     if(!/^\d+$/.test(account.id??''))throw Error('X_INVALID_ACCOUNT');
-    const query=new URLSearchParams({max_results:'100',start_time:new Date(start).toISOString().replace('.000Z','Z'),'tweet.fields':'created_at,referenced_tweets'});
+    const query=new URLSearchParams({max_results:'100',start_time:new Date(start).toISOString().replace('.000Z','Z'),'tweet.fields':'created_at,referenced_tweets,attachments'});
     const result=await this.request('GET','/2/users/'+account.id+'/tweets?'+query);
     if(result.errors?.length || result.meta?.next_token || !Number.isInteger(result.meta?.result_count) || (result.data && !Array.isArray(result.data)))throw Error('X_RECONCILIATION_INCOMPLETE');
     const posts=result.data??[];
     if(posts.length!==result.meta.result_count || posts.some(p=>!/^\d+$/.test(p.id??'')||typeof p.text!=='string'))throw Error('X_RECONCILIATION_INCOMPLETE');
     return posts;
   }
-  async post(text,replyTo=null){if(typeof text!=='string'||!text.trim()||Buffer.byteLength(text,'utf8')>280)throw Error('X_INVALID_TEXT');try{await this.verify();}catch(error){error.phase='verify';throw error;}const r=await this.request('POST','/2/tweets',{text,...(replyTo?{reply:{in_reply_to_tweet_id:replyTo}}:{})});if(!/^\d+$/.test(r.data?.id??''))throw Error('X_UNCERTAIN_RESULT');return {id:r.data.id,url:'https://x.com/i/web/status/'+r.data.id};}
+  async initMedia(asset){const r=await this.request('POST','/2/media/upload/initialize',{total_bytes:asset.bytes.length,media_type:asset.mime,media_category:asset.mime==='video/mp4'?'tweet_video':'tweet_image'});if(!/^\d+$/.test(r.data?.id??''))throw Error('X_INVALID_MEDIA_ID');return r.data;}
+  appendMedia(id,segment,bytes){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');return this.request('POST',`/2/media/upload/${id}/append`,{segment_index:segment,media:Buffer.from(bytes).toString('base64')});}
+  finalizeMedia(id){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');return this.request('POST',`/2/media/upload/${id}/finalize`,{});}
+  async mediaStatus(id){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');const r=await this.request('GET','/2/media/upload?command=STATUS&media_id='+id);if(!r.data||r.errors?.length)throw Error('X_INVALID_MEDIA_STATUS');return r.data;}
+  async post(text,replyTo=null,mediaId=null){if(typeof text!=='string'||!text.trim()||Buffer.byteLength(text,'utf8')>280)throw Error('X_INVALID_TEXT');if(mediaId&&!/^\d+$/.test(mediaId))throw Error('X_INVALID_MEDIA_ID');try{await this.verify();}catch(error){error.phase='verify';throw error;}const r=await this.request('POST','/2/tweets',{text,...(replyTo?{reply:{in_reply_to_tweet_id:replyTo}}:{}),...(mediaId?{media:{media_ids:[mediaId]}}:{})});if(!/^\d+$/.test(r.data?.id??''))throw Error('X_UNCERTAIN_RESULT');return {id:r.data.id,url:'https://x.com/i/web/status/'+r.data.id};}
 }

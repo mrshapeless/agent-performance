@@ -17,8 +17,9 @@ CREATE TABLE IF NOT EXISTS agent_operations (
 CREATE UNIQUE INDEX IF NOT EXISTS single_agent_birth
   ON agent_operations(kind) WHERE kind = 'birth';
 DROP INDEX IF EXISTS single_pending_episode;
+DROP INDEX IF EXISTS single_pending_lane;
 CREATE UNIQUE INDEX IF NOT EXISTS single_pending_lane
-  ON agent_operations ((CASE WHEN id LIKE 'x-publish-%' THEN 'x' ELSE 'agent' END)) WHERE status = 'pending';
+  ON agent_operations ((CASE WHEN id LIKE 'x-publish-%' THEN 'x' WHEN id LIKE 'media-%' THEN 'media' ELSE 'agent' END)) WHERE status = 'pending';
 CREATE TABLE IF NOT EXISTS agent_assets (
   id TEXT PRIMARY KEY,
   mime TEXT NOT NULL CHECK (mime IN ('image/jpeg','image/png','image/webp')),
@@ -37,3 +38,16 @@ CREATE TABLE IF NOT EXISTS agent_optouts (author TEXT PRIMARY KEY, created TIMES
 
 ALTER TABLE agent_oauth_tokens DROP CONSTRAINT IF EXISTS agent_oauth_tokens_status_check;
 ALTER TABLE agent_oauth_tokens ADD CONSTRAINT agent_oauth_tokens_status_check CHECK (status IN ('connected','reconnect_required','disconnected'));
+
+ALTER TABLE agent_assets ADD COLUMN IF NOT EXISTS url TEXT;
+ALTER TABLE agent_assets ALTER COLUMN bytes DROP NOT NULL;
+ALTER TABLE agent_assets DROP CONSTRAINT IF EXISTS agent_assets_mime_check;
+ALTER TABLE agent_assets ADD CONSTRAINT agent_assets_mime_check CHECK(mime IN ('image/jpeg','image/png','image/webp','video/mp4'));
+ALTER TABLE agent_assets DROP CONSTRAINT IF EXISTS asset_storage_check;
+ALTER TABLE agent_assets ADD CONSTRAINT asset_storage_check CHECK ((bytes IS NOT NULL AND url IS NULL) OR (bytes IS NULL AND url LIKE 'https://%.public.blob.vercel-storage.com/%'));
+CREATE TABLE IF NOT EXISTS agent_media_jobs (
+ id TEXT PRIMARY KEY,plan_id TEXT NOT NULL UNIQUE,plan JSONB NOT NULL,
+ state TEXT NOT NULL,data JSONB NOT NULL DEFAULT '{}',
+ created TIMESTAMPTZ NOT NULL DEFAULT now(),updated TIMESTAMPTZ NOT NULL DEFAULT now(),
+ lease_until TIMESTAMPTZ,lease_token TEXT
+);

@@ -3,8 +3,19 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "engines": { "node": "24.x" },
-  "scripts": { "test": "node --test *.test.mjs", "start": "node --env-file=.env cli.mjs", "migrate": "node migrate.mjs" },
-  "dependencies": { "pg": "8.16.3" },
-  "devDependencies": { "@electric-sql/pglite": "0.3.14" }
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "start": "node --env-file=.env cli.mjs",
+    "migrate": "node migrate.mjs"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.2",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
+  }
 }

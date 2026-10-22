@@ -3,6 +3,8 @@ import { accountSetup, accountStatus } from './accounts.mjs';
 import { timingSafeEqual } from 'node:crypto';
 import { constitution, validate } from './domain.mjs';
 import { setupAppearance, setupBanner, socialStep } from './integrations.mjs';
+import {mediaStep} from './media.mjs';
+import {mediaCapabilities,trustedMediaURL} from './media-providers.mjs';
 
 export async function cloudRun(store, provider, kind, id) {
   let reflectionDue = false;
@@ -43,11 +45,12 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     const url = new URL(request.url);
     const setup = url.pathname === '/api/setup';
     const social = url.pathname === '/api/social';
+    const media = url.pathname === '/api/media';
     const inbox = url.pathname === '/api/inbox';
     const observation = url.pathname === '/api/observe';
     const audience = url.pathname === '/api/audience';
     const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
-    const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience'].includes(url.pathname);
+    const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience','/api/media'].includes(url.pathname);
     const publicRead = !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
     if (!inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
@@ -67,14 +70,16 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if (inbox) return await webInbox(request,store,env);
       if (observation) return reply(await observe(store,env,now()));
       if (audience) return reply(await audienceStep(store,createProvider(),env,now()));
+      if (media) return reply(await mediaStep(store,createProvider(),env));
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
         const asset=await store.asset(id);if(!asset)return reply({error:'NOT_FOUND'},404);
+        if(asset.url)return Response.redirect(trustedMediaURL(asset.url,true),302);
         return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});
       }
       if (setup) { const appearance=await setupAppearance(store,createProvider(),env); if(appearance.phase!=='appearance')return reply(appearance); const banner=await setupBanner(store,createProvider(),env); return reply(banner.phase==='banner' ? await accountSetup(store,createProvider(),env,now()) : banner); }
       if (social) return reply(await socialStep(store,createProvider(),env,now()));
-      if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
+      if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
       if (!tick && request.method === 'GET') return reply({ ...await store.status(), accounts:await accountStatus(store,env), enabled:env.AGENT_ENABLED==='true' });
       // A one-time capability transition must not wait behind an already completed hourly tick.
       if(tick && await store.latest('observation') && !(await store.latest('reflect'))?.text?.includes('experience-v1')) id='experience-v1';
