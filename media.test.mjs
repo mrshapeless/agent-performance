@@ -15,7 +15,7 @@ const services={imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixtur
 function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.'}}}};}
 test('actual image reviewed then uploaded and published exactly once; replies stay disabled',async()=>{
  const {store:s,db}=await fixture();let generations=0,posts=0;const service={...services,image:async()=>{generations++;return services.image()}};
- const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>{},mediaStatus:async()=>({processing_info:{state:'succeeded'}}),post:async(text,reply,media)=>{posts++;assert.equal(reply,null);assert.equal(media,'777');assert.equal(text,'An ink shoreline, imagined.');return {id:'999',url:'https://x.com/i/web/status/999'}}};
+ const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>({id:'777'}),mediaStatus:async()=>assert.fail('synchronous image must not poll STATUS'),post:async(text,reply,media)=>{posts++;assert.equal(reply,null);assert.equal(media,'777');assert.equal(text,'An ink shoreline, imagined.');return {id:'999',url:'https://x.com/i/web/status/999'}}};
  try{await seed(s);for(let i=0;i<6;i++)await mediaStep(s,reviewer(),env,service,()=>x);assert.equal(generations,1);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');const now=new Date(7200000);await socialStep(s,reviewer(),env,now,()=>x);await socialStep(s,reviewer(),env,now,()=>x);assert.equal(posts,1);assert.equal((await s.latest('x_post')).assetId,'media-1-render');assert.equal((await s.status()).unresolved,0);assert.equal((await s.publicJournal()).some(e=>e.kind==='media_review'),true);}finally{await db.close()}
 });
 test('rejected work is archived but never uploaded; unknown generation is not charged twice',async()=>{
@@ -35,6 +35,26 @@ test('provider input matches video schema and downloads reject untrusted URLs an
  await assert.rejects(readMedia('https://replicate.delivery/a',async()=>new Response('no',{headers:{'content-length':'99999999'}})),/TOO_LARGE/);
 });
 test('X media uses initialize, base64 append, finalize, status and media_ids on original post',async()=>{
- const calls=[];const x=new XClient({X_EXPECTED_USERNAME:'artist'},async(url,o)=>{calls.push([url,o.body?JSON.parse(o.body):null]);return Response.json(url.endsWith('/me')?{data:{username:'artist'}}:url.endsWith('/initialize')?{data:{id:'77',expires_after_secs:86400}}:url.includes('STATUS')?{data:{processing_info:{state:'succeeded'}}}:{data:{id:'88'}})},async()=> 'token');
+ const calls=[];const x=new XClient({X_EXPECTED_USERNAME:'artist'},async(url,o)=>{calls.push([url,o.body?JSON.parse(o.body):null]);return Response.json(url.endsWith('/me')?{data:{username:'artist'}}:url.endsWith('/initialize')?{data:{id:'77',expires_after_secs:86400}}:url.includes('STATUS')?{data:{processing_info:{state:'succeeded'}}}:url.endsWith('/finalize')?{data:{id:'77'}}:{data:{id:'88'}})},async()=> 'token');
  const a={bytes:Buffer.from('abc'),mime:'video/mp4'};await x.initMedia(a);await x.appendMedia('77',0,a.bytes);await x.finalizeMedia('77');await x.mediaStatus('77');await x.post('film',null,'77');assert.equal(calls[0][1].media_category,'tweet_video');assert.equal(calls[1][1].media,'YWJj');assert.deepEqual(calls.at(-1)[1].media,{media_ids:['77']});assert.equal(calls.at(-1)[1].reply,undefined);
+});
+
+
+test('legacy image status failure reuses saved artwork and async finalization waits',async()=>{
+ const {store:s,db}=await fixture();let uploads=0,statuses=0;
+ const x={verify:async()=>({}),initMedia:async()=>{uploads++;return {id:'778'}},appendMedia:async()=>{},finalizeMedia:async()=>({id:'778',processing_info:{state:'pending'}}),mediaStatus:async()=>{statuses++;return {processing_info:{state:'succeeded'}}}};
+ try{await seed(s);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
+ await s.pool.query("UPDATE agent_media_jobs SET state='processing_x',data=data || $1::jsonb",[JSON.stringify({mediaId:'777',expiresAt:Date.now()+86400000,retries:2})]);
+ for(let i=0;i<3;i++)await mediaStep(s,reviewer(),env,{...services,image:async()=>assert.fail('must reuse saved image')},()=>x);
+ assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'processing_x');
+ await mediaStep(s,reviewer(),env,services,()=>x);
+ assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');assert.equal(uploads,1);assert.equal(statuses,1);
+ }finally{await db.close()}
+});
+
+test('X finalization rejects missing data, embedded errors and wrong media IDs',async()=>{
+ for(const response of [{},{data:{id:'77'},errors:[{title:'failed'}]},{data:{id:'88'}}]){
+ const x=new XClient({X_EXPECTED_USERNAME:'artist'},async()=>Response.json(response),async()=>'token');
+ await assert.rejects(x.finalizeMedia('77'),/X_INVALID_MEDIA_FINALIZE/);
+ }
 });

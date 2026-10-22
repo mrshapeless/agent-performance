@@ -34,6 +34,9 @@ async function fail(store,job,operation,maximum,error){
 export async function mediaStep(store,provider,env,services=new MediaProviders(env),xFactory=xClient){
  const token=randomUUID();
  const job=await store.transaction(async c=>{
+  // Recover the pre-finalize-response image uploader once, using the saved asset.
+  // A new upload operation is charged; paid image generation is never repeated.
+  await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
   const row=(await c.query("SELECT * FROM agent_media_jobs WHERE state IN ('queued','processing','rendered','approved','uploading','processing_x') AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE")).rows[0];
   if(!row)return null;
   await c.query("UPDATE agent_media_jobs SET lease_token=$1,lease_until=now()+interval '3 minutes' WHERE id=$2",[token,row.id]);
@@ -90,7 +93,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   if(env.X_ENABLED!=='true'){await patch(store,job,job.state);return {status:'x_disabled'};}
   const x=xFactory(store,env);
   if(job.state==='approved'){
-   op=job.id+'-upload';maximum=1_000_000;
+   op=job.id+(job.data.finalizeRecovery?'-upload-finalize-recovery':'-upload');maximum=1_000_000;
    const req=await store.begin(op,'step',()=>({maximum}));
    if(req.replay){
     if(req.status==='complete'&&req.result?.mediaId){await patch(store,job,'uploading',{mediaId:req.result.mediaId,expiresAt:req.result.expiresAt,segment:0});return {status:'upload_recovered'};}
@@ -106,7 +109,10 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   if(job.state==='uploading'){
    const asset=await services.load(await store.asset(job.data.assetId));const size=3_000_000,offset=(job.data.segment??0)*size;
    if(offset<asset.bytes.length){await x.appendMedia(job.data.mediaId,job.data.segment??0,asset.bytes.subarray(offset,offset+size));await patch(store,job,'uploading',{segment:(job.data.segment??0)+1});return {status:'upload_chunk'};}
-   await x.finalizeMedia(job.data.mediaId);await patch(store,job,'processing_x');return {status:'upload_finalized'};
+   const finalized=await x.finalizeMedia(job.data.mediaId);
+   if(finalized.processing_info?.state==='failed')throw Error('X_MEDIA_PROCESSING_FAILED');
+   const ready=!finalized.processing_info||finalized.processing_info.state==='succeeded';
+   await patch(store,job,ready?'ready':'processing_x',{finalized:true});return {status:ready?'media_ready':'upload_finalized'};
   }
   const status=await x.mediaStatus(job.data.mediaId);
   if(status.processing_info?.state==='failed')throw Error('X_MEDIA_PROCESSING_FAILED');
@@ -117,7 +123,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   // Failed read/poll calls may be retried; paid generation/review calls may not.
   if(!op&&['processing','uploading','processing_x'].includes(job.state)&&!['VIDEO_GENERATION_FAILED','VIDEO_PROCESSING_TIMEOUT','X_MEDIA_EXPIRED','X_MEDIA_PROCESSING_FAILED','MEDIA_UNTRUSTED_URL','MEDIA_TOO_LARGE','MEDIA_INVALID_MP4'].includes(error.message)){
    if((job.data.retries??0)>=5)return fail(store,job,null,0,Error('MEDIA_PROVIDER_RETRY_LIMIT'));
-   await patch(store,job,job.state,{lastError:'Transient provider or storage error',retries:(job.data.retries??0)+1});return {status:'media_retry_later'};
+   await patch(store,job,job.state,{lastError:/^[A-Z_0-9]+$/.test(error.message)?error.message:'PROVIDER_OR_STORAGE_ERROR',retries:(job.data.retries??0)+1});return {status:'media_retry_later'};
   }
   return fail(store,job,op,maximum,error);
  }
