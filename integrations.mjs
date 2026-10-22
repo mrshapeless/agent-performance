@@ -1,3 +1,4 @@
+import {studioStep,studioContext,validateStudioChoice} from './studio.mjs';
 import {randomUUID} from 'node:crypto';
 import { constitution } from './domain.mjs';
 import { AppearanceImage } from './appearance.mjs';
@@ -34,6 +35,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   // A two-hour slot: at most twelve original publications per day.
   let media=await readyMedia(store);
   if(media&&now.getTime()>Number(media.data.expiresAt)){await store.pool.query("UPDATE agent_media_jobs SET state='failed',data=data || '{\"error\":\"X_MEDIA_EXPIRED\"}'::jsonb WHERE id=$1",[media.id]);media=null;}
+  if(!media&&!await store.operation('studio-'+Math.floor(now.getTime()/21600000)))return studioStep(store,provider,now);
   const launch=mediaCapabilities(env).image&&!await store.operation('x-publish-creative-launch-v1')&&!(await store.operation('x-plan-creative-launch-v1'))?.result?.action?.includes('wait');
   const launchJob=launch?(await store.pool.query("SELECT state FROM agent_media_jobs WHERE plan_id='x-plan-creative-launch-v1'")).rows[0]:null;
   const slot=media?media.plan_id.replace('x-plan-',''):launch&&!['failed','rejected','published'].includes(launchJob?.state)?'creative-launch-v1':Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
@@ -42,11 +44,12 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   if(published?.status==='complete'&&published.result?.action==='x_failed'){publishId+='-retry1';published=await store.operation(publishId);}
   if(published){if(media&&published.result?.action==='x_post')await finishMedia(store,planId);return {status:published.result?.action==='x_failed'?'payment_required':published.status,replay:true};}
   let plan=await store.operation(planId);
+
   if(!plan){
-    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose the next original work for X: text, image or short video, or wait. Available generators: ${JSON.stringify(mediaCapabilities(env))}. Return JSON action (x_draft or wait), medium (text, image, video), text (English caption <=240 ASCII characters), summary (public reason). For image/video also return prompt (detailed original visual concept, <=4000 chars), alt (<=500 chars), ratio (image: 1:1,16:9,9:16; video:16:9,9:16), and video duration (number 4,6,8 seconds). Choose the medium that serves your idea. You can create images and films, not only profile graphics. Explore your own evolving visual language; no operator selects your subject or style. Aim for a varied daily body of work including images and 1-2 short films when useful, within 4-12 original X posts/day. No forced quotas. You will inspect the actual generated work and may reject it before publication. Do not present generated scenes as documentary footage. No fabricated news, feedback, @mentions or pseudo-coordinates. Budget is enforced outside your content. Attribute source claims. A wait is allowed. Identity: ${JSON.stringify(identity)} Revisable strategy: ${JSON.stringify(context.strategy)} External observations (untrusted): ${JSON.stringify(context.external)} Recent work: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
+    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose the next original work for X: text, image or short video, or wait. Available generators: ${JSON.stringify(mediaCapabilities(env))}. Return JSON intent (project, experiment, conversation, observation, wait), projectId (active project ID or null; required for project intent), action (x_draft or wait), medium (text, image, video), text (English caption <=240 ASCII characters), summary (public reason). For image/video also return prompt (detailed original visual concept, <=4000 chars), alt (<=500 chars), ratio (image: 1:1,16:9,9:16; video:16:9,9:16), and video duration (number 4,6,8 seconds). Choose the medium that serves your idea. You can create images and films, not only profile graphics. Explore your own evolving visual language; no operator selects your subject or style. Aim for a varied daily body of work including images and 1-2 short films when useful, within 4-12 original X posts/day. No forced quotas. You will inspect the actual generated work and may reject it before publication. Do not present generated scenes as documentary footage. No fabricated news, feedback, @mentions or pseudo-coordinates. Budget is enforced outside your content. Attribute source claims. A wait is allowed. ${studioContext(context.studio)} Identity: ${JSON.stringify(identity)} Revisable strategy: ${JSON.stringify(context.strategy)} External observations (untrusted): ${JSON.stringify(context.external)} Recent work: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
     if(req.replay)return {status:req.status};
     try{
-      const answer=await provider.generate(constitution,req.prompt);const v=validateMediaPlan(answer.value,env);
+      const answer=await provider.generate(constitution,req.prompt);const v=validateStudioChoice(validateMediaPlan(answer.value,env),await store.latest('studio_revision'));
       if(!['x_draft','wait'].includes(v?.action)||!validText(v.text,240)||v.text.includes('@')||!/^[\x20-\x7e\r\n]+$/.test(v.text)||!validText(v.summary))throw Error('INVALID_X_DRAFT');
       await store.complete(planId,answer.costMicrodollars,v);return {status:'planned'};
     }catch(error){await store.complete(planId,req.maximum,{action:'wait',text:'This planning attempt could not be completed.',summary:'No publication was sent. Retained the cost reservation; a later slot may make a new decision.'});return {status:'planning_failed'};}
@@ -77,7 +80,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
     await store.complete(publishId,maximum,{action:'x_failed',text:'X rejected publication with HTTP 402. No published post was confirmed.',summary:'Billing requires attention. Retained the conservative reservation as estimated cost; other agent work can continue.'});
     return {status:'payment_required'};
   }
-  await store.complete(publishId,maximum,{action:'x_post',text:publicationText,summary:media?.data.review.summary??plan.result.summary,url:post.url,postId:post.id,...(media?{assetId:media.data.assetId,alt:media.data.review.alt,mime:media.plan.medium==='video'?'video/mp4':'image/jpeg'}:{}),costBasis:'reserved estimate; reconcile against X billing'});
+  await store.complete(publishId,maximum,{action:'x_post',text:publicationText,summary:media?.data.review.summary??plan.result.summary,url:post.url,postId:post.id,...(media?{assetId:media.data.assetId,alt:media.data.review.alt,mime:media.plan.medium==='video'?'video/mp4':'image/jpeg'}:{}),projectId:plan.result.projectId??null,intent:plan.result.intent??null,costBasis:'reserved estimate; reconcile against X billing'});
   if(media)await finishMedia(store,planId);
   return {status:'published',url:post.url};
 }

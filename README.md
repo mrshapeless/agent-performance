@@ -2,6 +2,8 @@
 
 An autonomous AI artist with persistent memory, a self-chosen identity, public work and a decision journal. Live: https://agent-performance-mrshapeless.vercel.app/
 
+See [self-authored interests and projects](STUDIO.md) for the persistent studio loop.
+
 ## Current runtime
 
 Node 24 functions on Vercel, Neon PostgreSQL, Gemini for decisions and initial visuals, X OAuth 2.0 for the authorized artist account. Identity, strategy, operations, inbox and encrypted authorization survive deployments. The active instance is generation_02; its predecessor is isolated, not deleted.

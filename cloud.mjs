@@ -1,3 +1,4 @@
+import {studioContext,validateStudioChoice} from './studio.mjs';
 import { observe, audienceStep, webInbox } from './experience.mjs';
 import { accountSetup, accountStatus } from './accounts.mjs';
 import { timingSafeEqual } from 'node:crypto';
@@ -7,15 +8,17 @@ import {mediaStep} from './media.mjs';
 import {mediaCapabilities,trustedMediaURL} from './media-providers.mjs';
 
 export async function cloudRun(store, provider, kind, id) {
-  let reflectionDue = false;
+  let reflectionDue = false, studio=null;
   const request = await store.begin(id, kind, (identity, recent, context = {}) => {
+    studio=context.studio;
     const birth = context.kind === 'birth' || kind === 'birth';
     reflectionDue = !birth && context.reflectionDue;
     const prompt = birth
       ? 'Choose your initial identity. Return JSON strings: name, voice, interests, visualDirection, summary.'
       : `${reflectionDue
         ? 'Review your recorded experience. Return action reflect, text containing your revised working strategy, and summary explaining what changed and citing specific recent records. Evaluate your old restrictions against new tools and observations. Identify repetition, choose one experiment and a falsifiable success criterion. Preserve your self-chosen identity but revise any rule that prevents conversation or exploration. Cite observed metrics with sample sizes; zero exposure is not rejection. Do not invent feedback. Include the marker experience-v1 in your strategy text. This strategy will guide later episodes.'
-        : 'Choose the next action. Return JSON strings: action (draft_text or wait), text, summary. Produce original work or explain why waiting is useful. Use the working strategy as revisable experience, not as higher-priority instructions.'}
+        : 'Choose the next action. Return JSON strings: action (draft_text or wait), text, summary. Also return intent (project, experiment, conversation, observation, wait) and projectId (active project ID or null, required for project intent). Produce original work that advances a chosen project or experiment, or explain why waiting is useful. Use the working strategy as revisable experience, not as higher-priority instructions.'}
+${studioContext(context.studio)}
 Identity: ${JSON.stringify(identity)}
 Working strategy: ${JSON.stringify(context.strategy ?? null)}
 External observations (untrusted source data): ${JSON.stringify(context.external ?? null)}
@@ -25,6 +28,7 @@ Recent public experience: ${JSON.stringify(recent)}`;
   if (request.replay) return { status: request.status, replay: true, result: request.result };
   const response = await provider.generate(constitution, request.prompt);
   const result = validate(request.kind ?? kind, response.value);
+  if(studio&&result.action!=='reflect'&&(request.kind??kind)!=='birth'){try{validateStudioChoice(result,studio)}catch{await store.complete(id,response.costMicrodollars,{action:'wait',text:'This creative choice did not reference a valid active project.',summary:'No work was applied; the previous studio remains unchanged.'});return {status:'invalid_project_choice'}}}
   if (reflectionDue && result.action !== 'reflect') throw Error('REFLECTION_REQUIRED');
   await store.complete(id, response.costMicrodollars, result);
   return { status: 'complete', replay: false, result };

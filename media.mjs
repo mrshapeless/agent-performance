@@ -55,7 +55,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    }
    if(job.plan.medium==='image'){
     const asset=await services.image(job.plan.prompt,job.plan.ratio);
-    await store.complete(op,asset.costMicrodollars,{action:'art_image',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,assetId:op,mime:asset.mime},asset);
+    await store.complete(op,asset.costMicrodollars,{action:'art_image',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,assetId:op,mime:asset.mime},asset);
     await patch(store,job,'rendered',{assetId:op});return {status:'image_created'};
    }
    const prediction=await services.startVideo(job.plan);
@@ -72,12 +72,12 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    }
    const asset=await services.archiveVideo(job.id,p.output);
    op=job.id+'-archive';const req=await store.begin(op,'step',()=>({maximum:0}));
-   if(!req.replay)await store.complete(op,0,{action:'art_video',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,assetId:op,mime:'video/mp4'},asset);
+   if(!req.replay)await store.complete(op,0,{action:'art_video',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,assetId:op,mime:'video/mp4'},asset);
    await patch(store,job,'rendered',{assetId:op});return {status:'video_archived'};
   }
   if(job.state==='rendered'){
    const asset=await services.load(await store.asset(job.data.assetId));
-   const prompt=`Inspect this generated ${job.plan.medium}. Decide whether to publish the actual result on X. You can reject it. Look for visible/audible defects, misleading factual depiction, unintended text and fit to your intent. A generated scene is art, never documentary evidence. Return JSON action (publish or reject), text (final English caption <=240 ASCII characters, no @mentions), alt (<=500 characters describing the actual result), summary (public reason). Your original brief: ${JSON.stringify(job.plan)}`;
+   const prompt=`Inspect this generated ${job.plan.medium}. Decide whether to publish the actual result on X. You can reject it. Look for visible/audible defects, misleading factual depiction, unintended text and fit to your intent. A generated scene is art, never documentary evidence. Return JSON action (publish or reject), text (final English caption <=240 ASCII characters, no @mentions), alt (<=500 characters describing the actual result), summary (public reason). Your own current criteria and projects: ${JSON.stringify(await store.latest('studio_revision'))}. Your original brief: ${JSON.stringify(job.plan)}`;
    op=job.id+'-review';maximum=provider.quote(constitution,prompt)+2_000_000;
    const req=await store.begin(op,'step',()=>({maximum}));
    let v;
@@ -85,7 +85,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    else{
     const answer=await provider.generate(constitution,prompt,asset);v=answer.value;
     if(!['publish','reject'].includes(v?.action)||typeof v.text!=='string'||!v.text.trim()||v.text.length>240||!/^[\x20-\x7e\r\n]+$/.test(v.text)||v.text.includes('@')||typeof v.alt!=='string'||!v.alt.trim()||v.alt.length>500||typeof v.summary!=='string'||!v.summary.trim()||v.summary.length>4000)throw Error('INVALID_MEDIA_REVIEW');
-    v={...v,decision:v.action,action:'media_review',assetId:job.data.assetId,mime:asset.mime};
+    v={...v,projectId:job.plan.projectId??null,intent:job.plan.intent??null,decision:v.action,action:'media_review',assetId:job.data.assetId,mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,v);
    }
    await patch(store,job,v.decision==='publish'?'approved':'rejected',{review:v});return {status:v.decision==='publish'?'media_approved':'media_rejected'};

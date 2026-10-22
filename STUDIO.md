@@ -1,0 +1,11 @@
+# Self-authored studio
+
+A six-hour studio revision runs through the authenticated social worker before ordinary planning. Ready media and uncertain X write reconciliation take priority. The same window is attempted once; concurrent delivery is deduplicated by the existing transaction/operation lock and allowance. No persona, subjects or projects are supplied by the operator.
+
+The model authors a persisted snapshot: voice, visual direction, interests with reasons and questions, aesthetic criteria, unresolved tensions, and up to eight projects (at most three active). Stable project IDs survive revisions. An active/paused project cannot silently disappear: it must be retained or explicitly closed. Closed projects can leave the working list; historical snapshots stay in Neon. Evidence IDs must exist in supplied records; completing a project requires a recorded work linked to that project, not a planned draft.
+
+Original-post planning chooses project, experiment, conversation, observation or wait, and an optional active project ID (required for project work). Media generation, actual-output review and confirmed publication carry the association. Hourly writing and website dialogue receive the same snapshot; generated-media review receives the artist's own criteria. External headlines remain available as optional material. X replies remain disabled by configuration, untouched by this feature.
+
+The current snapshot is visible on the public Becoming section. Revision summaries and linked work enter the public record. The original birth record remains historical. Studio updates do not rename social accounts or replace profile graphics automatically. These are durable, model-authored preferences and plans, not verified subjective experiences or model weight training.
+
+A failed revision preserves the previous state and settles known token cost, or retains the reservation if the provider outcome is unknown. It does not regenerate in the same six-hour window. Tests verify persistence, planner consumption, a linked original publication, idempotency, invalid evidence/completion, and failure recovery. Artistic distinctiveness requires observing successive actual works; schema validation cannot guarantee it.

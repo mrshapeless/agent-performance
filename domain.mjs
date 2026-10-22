@@ -28,7 +28,7 @@ function text(value, max = 4000) {
 export function validate(kind, result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw Error('Expected object');
   const keys = kind === 'birth' ? ['name', 'voice', 'interests', 'visualDirection', 'summary'] : ['action', 'text', 'summary'];
-  if (Object.keys(result).some(k => !keys.includes(k))) throw Error('Unexpected model field');
+  if (Object.keys(result).some(k => !keys.includes(k) && !(kind!=='birth'&&['intent','projectId'].includes(k)))) throw Error('Unexpected model field');
   for (const key of keys) text(result[key]);
   if (kind !== 'birth' && !['draft_text', 'wait', 'reflect'].includes(result.action)) throw Error('Tool not permitted');
   return result;
