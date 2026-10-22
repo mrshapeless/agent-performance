@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import { constitution } from './domain.mjs';
 import { AppearanceImage } from './appearance.mjs';
 import { xClient } from './x.mjs';
@@ -26,6 +27,8 @@ export async function setupAppearance(store,provider,env){
 export async function socialStep(store,provider,env,now=new Date(),makeClient=xClient){
   if(env.X_ENABLED!=='true')return {status:'not_connected'};
   const x=makeClient(store,env);
+  const recovery=await reconcileX(store,x,now);
+  if(recovery)return recovery;
   // A two-hour slot: at most twelve original publications per day.
   const slot=Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
   let published=await store.operation(publishId);
@@ -52,6 +55,10 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
       await store.pool.query("UPDATE agent_oauth_tokens SET status='reconnect_required' WHERE id=1");
       await store.complete(publishId,maximum,{action:'x_failed',text:'X authorization failed; publication was not completed.',summary:'Reconnect X from the private control page. Other agent work can continue.',errorCode:error.message,phase:error.phase??'authorization'});
       return {status:'reconnect_required'};
+    }
+    if(error.phase==='verify'){
+      await store.complete(publishId,maximum,{action:'x_failed',text:'X account verification was unavailable. No publish request was sent.',summary:'The next scheduled cycle may retry; other agent work continues.'});
+      return {status:'verification_unavailable'};
     }
     if(error.message!=='X_HTTP_402')throw error;
     await store.complete(publishId,maximum,{action:'x_failed',text:'X rejected publication with HTTP 402. No published post was confirmed.',summary:'Billing requires attention. Retained the conservative reservation as estimated cost; other agent work can continue.'});
@@ -81,4 +88,35 @@ export async function setupBanner(store,provider,env){
   const output=await image.generate(req.prompt,'21:9');
   await store.complete(id,output.costMicrodollars,{action:'banner_image',text:brief.alt,summary:'Rendered from the agent-authored banner brief, composed for a central 3:1 profile-header crop.',assetId:id},output);
   return {phase:'banner_image',status:'complete'};
+}
+
+// Reconcile an expired publication attempt against the authenticated account's full
+// recent timeline. Partial pages, API errors and fresh in-flight writes never clear it.
+export async function reconcileX(store,x,now=new Date()){
+ const row=(await store.pool.query("SELECT id,amount FROM agent_operations WHERE status='pending' AND id LIKE 'x-publish-%' ORDER BY id LIMIT 1")).rows[0];
+ if(!row)return null;
+ const started=(await store.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' AND payload::jsonb->>'id'=$1 ORDER BY seq DESC LIMIT 1",[row.id])).rows[0];
+ if(!started||now.getTime()-Date.parse(started.created)<300000)return {status:'publication_pending'};
+ const plan=await store.operation(row.id.replace(/^x-publish-(\d+).*$/,'x-plan-$1'));
+ if(!plan?.result?.text)return {status:'reconciliation_required'};
+ // Reserve the read cost before any additional external call. Retain estimates.
+ const amount=await store.transaction(async c=>{
+  const pending=(await c.query("SELECT amount,status FROM agent_operations WHERE id=$1",[row.id])).rows[0];
+  if(pending?.status!=='pending')return null;
+  const spent=(await c.query("SELECT COALESCE(SUM(amount),0)::text AS spent FROM agent_operations WHERE day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date")).rows[0];
+  if(Number(spent.spent)+1000000>50000000)throw Error('DAILY_ALLOWANCE_EXHAUSTED');
+  await c.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date,1000000,'complete',$2)",['x-read-'+randomUUID(),JSON.stringify({action:'x_read',costBasis:'conservative timeline read reservation'})]);
+  return Number(pending.amount);
+ });
+ if(amount===null)return {status:'reconciled'};
+ const posts=await x.recentPosts(Date.parse(started.created)-60000);
+ const normalize=t=>t.replace(/\r\n/g,'\n').trim();
+ const match=posts.find(p=>normalize(p.text)===normalize(plan.result.text));
+ if(match){
+  const url='https://x.com/i/web/status/'+match.id;
+  await store.complete(row.id,amount,{action:'x_post',text:plan.result.text,summary:'Recovered publication by matching the authenticated account timeline.',postId:match.id,url});
+  return {status:'reconciled_published',url};
+ }
+ await store.complete(row.id,amount,{action:'x_failed',text:'The interrupted post was not found in the authenticated account timeline.',summary:'Checked the complete returned timeline from one minute before the attempt, after a five-minute settling interval. No matching post found; publication lock released.'});
+ return {status:'reconciled_absent'};
 }

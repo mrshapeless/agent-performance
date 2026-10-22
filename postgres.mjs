@@ -32,7 +32,7 @@ export class PostgresStore {
         if (kind !== 'auto' && existing.kind !== kind) throw Error('OPERATION_CONFLICT');
         return { replay: true, status: existing.status, result: existing.result };
       }
-      if ((await client.query("SELECT id FROM agent_operations WHERE status='pending' LIMIT 1")).rowCount)
+      if ((await client.query("SELECT id FROM agent_operations WHERE status='pending' AND (id LIKE 'x-publish-%') = $1 LIMIT 1", [id.startsWith('x-publish-')])).rowCount)
         throw Error('UNRESOLVED_OPERATION');
       const identityRow = (await client.query("SELECT payload FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1")).rows[0];
       const identity = identityRow ? JSON.parse(identityRow.payload) : null;

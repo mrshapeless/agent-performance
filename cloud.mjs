@@ -73,7 +73,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       const conflicts = ['UNRESOLVED_OPERATION', 'ALREADY_BORN', 'NOT_BORN', 'OPERATION_CONFLICT', 'DAILY_ALLOWANCE_EXHAUSTED'];
       if (conflicts.includes(error.message)) return reply({ error: error.message }, 409);
             const safe = /^(IMAGE_HTTP_\d{3}|IMAGE_INCOMPLETE|IMAGE_INVALID|IMAGE_TOO_LARGE|IMAGE_USAGE_MISSING|X_HTTP_\d{3}|X_ACCOUNT_MISMATCH|X_NOT_CONFIGURED|X_TARIFF_NOT_CONFIGURED|X_UNCERTAIN_RESULT|INVALID_APPEARANCE_BRIEF|INVALID_X_DRAFT)$/.test(error.message) ? error.message : 'OPERATION_FAILED_CHECK_STATE_BEFORE_RETRY';
-      console.error('agent_operation_failed', safe);
+      console.error('agent_operation_failed', safe, ['verify','publish'].includes(error.phase)?error.phase:'unknown');
       return reply({ error: safe }, 503);
     } finally { if (store?.close) await store.close().catch(() => {}); }
   };

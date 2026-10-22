@@ -16,8 +16,9 @@ CREATE TABLE IF NOT EXISTS agent_operations (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS single_agent_birth
   ON agent_operations(kind) WHERE kind = 'birth';
-CREATE UNIQUE INDEX IF NOT EXISTS single_pending_episode
-  ON agent_operations(status) WHERE status = 'pending';
+DROP INDEX IF EXISTS single_pending_episode;
+CREATE UNIQUE INDEX IF NOT EXISTS single_pending_lane
+  ON agent_operations ((CASE WHEN id LIKE 'x-publish-%' THEN 'x' ELSE 'agent' END)) WHERE status = 'pending';
 CREATE TABLE IF NOT EXISTS agent_assets (
   id TEXT PRIMARY KEY,
   mime TEXT NOT NULL CHECK (mime IN ('image/jpeg','image/png','image/webp')),
