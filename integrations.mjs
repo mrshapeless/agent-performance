@@ -5,7 +5,7 @@ import { AppearanceImage } from './appearance.mjs';
 import { xClient } from './x.mjs';
 import {validateMediaPlan,enqueueMedia,readyMedia,finishMedia} from './media.mjs';
 import {mediaCapabilities} from './media-providers.mjs';
-import {planExperiment,creativeFreedom} from './experiments.mjs';
+import {planExperiment,creativeFreedom,referenceInfluence} from './experiments.mjs';
 const validText=(x,max=4000)=>typeof x==='string'&&x.trim()&&x.length<=max;
 
 export async function setupAppearance(store,provider,env){
@@ -37,11 +37,11 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   let media=await readyMedia(store);
   if(media&&now.getTime()>Number(media.data.expiresAt)){await store.pool.query("UPDATE agent_media_jobs SET state='failed',data=data || '{\"error\":\"X_MEDIA_EXPIRED\"}'::jsonb WHERE id=$1",[media.id]);media=null;}
   if(!media&&!await store.operation(await studioOperationId(store,now)))return studioStep(store,provider,now);
-  // Two bounded commissioning trials; same budget, review and delivery path as normal work.
+  // Bounded commissioning trials; same budget, review and delivery path as normal work.
   // A failed/rejected trial is preserved, never silently regenerated.
-  if(!media)for(const medium of ['image','video']){
+  if(!media)for(const [medium,trialId] of [['image','x-plan-experiment-debut-image-v1'],['video','x-plan-experiment-debut-video-v1'],['image','x-plan-reference-folklore-image-v1']]){
     if(!mediaCapabilities(env)[medium])continue;
-    const trialId='x-plan-experiment-debut-'+medium+'-v1',trial=await store.operation(trialId);
+    const trial=await store.operation(trialId);
     if(!trial)return planExperiment(store,provider,env,trialId,medium);
     if(trial.status!=='complete')return {status:'experiment_pending'};
     if(trial.result?.action!=='x_draft')continue;
@@ -59,7 +59,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
 
   if(!plan){
     if(Number.isInteger(slot)&&slot%3===0&&mediaCapabilities(env).image)return planExperiment(store,provider,env,planId);
-    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose the next original work for X: text, image or short video, or wait. Available generators: ${JSON.stringify(mediaCapabilities(env))}. Return JSON intent (project, experiment, conversation, observation, wait), projectId (active project ID or null; required for project intent), action (x_draft or wait), medium (text, image, video), text (English caption <=240 ASCII characters), summary (public reason). For image/video also return prompt (detailed original visual concept, <=4000 chars), alt (<=500 chars), ratio (image: 1:1,16:9,9:16; video:16:9,9:16), and video duration (number 4,6,8 seconds). ${creativeFreedom} Choose the medium that serves your idea. You can create images and films, not only profile graphics. Explore your own evolving visual language; no operator selects your subject or style. Aim for a varied daily body of work including images and 1-2 short films when useful, within 4-12 original X posts/day. No forced quotas. You will inspect the actual generated work and may reject it before publication. Do not present generated scenes as documentary footage. No fabricated news, feedback, @mentions or pseudo-coordinates. Budget is enforced outside your content. Attribute source claims. A wait is allowed. ${studioContext(context.studio)} Identity: ${JSON.stringify(identity)} Revisable strategy: ${JSON.stringify(context.strategy)} External observations (untrusted): ${JSON.stringify(context.external)} Recent work: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
+    const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Choose the next original work for X: text, image or short video, or wait. Available generators: ${JSON.stringify(mediaCapabilities(env))}. Return JSON intent (project, experiment, conversation, observation, wait), projectId (active project ID or null; required for project intent), action (x_draft or wait), medium (text, image, video), text (English caption <=240 ASCII characters), summary (public reason). For image/video also return prompt (detailed original visual concept, <=4000 chars), alt (<=500 chars), ratio (image: 1:1,16:9,9:16; video:16:9,9:16), and video duration (number 4,6,8 seconds). ${creativeFreedom} Optional creative input: ${JSON.stringify(referenceInfluence)} Choose the medium that serves your idea. You can create images and films, not only profile graphics. Explore your own evolving visual language; no operator selects your subject or style. Aim for a varied daily body of work including images and 1-2 short films when useful, within 4-12 original X posts/day. No forced quotas. You will inspect the actual generated work and may reject it before publication. Do not present generated scenes as documentary footage. No fabricated news, feedback, @mentions or pseudo-coordinates. Budget is enforced outside your content. Attribute source claims. A wait is allowed. ${studioContext(context.studio)} Identity: ${JSON.stringify(identity)} Revisable strategy: ${JSON.stringify(context.strategy)} External observations (untrusted): ${JSON.stringify(context.external)} Recent work: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
     if(req.replay)return {status:req.status};
     try{
       const answer=await provider.generate(constitution,req.prompt);const v=validateStudioChoice(validateMediaPlan(answer.value,env),await store.latest('studio_revision'));
