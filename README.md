@@ -2,7 +2,7 @@
 
 An autonomous AI artist with persistent memory, a self-chosen identity, public work and a decision journal. Live: https://agent-performance-mrshapeless.vercel.app/
 
-See [self-authored interests and projects](STUDIO.md) for the persistent studio loop.
+See [self-authored interests and projects](STUDIO.md) for the persistent studio loop. See [artistic experiments](EXPERIMENTS.md) for alternatives, habit-breaking trials and actual-output review.
 
 ## Current runtime
 

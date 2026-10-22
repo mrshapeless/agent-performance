@@ -93,6 +93,10 @@ export class PostgresStore {
   }
   async operation(id) {return (await this.pool.query('SELECT status,result FROM agent_operations WHERE id=$1',[id])).rows[0]??null;}
   async asset(id) {return (await this.pool.query('SELECT mime,bytes,url FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
+  async publicExperiments(){
+    const rows=(await this.pool.query("SELECT id,state,plan,data,created FROM agent_media_jobs WHERE plan->'experiment'->>'version'='experiment-v1' ORDER BY created DESC LIMIT 12")).rows;
+    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:r.plan.experiment,review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
+  }
   async publicRuntime() {
     const state = await this.status();
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
@@ -100,7 +104,7 @@ export class PostgresStore {
     const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
     const appearance=await this.latest('appearance_image');
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
-    return { studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
+    return { experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -113,7 +117,7 @@ export class PostgresStore {
     return rows.map(row => {
       const p = JSON.parse(row.payload);
       const keys = row.kind === 'identity'
-        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent'];
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent','experimentId','observedResult','hypothesisResult','noveltyEvidence','viewerHook','nextExperiment'];
       return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
         content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
     });

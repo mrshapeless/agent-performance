@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {PGlite} from '@electric-sql/pglite';
+import {readFile} from 'node:fs/promises';
+import {PostgresStore} from './postgres.mjs';
+import {planExperiment,validateExperiment,validateExperimentReview} from './experiments.mjs';
+import {mediaStep,enqueueMedia} from './media.mjs';
+const env={X_ENABLED:'true',X_REPLIES_ENABLED:'false',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
+const idea=(medium='image')=>({hypothesis:'Can a soft form make a boundary feel unstable?',habitToBreak:'Rigid technical diagrams',audienceQuestion:'Which transformation is memorable?',alternatives:['a','b','c'].map((id,i)=>({id,concept:'An independent scene '+i,medium,palette:['coral','violet','gold'][i],material:['wax','cloth','glass'][i],composition:['close-up','wide','overhead'][i],dramaturgy:['melting','falling','rising'][i]})),selectedId:'a',selectionReason:'The material makes the question visible.',projectId:null,prompt:'A coral wax gate melts into an impossible garden.',alt:'A melting coral gate',ratio:'16:9',duration:4,caption:'A boundary that cannot hold its shape.',summary:'Testing a departure from diagrams.'});
+async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(s,a)=>{const r=await db.query(s,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const store=new PostgresStore({query:c.query,connect:async()=>c});await store.begin('birth','birth',()=>({maximum:1}));await store.complete('birth',1,{name:'Artist'});return {store,db};}
+test('experiments reject repeated recipes, duplicate alternatives and wrong media before spending on render',()=>{
+ const v=idea(),old=validateExperiment(v,env);
+ assert.throws(()=>validateExperiment(v,env,[{kind:'x_draft',payload:old}]),/REPEATED/);
+ const dup=idea();dup.alternatives[1]={...dup.alternatives[0],id:'b'};assert.throws(()=>validateExperiment(dup,env),/DUPLICATE/);
+ assert.throws(()=>validateExperiment(v,env,[],'video'),/MEDIUM/);
+ assert.equal(validateExperimentReview({action:'publish',observedResult:'Only a grid',hypothesisResult:'not_supported',noveltyEvidence:'No change',viewerHook:'Untested',nextExperiment:'Try a physical object'}).action,'reject');
+});
+for(const medium of ['image','video'])test(`${medium} experiment is durable, reviewed using actual bytes and exposed with alternatives; rejection cannot upload`,async()=>{
+ const {store:s,db}=await fixture();let plans=0,renders=0,reviews=0;
+ const planner={quote:()=>100,generate:async(system,prompt,media,schema)=>{plans++;assert.match(prompt,/THREE/);assert.match(prompt,/provisional techniques/);assert.ok(schema.properties.alternatives);return {costMicrodollars:20,value:idea(medium)}}};
+ const services={imageQuote:()=>100,image:async()=>{renders++;return {bytes:Buffer.from('actual pixels'),mime:'image/jpeg',costMicrodollars:30}},videoQuote:()=>100,startVideo:async()=>{renders++;return {id:'p1'}},videoStatus:async()=>({status:'succeeded',output:'url'}),archiveVideo:async()=>({bytes:Buffer.from('actual frames'),mime:'video/mp4'}),load:async a=>({...a,bytes:Buffer.from(a.bytes)})};
+ const reviewer={quote:()=>100,generate:async(system,prompt,asset,schema)=>{reviews++;assert.ok(asset.bytes.length);assert.match(prompt,/Rigid technical diagrams/);assert.ok(schema.properties.observedResult);return {costMicrodollars:30,value:{action:'publish',text:'A new scene.',alt:'Only a grid remains',summary:'The departure did not happen.',observedResult:'The result repeats the grid',hypothesisResult:'not_supported',noveltyEvidence:'No material change',viewerHook:'Unmeasured',nextExperiment:'Try a material transformation'}}}};
+ try{const id='x-plan-test-'+medium;await planExperiment(s,planner,env,id,medium);await planExperiment(s,planner,env,id,medium);assert.equal(plans,1);const p=(await s.operation(id)).result;await enqueueMedia(s,id,p);await enqueueMedia(s,id,p);await mediaStep(s,reviewer,env,services);if(medium==='video')await mediaStep(s,reviewer,env,services);await mediaStep(s,reviewer,env,services,()=>assert.fail('must not upload rejected work'));assert.equal((await mediaStep(s,reviewer,env,services)).status,'no_media_jobs');assert.equal(renders,1);assert.equal(reviews,1);const publicWork=(await s.publicRuntime()).experiments[0];assert.equal(publicWork.state,'rejected');assert.equal(publicWork.experiment.alternatives.length,3);assert.equal(publicWork.review.hypothesisResult,'not_supported');assert.equal((await s.status()).unresolved,0);
+ }finally{await db.close()}
+});
+test('failed experimental planning is charged once and does not block unrelated agent work',async()=>{const {store:s,db}=await fixture();let calls=0;try{const provider={quote:()=>100,generate:async()=>{calls++;return {costMicrodollars:20,value:{}}}};await planExperiment(s,provider,env,'x-plan-invalid');await planExperiment(s,provider,env,'x-plan-invalid');assert.equal(calls,1);assert.equal((await s.status()).unresolved,0);assert.equal((await s.status()).todayMicrodollars,21)}finally{await db.close()}});
