@@ -10,15 +10,16 @@ export function parseFeed(xml,source,now=new Date()){
 }
 export function feedback(posts){return posts.map(p=>{const m=p.public_metrics??{},views=m.impression_count??null;const interactions=(m.like_count??0)+2*(m.reply_count??0)+2*(m.retweet_count??m.repost_count??0)+(m.quote_count??0);return {id:p.id,text:p.text,ageHours:p.created_at?(Date.now()-Date.parse(p.created_at))/3600000:null,metrics:m,evidence:views===null?'exposure unavailable':views<50?'insufficient exposure':'observed engagement',score:views>=50?Math.round(1000*interactions/views)/1000:null};});}
 export async function observe(store,env,now=new Date(),fetcher=fetch,makeClient=xClient){
- const id='observe-'+Math.floor(now/900000),maximum=250000;
+ const id='observe-'+Math.floor(now/300000),maximum=250000;
  const req=await store.begin(id,'step',()=>({maximum}));if(req.replay)return {status:req.status,replay:true};
- const news=[],errors=[];let metrics=[],count=0,cursor=null;
+ const news=[],errors=[];let metrics=[],count=0,cursor=null,xPhase='identity';
  const results=await Promise.allSettled(feeds.map(async([name,url])=>{const r=await fetcher(url,{signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error(name);const text=await r.text();if(text.length>1000000)throw Error(name);const items=parseFeed(text,name,now);if(!items.length)throw Error(name);return items;}));
  results.forEach((r,i)=>r.status==='fulfilled'?news.push(...r.value):errors.push(feeds[i][0]+': unavailable'));
  if(env.X_ENABLED==='true')try{
   const x=makeClient(store,env),me=await x.verify();
+  try { xPhase='mentions';
   const previous=await store.latest('observation');const old=previous?.cursor;
-  const params=new URLSearchParams({max_results:'10','tweet.fields':'author_id,created_at,referenced_tweets,conversation_id'});
+  const params=new URLSearchParams({max_results:'10','tweet.fields':'author_id,created_at,referenced_tweets,conversation_id,in_reply_to_user_id'});
   if(old?.page){params.set('pagination_token',old.page);if(old.since)params.set('since_id',old.since);else params.set('start_time',old.start);}
   else if(old?.since)params.set('since_id',old.since);else params.set('start_time',new Date(now-86400000).toISOString());
   const mentions=await x.request('GET','/2/users/'+me.id+'/mentions?'+params);
@@ -28,7 +29,7 @@ export async function observe(store,env,now=new Date(),fetcher=fetch,makeClient=
   cursor=mentions.meta?.next_token?{since:old?.since??null,newest,page:mentions.meta.next_token,start:old?.start??params.get('start_time')}:{since:newest};
   for(const m of items){
    if(!/^\d+$/.test(m.id??'')||!/^\d+$/.test(m.author_id??'')||m.author_id===me.id||typeof m.text!=='string')continue;
-   if(!m.text.toLowerCase().includes('@'+env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase()))continue;
+   if(m.in_reply_to_user_id!==me.id&&!m.text.toLowerCase().includes('@'+env.X_EXPECTED_USERNAME.replace(/^@/,'').toLowerCase()))continue;
    const author='x:'+m.author_id;
    if(/\b(stop|unsubscribe|opt out|do not reply|don't reply)\b/i.test(m.text)){
     await store.pool.query('INSERT INTO agent_optouts(author) VALUES($1) ON CONFLICT DO NOTHING',[author]);
@@ -37,9 +38,11 @@ export async function observe(store,env,now=new Date(),fetcher=fetch,makeClient=
    if((await store.pool.query('SELECT author FROM agent_optouts WHERE author=$1',[author])).rows.length)continue;
    const r=await store.pool.query("INSERT INTO agent_inbox(id,platform,author,text,metadata) VALUES($1,'x',$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id",['x-'+m.id,author,m.text.slice(0,3000),JSON.stringify({postId:m.id,authorId:m.author_id,created:m.created_at,references:m.referenced_tweets??[]})]);count+=r.rows.length;
   }
+  }catch(e){errors.push('X mentions: '+(/^X_[A-Z_0-9]+$/.test(e.message)?e.message:'unavailable'));}
+  xPhase='metrics';
   const own=(await store.pool.query("SELECT payload FROM agent_events WHERE kind IN ('x_post','x_reply') ORDER BY seq DESC LIMIT 10")).rows.map(r=>JSON.parse(r.payload)).filter(p=>/^\d+$/.test(p.postId??''));
   if(own.length){const r=await x.request('GET','/2/tweets?'+new URLSearchParams({ids:[...new Set(own.map(p=>p.postId))].join(','),'tweet.fields':'public_metrics,created_at'}));metrics=feedback(r.data??[]);if(r.errors?.length)errors.push('Some post metrics unavailable');}
- }catch(e){errors.push(/^X_[A-Z_0-9]+$/.test(e.message)?e.message:'X observations unavailable');}
+ }catch(e){errors.push('X '+xPhase+': '+(/^X_[A-Z_0-9]+$/.test(e.message)?e.message:'unavailable'));}
  const text=['OBSERVATION / '+now.toISOString(),...news.map(n=>n.source+': '+n.title+'\n'+n.url),...metrics.map(m=>'Post '+m.id+': '+JSON.stringify(m.metrics)+'; '+m.evidence+'; engagement score '+(m.score??'not rated')),count+' new audience messages',...errors].join('\n\n');
  const previous=await store.latest('observation');
  await store.complete(id,maximum,{action:'observation',text,summary:`Read ${news.length} source headlines, measured ${metrics.length} posts and queued ${count} new mentions. Metrics are noisy evidence, not a quality verdict.`,news,metrics,cursor:cursor??previous?.cursor??null,observedAt:now.toISOString(),errors});

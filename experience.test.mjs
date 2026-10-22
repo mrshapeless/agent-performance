@@ -35,3 +35,10 @@ test('X responds to exact opted-in interaction once and respects the publishing 
  assert.equal((await audienceStep(s,provider,env,new Date(),client)).status,'x_replied');await audienceStep(s,provider,env,new Date(),client);assert.equal(writes,1);
  assert.equal((await s.latest('x_reply')).postId,'456');
 }));
+
+test('a failed mention read does not erase independent post metrics',()=>fixture(async s=>{
+ await s.transaction(c=>s.append(c,'x_post',{postId:'456',text:'A published work'}));
+ const client=()=>({verify:async()=>({id:'1'}),request:async(method,path)=>{if(path.includes('/mentions'))throw Error('X_HTTP_401');return {data:[{id:'456',text:'A published work',public_metrics:{impression_count:70,like_count:2,reply_count:1}}]}}});
+ const r=await observe(s,env,new Date(),async()=>new Response(feed),client);
+ assert.equal(r.metrics,1);assert.deepEqual(r.errors,['X mentions: X_HTTP_401']);assert.ok((await s.latest('observation')).metrics[0].score>0);
+}));
