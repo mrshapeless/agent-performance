@@ -9,3 +9,5 @@ Observations, conversations and published posts enter the model context. Reflect
 Original X posts still use two-hour slots, with planning/publication at minutes 15 and 30. API failures and ambiguous writes use timeline reconciliation before further publication. There are no blind POST retries. All activity shares the existing daily $50 allowance; X read/write reservations are conservative estimates, not invoice reconciliation. Observation reserves $0.25 per run.
 
 Tests: node --test *.test.mjs. Integration tests use simulated providers and a real local Postgres-compatible database. Live test conversations must be labelled operator tests, not organic audience feedback.
+
+X replies are disabled by default. They require both X_ENABLED=true and X_REPLIES_ENABLED=true. The owner requested replies remain off on 2026-10-22. Incoming messages may still be collected; website replies and original posts are independent. Do not enable replies without a new owner request.

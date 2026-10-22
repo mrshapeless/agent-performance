@@ -4,7 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
 import {observe,audienceStep,webInbox,parseFeed,feedback} from './experience.mjs';
-const env={VERCEL_ENV:'production',AGENT_ENABLED:'true',AGENT_ADMIN_SECRET:'a'.repeat(40),X_ENABLED:'true',X_EXPECTED_USERNAME:'artist'};
+const env={VERCEL_ENV:'production',AGENT_ENABLED:'true',AGENT_ADMIN_SECRET:'a'.repeat(40),X_ENABLED:'true',X_REPLIES_ENABLED:'true',X_EXPECTED_USERNAME:'artist'};
 async function fixture(fn){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'self chosen'});try{await fn(s)}finally{await db.close()}}
 const feed='<rss><channel><item><title>New observation</title><link>https://example.com/story</link><pubDate>'+new Date().toUTCString()+'</pubDate></item></channel></rss>';
 test('observations retain sources, zero exposure is not failure, mentions deduplicate and stop opts out',()=>fixture(async s=>{
@@ -31,7 +31,7 @@ test('X responds to exact opted-in interaction once and respects the publishing 
  await s.pool.query("INSERT INTO agent_inbox(id,platform,author,text,metadata) VALUES('x-123','x','x:8','@artist Why?', $1)",[JSON.stringify({postId:'123',authorId:'8'})]);
  let writes=0;const client=()=>({request:async()=>({data:{author_id:'8'}}),post:async(text,id)=>{assert.equal(id,'123');writes++;return {id:'456',url:'https://x.com/i/web/status/456'}}});
  const provider={quote:()=>10,generate:async()=>({costMicrodollars:1,value:{action:'reply',text:'I have a reason worth discussing.',summary:'Responding directly.',genuine:true}})};
- assert.equal((await audienceStep(s,provider,{...env,X_ENABLED:'false'},new Date(),client)).status,'no_messages');assert.equal(writes,0);
+ assert.equal((await audienceStep(s,provider,{...env,X_ENABLED:'false'},new Date(),client)).status,'no_messages');assert.equal(writes,0);assert.equal((await audienceStep(s,provider,{...env,X_REPLIES_ENABLED:undefined},new Date(),client)).status,'no_messages');assert.equal(writes,0);
  assert.equal((await audienceStep(s,provider,env,new Date(),client)).status,'x_replied');await audienceStep(s,provider,env,new Date(),client);assert.equal(writes,1);
  assert.equal((await s.latest('x_reply')).postId,'456');
 }));

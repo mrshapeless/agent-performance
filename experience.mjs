@@ -72,7 +72,7 @@ export async function webInbox(request,store,env){
 }
 const safeText=(t,max)=>typeof t==='string'&&t.trim()&&t.length<=max;
 export async function audienceStep(store,provider,env,now=new Date(),makeClient=xClient){
- const row=(await store.pool.query("SELECT * FROM agent_inbox WHERE status='pending' AND (platform='web' OR $1) ORDER BY created,id LIMIT 1",[env.X_ENABLED==='true'])).rows[0];if(!row)return {status:'no_messages'};
+ const row=(await store.pool.query("SELECT * FROM agent_inbox WHERE status='pending' AND (platform='web' OR $1) ORDER BY created,id LIMIT 1",[env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true'])).rows[0];if(!row)return {status:'no_messages'};
  if((await store.pool.query('SELECT author FROM agent_optouts WHERE author=$1',[row.author])).rows.length){await store.pool.query("UPDATE agent_inbox SET status='ignored',response='Opt-out respected.' WHERE id=$1",[row.id]);return {status:'opted_out'};}
  const planId='x-plan-reply-'+row.id, pubId='x-publish-reply-'+row.id;
  let plan=await store.operation(planId);
