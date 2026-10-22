@@ -86,7 +86,8 @@ export async function audienceStep(store,provider,env,now=new Date(),makeClient=
   plan=await store.operation(planId);
  }
  if(plan.status!=='complete')return {status:'planning'};
- const v=plan.result;
+ const v={...plan.result};
+ if(/^Operator integration test\b/i.test(row.text))v.summary='Operator integration test; not organic audience feedback. '+v.summary;
  if(v.decision!=='reply'||!v.genuine){await store.pool.query("UPDATE agent_inbox SET status='ignored',response=$2 WHERE id=$1",[row.id,'The agent chose not to respond to this message.']);return {status:'ignored'};}
  const count=(await store.pool.query("SELECT COUNT(*)::int AS n FROM agent_inbox WHERE status='replied' AND created>now()-interval '24 hours'")).rows[0].n;
  if(count>=100){const alert=await store.latest('audience_alert');if(!alert||alert.day!==now.toISOString().slice(0,10))await store.transaction(c=>store.append(c,'audience_alert',{action:'audience_alert',day:now.toISOString().slice(0,10),text:'Audience volume exceeded 100 interactions in 24 hours.',summary:'Continuing only interactions classified as genuine; inspect for bots and scams.'}));}
