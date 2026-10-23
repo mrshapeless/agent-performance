@@ -6,6 +6,7 @@ import { constitution, validate } from './domain.mjs';
 import { setupAppearance, setupBanner, socialStep } from './integrations.mjs';
 import {mediaStep} from './media.mjs';
 import {mediaCapabilities,trustedMediaURL} from './media-providers.mjs';
+import {manualReplyHandler,manualDraftStep,syncReplyThreads} from './manual-replies.mjs';
 
 export async function cloudRun(store, provider, kind, id) {
   let reflectionDue = false, studio=null;
@@ -53,13 +54,15 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     const inbox = url.pathname === '/api/inbox';
     const observation = url.pathname === '/api/observe';
     const audience = url.pathname === '/api/audience';
+    const manual = url.pathname === '/api/manual-replies';
     const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
     const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience','/api/media'].includes(url.pathname);
-    const publicRead = !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
+    const publicRead = !manual && !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
     if (!inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
-    if (!inbox && (tick || request.method === 'POST')) {
+    if (manual && request.method==='POST' && (env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true'))return reply({error:'EXECUTION_DISABLED'},409);
+    if (!manual && !inbox && (tick || request.method === 'POST')) {
       if (env.VERCEL_ENV !== 'production') return reply({ error: 'PRODUCTION_ONLY' }, 403);
       if (env.AGENT_ENABLED !== 'true') return reply({ error: 'AGENT_DISABLED' }, 409);
       kind = tick ? 'auto' : url.searchParams.get('action');
@@ -71,9 +74,11 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     let store;
     try {
       store = await openStore();
+      if (manual) return await manualReplyHandler(request,store,request.method==='POST'?createProvider():null,env);
       if (inbox) return await webInbox(request,store,env);
-      if (observation) return reply(await observe(store,env,now()));
-      if (audience) return reply(await audienceStep(store,createProvider(),env,now()));
+      if (observation) { const observed=await observe(store,env,now());let threads;try{threads=await syncReplyThreads(store,env,now());}catch(e){threads={status:'deferred',error:['DAILY_ALLOWANCE_EXHAUSTED','UNRESOLVED_OPERATION'].includes(e.message)?e.message:'THREAD_SYNC_UNAVAILABLE'};}return reply({...observed,threads}); }
+      // Public X replies stay off; this worker may only draft in the private queue.
+      if (audience) {const result=await audienceStep(store,createProvider(),{...env,X_REPLIES_ENABLED:'false'},now());return reply(result.status==='no_messages'?await manualDraftStep(store,createProvider(),env):result);}
       if (media) return reply(await mediaStep(store,createProvider(),env));
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
@@ -89,7 +94,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if(tick && await store.latest('observation') && !(await store.latest('reflect'))?.text?.includes('experience-v1')) id='experience-v1';
       return reply(await cloudRun(store, createProvider(), kind, id));
     } catch (error) {
-      const conflicts = ['UNRESOLVED_OPERATION', 'ALREADY_BORN', 'NOT_BORN', 'OPERATION_CONFLICT', 'DAILY_ALLOWANCE_EXHAUSTED'];
+      const conflicts = ['UNRESOLVED_OPERATION', 'ALREADY_BORN', 'NOT_BORN', 'OPERATION_CONFLICT', 'DAILY_ALLOWANCE_EXHAUSTED','STALE_VERSION','ITEM_CLOSED','OPTED_OUT','IDEMPOTENCY_CONFLICT'];
       if (conflicts.includes(error.message)) return reply({ error: error.message }, 409);
             const safe = /^(IMAGE_HTTP_\d{3}|IMAGE_INCOMPLETE|IMAGE_INVALID|IMAGE_TOO_LARGE|IMAGE_USAGE_MISSING|X_HTTP_\d{3}|X_ACCOUNT_MISMATCH|X_NOT_CONFIGURED|X_TARIFF_NOT_CONFIGURED|X_UNCERTAIN_RESULT|INVALID_APPEARANCE_BRIEF|INVALID_X_DRAFT)$/.test(error.message) ? error.message : 'OPERATION_FAILED_CHECK_STATE_BEFORE_RETRY';
       console.error('agent_operation_failed', safe, ['verify','publish'].includes(error.phase)?error.phase:'unknown');

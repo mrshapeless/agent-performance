@@ -1,0 +1,11 @@
+# Private manual reply desk
+
+The `/admin` operator console lists X audience comments and agent-written drafts. `/api/manual-replies` requires the existing operator bearer secret, including when `view=public` is supplied. Drafts and incoming message text are excluded from the public journal. New tables are scoped to the active agent generation.
+
+The operator can edit/save, regenerate, copy, skip, open an X Web Intent, and explicitly mark a reply answered. The intent uses the comment's post ID and URL-encoded draft. Opening is not sending. “Answered” is an operator assertion, not a verified X publication; no X write is made by this feature. X may require login or ignore prefilling on a particular client; copy plus the original-comment link is the fallback. The operator must select the correct X account.
+
+The audience worker handles website conversations first, then prepares one private draft per run. It explicitly disables automatic X replies, regardless of the legacy reply flag. Repeated requests reuse durable generation operations; edits use optimistic version checks. Failed drafts require operator action to regenerate. Generation uses the existing shared daily budget. Opt-outs prevent draft generation and opening.
+
+The existing mention reader remains active. Every observation additionally scans one of the account's conversations from posts published during the last six days, oldest scan first, at most two recent-search pages of 20 posts each. Pagination and high-water marks persist. This is incremental coverage, not a guarantee of all X comments; deleted/private posts and older conversations may be unavailable. The console shows sync dates and errors. Authorization, payment or permission errors pause conversation scans for 24 hours to avoid repeatedly charging failed reads. X read costs are conservative estimates, not reconciled invoices.
+
+Validation: private/public auth boundary, CSRF origin gate, draft persistence, stale edits, reply-intent encoding, absence of X publish operations, paginated read-only conversation collection, deduplication, context retention, opt-outs and access-error backoff. Local UI fixtures are explicitly labeled and never inserted into production.

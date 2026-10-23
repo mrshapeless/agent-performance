@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS agent_inbox (
  response TEXT, reply_url TEXT, metadata JSONB NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS agent_optouts (author TEXT PRIMARY KEY, created TIMESTAMPTZ DEFAULT now());
+CREATE TABLE IF NOT EXISTS agent_manual_replies (
+ inbox_id TEXT PRIMARY KEY REFERENCES agent_inbox(id),
+ state TEXT NOT NULL DEFAULT 'new' CHECK(state IN ('new','draft','opened','sent','skipped','failed')),
+ draft TEXT NOT NULL DEFAULT '',reason TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 0,
+ updated TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS agent_reply_sync (
+ id TEXT PRIMARY KEY,data JSONB NOT NULL DEFAULT '{}',updated TIMESTAMPTZ NOT NULL DEFAULT now(),error TEXT
+);
 
 ALTER TABLE agent_oauth_tokens DROP CONSTRAINT IF EXISTS agent_oauth_tokens_status_check;
 ALTER TABLE agent_oauth_tokens ADD CONSTRAINT agent_oauth_tokens_status_check CHECK (status IN ('connected','reconnect_required','disconnected'));
