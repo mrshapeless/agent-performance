@@ -1,0 +1,11 @@
+.git/
+.vercel/
+node_modules/
+.env
+.env.*
+!.env.example
+*.test.mjs
+*.log
+*.sqlite*
+*.bundle
+work/

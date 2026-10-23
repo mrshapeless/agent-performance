@@ -96,7 +96,7 @@ export class PostgresStore {
   async asset(id) {return (await this.pool.query('SELECT mime,bytes,url FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
   async publicExperiments(){
     const rows=(await this.pool.query("SELECT id,state,plan,data,created FROM agent_media_jobs WHERE plan->'experiment'->>'version' IN ('experiment-v1','experiment-v2','experiment-v3','experiment-v4') ORDER BY created DESC LIMIT 12")).rows;
-    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:r.plan.experiment,review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
+    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:Object.fromEntries(['version','hypothesis','habitToBreak','audienceQuestion','alternatives','selectedId','selectionReason','referenceIds','planningReferenceIds'].filter(k=>k in r.plan.experiment).map(k=>[k,r.plan.experiment[k]])),review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
   }
   async publicRuntime() {
     const state = await this.status();

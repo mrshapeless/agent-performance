@@ -12,3 +12,15 @@ production-dumps/
 work/
 data/
 *.sqlite*
+
+# Operator input must never enter source control.
+reference-board-*
+*clipboard*
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.zip
+*.bundle
+privacy-*

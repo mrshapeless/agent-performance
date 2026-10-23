@@ -8,36 +8,44 @@
   ],
   "functions": {
     "api/agent.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/tick.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/setup.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/social.mjs": {
       "maxDuration": 120,
-      "includeFiles": "reference-board-*.png"
+      "includeFiles": "private/**"
     },
     "api/asset.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/observe.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/audience.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/inbox.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     },
     "api/media.mjs": {
       "maxDuration": 120,
-      "includeFiles": "reference-board-*.png"
+      "includeFiles": "private/**"
     },
     "api/manual-replies.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     }
   },
   "crons": [
