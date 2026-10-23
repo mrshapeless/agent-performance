@@ -39,7 +39,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   if(!media&&!await store.operation(await studioOperationId(store,now)))return studioStep(store,provider,now);
   // Bounded commissioning trials; same budget, review and delivery path as normal work.
   // A failed/rejected trial is preserved, never silently regenerated.
-  if(!media)for(const [medium,trialId] of [['image','x-plan-experiment-debut-image-v1'],['video','x-plan-experiment-debut-video-v1'],['image','x-plan-reference-folklore-image-v1']]){
+  if(!media)for(const [medium,trialId] of [['image','x-plan-experiment-debut-image-v1'],['video','x-plan-experiment-debut-video-v1'],['image','x-plan-reference-folklore-image-v1'],['image','x-plan-craft-study-a-v1'],['image','x-plan-craft-study-b-v1']]){
     if(!mediaCapabilities(env)[medium])continue;
     const trial=await store.operation(trialId);
     if(!trial)return planExperiment(store,provider,env,trialId,medium);

@@ -94,8 +94,8 @@ export class PostgresStore {
   async operation(id) {return (await this.pool.query('SELECT status,result FROM agent_operations WHERE id=$1',[id])).rows[0]??null;}
   async asset(id) {return (await this.pool.query('SELECT mime,bytes,url FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
   async publicExperiments(){
-    const rows=(await this.pool.query("SELECT id,state,plan,data,created FROM agent_media_jobs WHERE plan->'experiment'->>'version'='experiment-v1' ORDER BY created DESC LIMIT 12")).rows;
-    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:r.plan.experiment,review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
+    const rows=(await this.pool.query("SELECT id,state,plan,data,created FROM agent_media_jobs WHERE plan->'experiment'->>'version' IN ('experiment-v1','experiment-v2') ORDER BY created DESC LIMIT 12")).rows;
+    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:r.plan.experiment,review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
   }
   async publicRuntime() {
     const state = await this.status();
@@ -117,7 +117,7 @@ export class PostgresStore {
     return rows.map(row => {
       const p = JSON.parse(row.payload);
       const keys = row.kind === 'identity'
-        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent','experimentId','observedResult','hypothesisResult','noveltyEvidence','viewerHook','nextExperiment'];
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent','experimentId','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','viewerHook','nextExperiment'];
       return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
         content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
     });
