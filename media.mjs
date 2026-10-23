@@ -49,7 +49,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  try{
   if(job.state==='queued'){
    op=job.id+'-render';maximum=job.plan.medium==='image'?services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0):services.videoQuote();
-   const req=await store.begin(op,'step',()=>({maximum}));
+   const req=await store.begin(op,'step',()=>({maximum,budgetProvider:job.plan.medium==='video'?'replicate':null}));
    if(req.replay){
     if(req.status==='complete'&&req.result?.assetId){await patch(store,job,'rendered',{assetId:req.result.assetId});return {status:'recovered_render'};}
     if(req.status==='complete'&&req.result?.predictionId){await patch(store,job,'processing',{predictionId:req.result.predictionId});return {status:'recovered_prediction'};}

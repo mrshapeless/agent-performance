@@ -26,7 +26,7 @@ test('video persists prediction across workers, archives durable URL, and review
  const {store:s,db}=await fixture();try{await seed(s,{...plan,medium:'video',ratio:'9:16',duration:6});assert.equal((await mediaStep(s,reviewer(),env,services)).status,'video_started');assert.equal((await s.status()).unresolved,0);assert.equal((await mediaStep(s,reviewer(),env,services)).status,'video_archived');assert.equal((await s.asset('media-1-archive')).mime,'video/mp4');assert.equal((await mediaStep(s,reviewer(),env,services)).status,'media_approved');}finally{await db.close()}
 });
 test('expired lease does not repeat an uncertain paid request; lanes and daily cap remain enforced',async()=>{
- const {store:s,db}=await fixture();try{await seed(s);await s.begin('media-1-render','step',()=>({maximum:500000}));await s.begin('other-agent-work','step',()=>({maximum:1}));await s.complete('other-agent-work',1,{action:'wait'});await mediaStep(s,reviewer(),env,{...services,image:async()=>assert.fail('must not regenerate')});assert.equal((await s.status()).unresolved,0);await s.begin('consume-budget','step',()=>({maximum:49000000}));await s.complete('consume-budget',49000000,{action:'wait'});await assert.rejects(s.begin('media-more','step',()=>({maximum:4000000})),/ALLOWANCE/);}finally{await db.close()}
+ const {store:s,db}=await fixture();try{await seed(s);await s.begin('media-1-render','step',()=>({maximum:500000}));await s.begin('other-agent-work','step',()=>({maximum:1}));await s.complete('other-agent-work',1,{action:'wait'});await mediaStep(s,reviewer(),env,{...services,image:async()=>assert.fail('must not regenerate')});assert.equal((await s.status()).unresolved,0);await s.begin('consume-budget','step',()=>({maximum:49000000,budgetProvider:'replicate'}));await s.complete('consume-budget',49000000,{action:'wait'});await assert.rejects(s.begin('media-more','step',()=>({maximum:4000000,budgetProvider:'replicate'})),/ALLOWANCE/);}finally{await db.close()}
 });
 test('provider input matches video schema and downloads reject untrusted URLs and oversize data',async()=>{
  assert.equal(validateMediaPlan(plan,env).medium,'image');assert.throws(()=>validateMediaPlan({...plan,medium:'video',duration:60},env),/INVALID_MEDIA/);
@@ -70,5 +70,27 @@ test('independent visual audit blocks a ready image despite positive artist revi
   assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'visual_audit_rejected');
   await mediaStep(s,provider,env,service);assert.equal(calls,1);assert.equal(await readyMedia(s),null);
   assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'rejected');
+ }finally{await db.close()}
+});
+
+test('Replicate-only cap preserves legacy video reservations and never blocks Gemini or publication',async()=>{
+ const {store:s,db}=await fixture();try{
+ await seed(s,{...plan,medium:'video',duration:6,ratio:'9:16'});
+ await s.begin('media-1-render','step',()=>({maximum:4_000_000}));
+ await s.complete('media-1-render',4_000_000,{action:'media_started',predictionId:'old'});
+ await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
+ assert.equal((await s.status()).replicateBudget.reservedMicrodollars,4_000_000);
+ await s.begin('video-budget','step',()=>({maximum:46_000_000,budgetProvider:'replicate'}));
+ await s.complete('video-budget',46_000_000,{action:'media_started'});
+ await assert.rejects(s.begin('media-next-video','step',()=>({maximum:1,budgetProvider:'replicate'})),/ALLOWANCE/);
+ for(const id of ['text','media-image','x-publish-image']){
+ await s.begin(id,'step',()=>({maximum:60_000_000}));await s.complete(id,60_000_000,{action:'wait'});
+ }
+ assert.equal((await s.status()).replicateBudget.reservedMicrodollars,50_000_000);
+ await s.pool.query("UPDATE agent_operations SET day=day-1 WHERE budget_provider='replicate'");
+ await s.begin('media-new-day','step',()=>({maximum:4_000_000,budgetProvider:'replicate'}));
+ assert.equal((await s.status()).replicateBudget.reservedMicrodollars,4_000_000);
+ await assert.rejects(s.begin('media-overlap','step',()=>({maximum:1,budgetProvider:'replicate'})),/UNRESOLVED/);
  }finally{await db.close()}
 });

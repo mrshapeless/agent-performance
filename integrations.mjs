@@ -133,8 +133,7 @@ export async function reconcileX(store,x,now=new Date()){
  const amount=await store.transaction(async c=>{
   const pending=(await c.query("SELECT amount,status FROM agent_operations WHERE id=$1",[row.id])).rows[0];
   if(pending?.status!=='pending')return null;
-  const spent=(await c.query("SELECT COALESCE(SUM(amount),0)::text AS spent FROM agent_operations WHERE day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date")).rows[0];
-  if(Number(spent.spent)+1000000>50000000)throw Error('DAILY_ALLOWANCE_EXHAUSTED');
+  // Timeline reconciliation is not a Replicate generation and has no daily budget gate.
   await c.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date,1000000,'complete',$2)",['x-read-'+randomUUID(),JSON.stringify({action:'x_read',costBasis:'conservative timeline read reservation'})]);
   return Number(pending.amount);
  });

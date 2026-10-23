@@ -22,16 +22,16 @@ test('identity survives restart; duplicate request cannot repeat paid call', asy
     assert.equal(store.verify(), true);
   } finally { store.close(); rmSync(dir, { recursive: true }); }
 });
-test('shared allowance includes unresolved requests and uses original day at settlement', () => {
+test('Gemini telemetry has no shared cap and uses original day at settlement', () => {
   const s = new Store();
   try {
     const yesterday = new Date('2026-10-20T20:59:00Z');
     const today = new Date('2026-10-20T21:01:00Z');
     s.begin('a', 'step', 49_000_000, yesterday);
-    assert.throws(() => s.begin('b', 'step', 2_000_000, yesterday), /allowance/);
+    s.begin('b', 'step', 2_000_000, yesterday);
     s.begin('c', 'step', 50_000_000, today);
     s.complete('a', 10, 'wait', {});
-    assert.equal(s.used(dayKey(yesterday)), 10);
+    assert.equal(s.used(dayKey(yesterday)), 2_000_010);
     assert.equal(s.used(dayKey(today)), 50_000_000);
   } finally { s.close(); }
 });

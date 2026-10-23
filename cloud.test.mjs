@@ -29,7 +29,7 @@ test('Postgres schema and lifecycle: restart, replay, unresolved exclusion and d
     assert.equal((await cloudRun(reopened, provider, 'birth', 'birth-1')).replay, true);
     assert.equal(calls, 1);
     await assert.rejects(cloudRun(store, provider, 'birth', 'birth-2'), /ALREADY_BORN/);
-    await assert.rejects(store.begin('too-big', 'step', () => ({ maximum: 50_000_000 })), /ALLOWANCE/);
+    await assert.rejects(store.begin('too-big', 'step', () => ({ maximum: 50_000_001, budgetProvider:'replicate' })), /ALLOWANCE/);
     await store.begin('pending', 'step', () => ({ maximum: 100 }));
     await assert.rejects(store.begin('blocked', 'step', () => ({ maximum: 100 })), /UNRESOLVED/);
     assert.equal((await store.status()).todayMicrodollars, 120);

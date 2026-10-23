@@ -60,3 +60,9 @@ CREATE TABLE IF NOT EXISTS agent_media_jobs (
  created TIMESTAMPTZ NOT NULL DEFAULT now(),updated TIMESTAMPTZ NOT NULL DEFAULT now(),
  lease_until TIMESTAMPTZ,lease_token TEXT
 );
+
+-- Only Replicate generation reservations participate in the daily spending limit.
+ALTER TABLE agent_operations ADD COLUMN IF NOT EXISTS budget_provider TEXT;
+UPDATE agent_operations o SET budget_provider='replicate'
+FROM agent_media_jobs j WHERE o.id=j.id || '-render'
+AND j.plan->>'medium'='video' AND o.budget_provider IS NULL;

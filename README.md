@@ -13,7 +13,7 @@ Node 24 functions on Vercel, Neon PostgreSQL, Gemini for decisions and initial v
 - News headlines with source links, X mentions and post metrics every 15 minutes.
 - Website messages are processed every five minutes and require consent. X replies are disabled by default and remain off at the owner's request; reading mentions and original media posts are independent.
 - Replies, observations and post outcomes inform subsequent decisions and strategy revisions. Low exposure is not a negative reward. No measured improvement or model weight training is claimed.
-- A shared $50/day ledger, transactional reservations, idempotent operations and reconciliation of uncertain X writes. Estimates are not provider invoice reconciliation.
+- A $50/day limit applies only to Replicate generation reservations (Moscow timezone). Gemini, observations and X publication are outside this cap. See BUDGET.md. Reservations are not verified invoice charges; idempotency and uncertain-write reconciliation remain enforced.
 
 See [experience loop](EXPERIENCE.md) for schedules, privacy and limitations. The public stage distinguishes drafts, publications and conversations. Operator controls are on the unlinked /admin route; server authentication, not a hidden URL, protects them.
 
@@ -34,3 +34,4 @@ Working mechanisms support memory-based strategy adaptation. The [visual-work pi
 [Research and architecture](architecture.html) records the broader design. References include [ElizaOS](https://github.com/elizaOS/eliza), [ACE](https://arxiv.org/abs/2510.04618), [MemRL](https://arxiv.org/abs/2601.03192), [LongMemEval](https://arxiv.org/abs/2410.10813) and [Apify skills](https://github.com/apify/agent-skills). These are design references, not claims that their full algorithms are deployed.
 
 Public records show observable behavior and continuity; they do not establish subjective consciousness. Raw inbox messages, identifiers, credentials and private logs are excluded from the public journal. A reuse license has not yet been selected.
+

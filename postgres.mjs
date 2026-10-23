@@ -54,10 +54,10 @@ export class PostgresStore {
       const { day, spent } = (await client.query(`SELECT
         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date::text AS day,
         COALESCE(SUM(amount),0)::text AS spent FROM agent_operations
-        WHERE day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date`)).rows[0];
-      if (Number(spent) + request.maximum > 50_000_000) throw Error('DAILY_ALLOWANCE_EXHAUSTED');
-      await client.query("INSERT INTO agent_operations(id,kind,day,amount,status) VALUES($1,$2,$3,$4,'pending')",
-        [id, kind, day, request.maximum]);
+        WHERE budget_provider='replicate' AND day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date`)).rows[0];
+      if (request.budgetProvider === 'replicate' && Number(spent) + request.maximum > 50_000_000) throw Error('DAILY_ALLOWANCE_EXHAUSTED');
+      await client.query("INSERT INTO agent_operations(id,kind,day,amount,status,budget_provider) VALUES($1,$2,$3,$4,'pending',$5)",
+        [id, kind, day, request.maximum, request.budgetProvider === 'replicate' ? 'replicate' : null]);
       await this.append(client, 'operation_started', { id, kind, day, reservedMicrodollars: request.maximum });
       return { replay: false, kind, ...request };
     });
@@ -71,7 +71,7 @@ export class PostgresStore {
       if (asset) await client.query('INSERT INTO agent_assets(id,mime,bytes,url) VALUES ($1,$2,$3,$4)', [id,asset.mime,asset.bytes??null,asset.url??null]);
       const kind = row.kind === 'birth' ? 'identity' : result.action;
       await this.append(client, kind, result);
-      await this.append(client, 'operation_completed', { id, actualMicrodollars: cost, exceededReservation: cost > Number(row.amount) });
+      await this.append(client, 'operation_completed', { id, accountedMicrodollars: cost, costBasis: row.budget_provider === 'replicate' ? 'retained_provider_reservation_not_invoice' : 'telemetry_not_budget', exceededReservation: cost > Number(row.amount) });
       await client.query("UPDATE agent_operations SET amount=$1,status='complete',result=$2 WHERE id=$3",
         [cost, JSON.stringify(result), id]);
       return result;
@@ -83,9 +83,10 @@ export class PostgresStore {
       (SELECT COUNT(*)::int FROM agent_events) AS events,
       (SELECT COUNT(*)::int FROM agent_operations WHERE status='pending') AS unresolved,
       (SELECT COALESCE(SUM(amount),0)::text FROM agent_operations
-        WHERE day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date) AS spent`);
+        WHERE day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date) AS spent,
+      (SELECT COALESCE(SUM(amount),0)::text FROM agent_operations WHERE budget_provider='replicate' AND day=(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date) AS replicate_reserved`);
     return { identity: rows[0].identity ? JSON.parse(rows[0].identity) : null,
-      events: rows[0].events, unresolved: rows[0].unresolved, todayMicrodollars: Number(rows[0].spent) };
+      events: rows[0].events, unresolved: rows[0].unresolved, todayMicrodollars: Number(rows[0].spent), replicateBudget: {limitMicrodollars:50_000_000, reservedMicrodollars:Number(rows[0].replicate_reserved), timezone:'Europe/Moscow', basis:'Conservative Replicate reservations; not invoiced spend'} };
   }
   async latest(kind) {
     const row=(await this.pool.query('SELECT payload FROM agent_events WHERE kind=$1 ORDER BY seq DESC LIMIT 1',[kind])).rows[0];
@@ -105,7 +106,7 @@ export class PostgresStore {
     const appearance=await this.latest('appearance_image');
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
     return { experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
-      blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars,
+      blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars, replicateBudget: state.replicateBudget,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
   async publicJournal() {

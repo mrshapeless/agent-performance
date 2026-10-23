@@ -55,7 +55,7 @@ export class Store {
       if (kind === 'birth' && (this.identity() || this.db.prepare("SELECT id FROM operations WHERE kind='birth'").get()))
         throw Error('Birth already exists or is unresolved');
       const day = dayKey(date);
-      if (this.used(day) + amount > 50_000_000) throw Error('Daily allowance exhausted');
+      // Local Gemini telemetry is not a Replicate spending allowance.
       this.db.prepare("INSERT INTO reservations VALUES(?,?,?,'held')").run(id, day, amount);
       this.db.prepare("INSERT INTO operations VALUES(?,?,'pending')").run(id, kind);
       this.append('operation_started', { id, kind, reservedMicrodollars: amount, day });
