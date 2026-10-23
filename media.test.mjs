@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {mediaStep,enqueueMedia,validateMediaPlan} from './media.mjs';
+import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia} from './media.mjs';
 import {socialStep} from './integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
@@ -57,4 +57,18 @@ test('X finalization rejects missing data, embedded errors and wrong media IDs',
  const x=new XClient({X_EXPECTED_USERNAME:'artist'},async()=>Response.json(response),async()=>'token');
  await assert.rejects(x.finalizeMedia('77'),/X_INVALID_MEDIA_FINALIZE/);
  }
+});
+
+test('independent visual audit blocks a ready image despite positive artist review and never uploads it',async()=>{
+ const {store:s,db}=await fixture();let calls=0;
+ try{
+  await seed(s,{...plan,referenceIds:[2,10]});
+  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify({assetId:'candidate',review:{decision:'publish',text:'A strange scene',alt:'Glossy character',summary:'Artist likes it'},expiresAt:Date.now()+86400000})]);
+  assert.equal(await readyMedia(s),null);
+  const provider={quote:()=>1,generate:async(system,prompt,asset,schema,refs)=>{calls++;assert.doesNotMatch(prompt,/Artist likes it|original moving shoreline/);assert.equal(refs.length,2);assert.ok(asset.bytes.length);return {costMicrodollars:2,value:{action:'publish',visualLanguageResult:'partly',referenceComparison:'Sharp advertising finish remains unlike reference edges',summary:'Reject despite amusing scene'}}}};
+  const service={...services,load:async()=>({bytes:Buffer.from('candidate'),mime:'image/jpeg'}),references:async()=>[{bytes:Buffer.from('one'),mime:'image/jpeg'},{bytes:Buffer.from('two'),mime:'image/jpeg'}]};
+  assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'visual_audit_rejected');
+  await mediaStep(s,provider,env,service);assert.equal(calls,1);assert.equal(await readyMedia(s),null);
+  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'rejected');
+ }finally{await db.close()}
 });
