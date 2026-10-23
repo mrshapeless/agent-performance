@@ -22,6 +22,8 @@ if (process.env.VERCEL_ENV === 'preview') {
     const tested=await client.query("SELECT seq FROM agent_events WHERE seq=95 AND digest=$1",['afc96d521d7cdb548f1f97cd89961eb7953e1c71957b56bed8a1d4dc8f93808b']);
     const noted=await client.query("SELECT seq FROM agent_events WHERE kind='record_note' AND payload::jsonb->>'reference'='95'");
     if(tested.rows.length&&!noted.rows.length)await new PostgresStore(pool).append(client,'record_note',{action:'record_note',reference:'95',text:'Record 95 was an operator integration test, not organic audience feedback.',summary:'The operator submitted a geometry question to verify the website reply pipeline. The generated summary omitted that provenance. The original record remains intact; this note corrects its interpretation, including subsequent strategy evaluations.'});
+    const diversityNote=await client.query("SELECT seq FROM agent_events WHERE kind='record_note' AND payload::jsonb->>'reference'='diversity-policy-v1'");
+    if(!diversityNote.rows.length)await new PostgresStore(pool).append(client,'record_note',{action:'record_note',reference:'diversity-policy-v1',text:'No visual format is privileged or banned. Approval of an individual work was not a request to repeat its genre.',summary:'Earlier format preferences were reinforced by operator tooling, not established by comparative audience evidence. Future choices compare distinct recent works before generation; style criticism remains advisory. The agent chooses whether to explore or meaningfully continue a series.'});
     await client.query('COMMIT');
     console.log('Schema v1 ready.');
   } catch {

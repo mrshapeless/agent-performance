@@ -48,7 +48,8 @@ export class PostgresStore {
       const studioRow=(await client.query("SELECT payload FROM agent_events WHERE kind='studio_revision' ORDER BY seq DESC LIMIT 1")).rows[0];
       const studio=studioRow?JSON.parse(studioRow.payload):null;
       const projectHistory=(await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse().map(r=>({seq:String(r.seq),kind:r.kind,payload:JSON.parse(r.payload)}));
-      const request = buildRequest(identity, recent, { kind, external, studio, projectHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
+      const visualHistory=(await client.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state='published' ORDER BY updated DESC LIMIT 8")).rows.map(r=>({id:r.id,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,description:r.data.review?.alt??r.plan.alt,construction:r.plan.prompt,decision:r.data.styleAudit?.decision??r.data.review?.decision}));
+      const request = buildRequest(identity, recent, { kind, external, studio, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
         strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT
@@ -96,7 +97,7 @@ export class PostgresStore {
   async asset(id) {return (await this.pool.query('SELECT mime,bytes,url FROM agent_assets WHERE id=$1',[id])).rows[0]??null;}
   async publicExperiments(){
     const rows=(await this.pool.query("SELECT id,state,plan,data,created FROM agent_media_jobs WHERE plan->'experiment'->>'version' IN ('experiment-v1','experiment-v2','experiment-v3','experiment-v4') ORDER BY created DESC LIMIT 12")).rows;
-    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:Object.fromEntries(['version','hypothesis','habitToBreak','audienceQuestion','alternatives','selectedId','selectionReason','referenceIds','planningReferenceIds'].filter(k=>k in r.plan.experiment).map(k=>[k,r.plan.experiment[k]])),review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
+    return rows.map(r=>({id:r.id,state:r.state,created:r.created,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,assetId:r.data.assetId??null,alt:r.data.review?.alt??r.plan.alt,experiment:Object.fromEntries(['version','hypothesis','habitToBreak','audienceQuestion','alternatives','selectedId','selectionReason','diversityComparison','continuationReason','referenceIds','planningReferenceIds'].filter(k=>k in r.plan.experiment).map(k=>[k,r.plan.experiment[k]])),review:r.data.review?Object.fromEntries(['decision','summary','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'].filter(k=>typeof r.data.review[k]==='string').map(k=>[k,r.data.review[k]])):null}));
   }
   async publicRuntime() {
     const state = await this.status();
