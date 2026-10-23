@@ -9,7 +9,9 @@
   "scripts": {
     "test": "node --test *.test.mjs",
     "start": "node --env-file=.env cli.mjs",
-    "migrate": "node migrate.mjs"
+    "migrate": "node migrate.mjs",
+    "check:privacy": "node privacy-check.mjs",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.2",
