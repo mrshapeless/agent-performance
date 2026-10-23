@@ -30,7 +30,7 @@ export function validateExperiment(v,env,history=[],requiredMedium=null,studio=n
  const referenceIds=validateReferenceIds(v.referenceIds);
  return {referenceIds,...{action:'x_draft',intent:'experiment',projectId:v.projectId,medium:a.medium,prompt:v.prompt,alt:v.alt,ratio:v.ratio,duration:v.duration,text:v.caption,summary:v.summary,experiment:{version:'experiment-v4',hypothesis:v.hypothesis,habitToBreak:v.habitToBreak,audienceQuestion:v.audienceQuestion,alternatives:v.alternatives,selectedId:v.selectedId,selectionReason:v.selectionReason,signature:signatures[v.alternatives.indexOf(a)],referenceIds}}};
 }
-export async function planExperiment(store,provider,env,id,requiredMedium=null){
+export async function planExperiment(store,provider,env,id,requiredMedium=null,referenceLoader=loadReferences){
  let history=[],studio=null;
  const offset=[...id].reduce((sum,c)=>sum+c.charCodeAt(0),0)%5;
  const planningReferenceIds=[0,1,2].map(i=>25+(offset+i)%5);
@@ -44,7 +44,7 @@ export async function planExperiment(store,provider,env,id,requiredMedium=null){
  });
  if(req.replay)return {status:req.status,replay:true};
  let cost=req.maximum;
- try{const refs=await loadReferences(planningReferenceIds);const answer=await provider.generate(constitution,req.prompt,null,experimentSchema,refs);cost=answer.costMicrodollars;const plan=validateExperiment(answer.value,env,history,requiredMedium,studio);plan.experiment.influence={...referenceInfluence};plan.experiment.planningReferenceIds=planningReferenceIds;await store.complete(id,cost,plan);return {status:'experiment_planned'};}
+ try{const refs=await referenceLoader(planningReferenceIds);const answer=await provider.generate(constitution,req.prompt,null,experimentSchema,refs);cost=answer.costMicrodollars;const plan=validateExperiment(answer.value,env,history,requiredMedium,studio);plan.experiment.influence={...referenceInfluence};plan.experiment.planningReferenceIds=planningReferenceIds;await store.complete(id,cost,plan);return {status:'experiment_planned'};}
  catch(error){const code=/^(INVALID_EXPERIMENT|DUPLICATE_EXPERIMENT_ALTERNATIVES|EXPERIMENT_MEDIUM_MISMATCH|EXPERIMENT_PROJECT_NOT_ACTIVE|REPEATED_EXPERIMENT_PROMPT|REPEATED_EXPERIMENT_STYLE|INVALID_VISUAL_REFERENCES)$/.test(error.message)?error.message:'EXPERIMENT_PROVIDER_FAILURE';await store.complete(id,cost,{action:'wait',text:'Exploratory planning stopped before generation.',summary:code+'. No automatic paid retry in this slot.'});return {status:'experiment_plan_failed'};}
 }
 export const legacyReviewSchema=obj({action:{type:'string',enum:['publish','reject']},text,alt:text,summary:text,observedResult:text,hypothesisResult:{type:'string',enum:['supported','partly','not_supported']},noveltyEvidence:text,craftEvidence:text,craftResult:{type:'string',enum:['supported','partly','not_supported']},viewerHook:text,nextExperiment:text});
