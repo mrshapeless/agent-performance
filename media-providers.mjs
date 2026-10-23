@@ -1,3 +1,4 @@
+import {loadReferences,referenceImageInstruction} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
 
 export const VIDEO_MODEL='google/veo-3.1-fast';
@@ -19,7 +20,8 @@ export async function readMedia(url,fetcher=fetch,blob=false){
 export class MediaProviders {
  constructor(env,fetcher=fetch){this.env=env;this.fetcher=fetcher;}
  imageQuote(prompt){return new AppearanceImage(this.env,this.fetcher).quote(prompt);}
- image(prompt,ratio){return new AppearanceImage(this.env,this.fetcher).generate(prompt,ratio);}
+ references(ids){return loadReferences(ids,this.fetcher);}
+ image(prompt,ratio,refs=[]){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?referenceImageInstruction+' Your chosen work: '+prompt:prompt,ratio,refs);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
  async replicate(method,path,body){

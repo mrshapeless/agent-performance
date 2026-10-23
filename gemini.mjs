@@ -14,7 +14,7 @@ export class Gemini {
     // This is a configured tariff estimate, not a provider billing guarantee.
     return Math.ceil((Buffer.byteLength(system + prompt) + 2048) * this.inputPrice + 8192 * this.outputPrice);
   }
-  async generate(system, prompt, media=null, responseJsonSchema=null) {
+  async generate(system, prompt, media=null, responseJsonSchema=null,references=[]) {
     const response = await this.fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
       {
@@ -23,7 +23,7 @@ export class Gemini {
         signal: AbortSignal.timeout(90_000),
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: prompt }, ...(media?[{inlineData:{mimeType:media.mime,data:Buffer.from(media.bytes).toString('base64')}}]:[])] }],
+          contents: [{ role: 'user', parts: [{ text: prompt }, ...(media?[{inlineData:{mimeType:media.mime,data:Buffer.from(media.bytes).toString('base64')}}]:[]),...references.flatMap((a,i)=>[{text:'REFERENCE '+(i+1)+' (not the candidate)'},{inlineData:{mimeType:a.mime,data:Buffer.from(a.bytes).toString('base64')}}])] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}) },
         }),
       });
