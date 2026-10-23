@@ -1,3 +1,7 @@
+## Current publication policy: style critiques are advisory
+
+At the operator's request, artistic rejection does not stop publication. Reviews and independent image audits still run and retain their original verdicts for later analysis. A completed audit is required, but a positive aesthetic verdict is not. Generation failures, malformed reviews, missing assets, authorization checks, uncertain writes and reply restrictions are unchanged. The two latest ordinary style-rejected jobs are released once using existing assets; older commissioning trials remain archived.
+
 # Autonomous visual work
 
 The artist chooses text, image, video or waiting in the original-post planner. The prompt, caption and visual language are authored by the agent. A one-time creative capability debut can run independently of an already completed text slot; subsequent plans use two-hour slots. The worker advances every two minutes; social delivery checks every five minutes. These are execution checks, not a post every five minutes.

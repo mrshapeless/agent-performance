@@ -13,13 +13,13 @@ async function fixture(){const db=new PGlite();await db.exec(await readFile(new 
 async function seed(s,p=plan){await s.begin('x-plan-1','step',()=>({maximum:1}));await s.complete('x-plan-1',1,p);await enqueueMedia(s,'x-plan-1',p);}
 const services={imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixture'),mime:'image/jpeg',costMicrodollars:40000}),load:async a=>({...a,bytes:Buffer.from(a.bytes??'fixture')}),videoQuote:()=>4000000,startVideo:async()=>({id:'pred1'}),videoStatus:async()=>({status:'succeeded',output:'https://replicate.delivery/movie.mp4'}),archiveVideo:async()=>({mime:'video/mp4',url:'https://test.public.blob.vercel-storage.com/movie.mp4'})};
 function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.'}}}};}
-test('actual image reviewed then uploaded and published exactly once; replies stay disabled',async()=>{
+test('style-rejected image is uploaded and published exactly once; replies stay disabled',async()=>{
  const {store:s,db}=await fixture();let generations=0,posts=0;const service={...services,image:async()=>{generations++;return services.image()}};
  const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>({id:'777'}),mediaStatus:async()=>assert.fail('synchronous image must not poll STATUS'),post:async(text,reply,media)=>{posts++;assert.equal(reply,null);assert.equal(media,'777');assert.equal(text,'An ink shoreline, imagined.');return {id:'999',url:'https://x.com/i/web/status/999'}}};
- try{await seed(s);for(let i=0;i<6;i++)await mediaStep(s,reviewer(),env,service,()=>x);assert.equal(generations,1);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');const now=new Date(7200000);await socialStep(s,reviewer(),env,now,()=>x);await socialStep(s,reviewer(),env,now,()=>x);assert.equal(posts,1);assert.equal((await s.latest('x_post')).assetId,'media-1-render');assert.equal((await s.status()).unresolved,0);assert.equal((await s.publicJournal()).some(e=>e.kind==='media_review'),true);}finally{await db.close()}
+ try{await seed(s);for(let i=0;i<6;i++)await mediaStep(s,reviewer('reject'),env,service,()=>x);assert.equal(generations,1);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');const now=new Date(7200000);await socialStep(s,reviewer(),env,now,()=>x);await socialStep(s,reviewer(),env,now,()=>x);assert.equal(posts,1);assert.equal((await s.latest('x_post')).assetId,'media-1-render');assert.equal((await s.status()).unresolved,0);assert.equal((await s.publicJournal()).some(e=>e.kind==='media_review'),true);}finally{await db.close()}
 });
-test('rejected work is archived but never uploaded; unknown generation is not charged twice',async()=>{
- const {store:s,db}=await fixture();try{await seed(s);await mediaStep(s,reviewer('reject'),env,services);await mediaStep(s,reviewer('reject'),env,services);assert.equal((await mediaStep(s,reviewer('reject'),env,services)).status,'no_media_jobs');assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'rejected');}finally{await db.close()}
+test('style rejection remains recorded and eligible; unknown generation is not charged twice',async()=>{
+ const {store:s,db}=await fixture();try{await seed(s);await mediaStep(s,reviewer('reject'),env,services);await mediaStep(s,reviewer('reject'),env,services);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'approved');assert.equal((await s.latest('media_review')).decision,'reject');}finally{await db.close()}
  const second=await fixture();let calls=0;try{await seed(second.store);const broken={...services,image:async()=>{calls++;throw Error('TIMEOUT')}};await mediaStep(second.store,reviewer(),env,broken);await mediaStep(second.store,reviewer(),env,broken);assert.equal(calls,1);assert.equal((await second.store.status()).unresolved,0);assert.ok((await second.store.status()).todayMicrodollars>=500000);}finally{await second.db.close()}
 });
 test('video persists prediction across workers, archives durable URL, and reviews the actual video',async()=>{
@@ -59,7 +59,7 @@ test('X finalization rejects missing data, embedded errors and wrong media IDs',
  }
 });
 
-test('independent visual audit blocks a ready image despite positive artist review and never uploads it',async()=>{
+test('independent visual audit retains rejection but releases a ready image under advisory policy',async()=>{
  const {store:s,db}=await fixture();let calls=0;
  try{
   await seed(s,{...plan,referenceIds:[2,10]});
@@ -67,9 +67,9 @@ test('independent visual audit blocks a ready image despite positive artist revi
   assert.equal(await readyMedia(s),null);
   const provider={quote:()=>1,generate:async(system,prompt,asset,schema,refs)=>{calls++;assert.doesNotMatch(prompt,/Artist likes it|original moving shoreline/);assert.equal(refs.length,2);assert.ok(asset.bytes.length);return {costMicrodollars:2,value:{action:'publish',visualLanguageResult:'partly',referenceComparison:'Sharp advertising finish remains unlike reference edges',summary:'Reject despite amusing scene'}}}};
   const service={...services,load:async()=>({bytes:Buffer.from('candidate'),mime:'image/jpeg'}),references:async()=>[{bytes:Buffer.from('one'),mime:'image/jpeg'},{bytes:Buffer.from('two'),mime:'image/jpeg'}]};
-  assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'visual_audit_rejected');
-  await mediaStep(s,provider,env,service);assert.equal(calls,1);assert.equal(await readyMedia(s),null);
-  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'rejected');
+  assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'visual_audit_recorded');
+  assert.equal(calls,1);assert.ok(await readyMedia(s));assert.equal((await readyMedia(s)).data.styleAudit.decision,'reject');
+  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');
  }finally{await db.close()}
 });
 

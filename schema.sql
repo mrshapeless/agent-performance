@@ -66,3 +66,11 @@ ALTER TABLE agent_operations ADD COLUMN IF NOT EXISTS budget_provider TEXT;
 UPDATE agent_operations o SET budget_provider='replicate'
 FROM agent_media_jobs j WHERE o.id=j.id || '-render'
 AND j.plan->>'medium'='video' AND o.budget_provider IS NULL;
+
+-- Operator requested publication of the two most recent style-rejected works.
+-- Reuse existing assets; retain critiques; do not revive errors or older trials.
+UPDATE agent_media_jobs SET state='approved',
+ data=data || '{"publicationPolicy":"style-advisory-v1"}'::jsonb,updated=now()
+WHERE id IN ('media-248996','media-248998') AND state='rejected'
+AND data->>'assetId' IS NOT NULL AND data->'review'->>'text' IS NOT NULL
+AND NOT(data ? 'error');

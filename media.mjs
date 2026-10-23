@@ -19,7 +19,7 @@ export async function enqueueMedia(store,planId,plan){
  await store.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES($1,$2,$3,'queued') ON CONFLICT(id) DO NOTHING",['media-'+planId.replace('x-plan-',''),planId,JSON.stringify(plan)]);
  return (await store.pool.query('SELECT * FROM agent_media_jobs WHERE plan_id=$1',[planId])).rows[0];
 }
-export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data->'styleAudit'->>'decision'='publish') ORDER BY created LIMIT 1")).rows[0]??null;}
+export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data ? 'styleAudit') ORDER BY created LIMIT 1")).rows[0]??null;}
 export async function finishMedia(store,planId){await store.pool.query("UPDATE agent_media_jobs SET state='published',updated=now() WHERE plan_id=$1 AND state='ready'",[planId]);}
 async function patch(store,job,state,data={}){
  const result=await store.pool.query("UPDATE agent_media_jobs SET state=$1,data=data || $2::jsonb,lease_until=NULL,lease_token=NULL,updated=now() WHERE id=$3 AND lease_token=$4 RETURNING id",[state,JSON.stringify(data),job.id,job.lease_token]);
@@ -93,7 +93,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     v={...v,projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,decision:v.action,action:'media_review',assetId:job.data.assetId,mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,v);
    }
-   await patch(store,job,v.decision==='publish'?'approved':'rejected',{review:v});return {status:v.decision==='publish'?'media_approved':'media_rejected'};
+   await patch(store,job,'approved',{review:v,publicationPolicy:'style-advisory-v1'});return {status:'media_approved'};
   }
   // Independent image-only audit: no author's plan, self-praise or history in context.
   if(['approved','uploading','processing_x','ready'].includes(job.state)&&job.plan.medium==='image'&&job.plan.referenceIds&&!job.data.styleAudit){
@@ -112,8 +112,8 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     audit={...audit,decision:audit.action==='publish'&&audit.visualLanguageResult==='supported'?'publish':'reject',action:'media_review',text:job.data.review.text,alt:job.data.review.alt,assetId:job.data.assetId,experimentId:job.plan_id,intent:'experiment',mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,audit);
    }
-   await patch(store,job,audit.decision==='publish'?job.state:'rejected',{styleAudit:audit,artistReview:job.data.review,review:{...job.data.review,...audit}});
-   return {status:audit.decision==='publish'?'visual_audit_approved':'visual_audit_rejected'};
+   await patch(store,job,job.state,{styleAudit:audit,artistReview:job.data.review,review:{...job.data.review,...audit},publicationPolicy:'style-advisory-v1'});
+   return {status:'visual_audit_recorded'};
   }
   if(env.X_ENABLED!=='true'){await patch(store,job,job.state);return {status:'x_disabled'};}
   const x=xFactory(store,env);
