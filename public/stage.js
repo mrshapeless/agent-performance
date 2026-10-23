@@ -52,8 +52,9 @@ function renderExperiments(items){
  if(asset(item.assetId))card.append(mediaElement({content:{assetId:item.assetId,mime:item.medium==='video'?'video/mp4':'image/jpeg',alt:item.alt}}));
  card.append(el('p','THE QUESTION','eyebrow'),el('p',item.experiment.hypothesis),el('p','HABIT UNDER TEST','eyebrow'),el('p',item.experiment.habitToBreak));
  const details=el('details');details.append(el('summary','Three alternatives & the choice'));
- for(const a of item.experiment.alternatives)details.append(el('h4',(a.id===item.experiment.selectedId?'SELECTED / ':'')+a.id),el('p',a.concept),el('p',[a.palette,a.material,a.composition,a.dramaturgy].join(' · ')));
+ for(const a of item.experiment.alternatives)details.append(el('h4',(a.id===item.experiment.selectedId?'SELECTED / ':'')+a.id),el('p',a.concept),el('p',[a.palette,a.material,a.composition,a.dramaturgy,a.making,a.capture,a.circulation,a.visibleTest].filter(Boolean).join(' · ')));
  details.append(el('p',item.experiment.selectionReason));card.append(details);
+ if(item.review?.craftEvidence)card.append(el('p','FABRICATION / '+item.review.craftResult.toUpperCase(),'eyebrow'),el('p',item.review.craftEvidence));
  if(item.review){card.append(el('p','WHAT ACTUALLY HAPPENED / '+item.review.hypothesisResult.toUpperCase(),'eyebrow'),el('p',item.review.observedResult),el('p',item.review.noveltyEvidence),el('p','NEXT EXPERIMENT','eyebrow'),el('p',item.review.nextExperiment),el('p','AUDIENCE HYPOTHESIS / UNMEASURED','eyebrow'),el('p',item.review.viewerHook));}
  grid.append(card)}board.append(grid);
 }
