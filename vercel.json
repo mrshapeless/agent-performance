@@ -32,7 +32,8 @@
       "maxDuration": 120
     },
     "api/media.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "reference-board-*.png"
     }
   },
   "crons": [

@@ -6,7 +6,7 @@ import {Gemini} from './gemini.mjs';
 import {validateExperimentReview} from './experiments.mjs';
 
 test('visual references are bounded catalog IDs, fetched without redirects and size limited',async()=>{
- for(const ids of [[1],[1,1],[1,25],['https://evil.test',2]])assert.throws(()=>validateReferenceIds(ids),/INVALID_VISUAL/);
+ for(const ids of [[1],[1,1],[1,30],['https://evil.test',2]])assert.throws(()=>validateReferenceIds(ids),/INVALID_VISUAL/);
  const refs=await loadReferences([2,10],async(url,options)=>{assert.equal(new URL(url).hostname,'i.pinimg.com');assert.equal(options.redirect,'error');return new Response('pixels',{headers:{'content-type':'image/jpeg'}})});
  assert.equal(refs.length,2);assert.equal(refs[0].hash.length,64);
  await assert.rejects(loadReferences([2,10],async()=>new Response('html',{headers:{'content-type':'text/html'}})),/MIME/);
@@ -24,4 +24,8 @@ test('amusing subject cannot override failed or partial visual-language comparis
  for(const visualLanguageResult of ['partly','not_supported'])assert.equal(validateExperimentReview({...v,visualLanguageResult},null,true).action,'reject');
  assert.throws(()=>validateExperimentReview(v,null,true),/INVALID_EXPERIMENT_REVIEW/);
  assert.equal(validateExperimentReview({...v,visualLanguageResult:'supported'},null,true).action,'publish');
+});
+
+test('all five supplied boards load as actual PNG pixels without network access',async()=>{
+ for(const id of [25,26,27,28,29]){const refs=await loadReferences([id, id===29?25:id+1],()=>{throw Error('unexpected network')});assert.equal(refs[0].id,id);assert.equal(refs[0].mime,'image/png');assert.ok(refs[0].bytes.length>100000);assert.equal(refs[0].hash.length,64);}
 });
