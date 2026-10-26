@@ -9,7 +9,7 @@ export async function roomHandler(request,store,env){
   const before=new URL(request.url).searchParams.get('before');if(before&&!/^\d{1,18}$/.test(before))return reply({error:'INVALID_CURSOR'},400);
   const rows=(await store.pool.query(`SELECT r.id,r.seq::text,r.nickname,r.role,r.text,r.reply_to,r.created,
    CASE WHEN r.role='visitor' THEN right(r.session_id,4) ELSE NULL END AS badge,
-   CASE WHEN i.metadata->>'askAgent'='true' THEN i.status ELSE NULL END AS response_status FROM agent_room r LEFT JOIN agent_inbox i ON i.id=r.inbox_id
+   CASE WHEN i.metadata->>'askAgent'='true' THEN CASE WHEN i.response='Response generation unavailable.' THEN 'unavailable' ELSE i.status END ELSE NULL END AS response_status FROM agent_room r LEFT JOIN agent_inbox i ON i.id=r.inbox_id
    WHERE NOT r.hidden AND ($1::bigint IS NULL OR r.seq<$1::bigint) ORDER BY r.seq DESC LIMIT 51`,[before??null])).rows;
   const more=rows.length>50;const page=rows.slice(0,50);let headers={};
   if(env.AGENT_ADMIN_SECRET){const token=request.headers.get('cookie')?.match(/(?:^|;\s*)alidade_room=([^;]+)/)?.[1]??'';const [id,sig]=token.split('.');if(!uuid(id)||!equal(sig??'',mac(id,env.AGENT_ADMIN_SECRET))){const session=randomUUID();headers={'Set-Cookie':`alidade_room=${session}.${mac(session,env.AGENT_ADMIN_SECRET)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=31536000`};}}

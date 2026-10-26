@@ -36,3 +36,10 @@ test('room pagination is chronological, bounded and has no skipped boundary',()=
  const earlier=await (await roomHandler(get('?before='+latest.before),s,env)).json();assert.equal(earlier.messages.length,5);assert.equal(earlier.messages.at(-1).text,'message 4');assert.equal(earlier.more,false);
  assert.equal((await roomHandler(get('?before=oops'),s,env)).status,400);
 }));
+test('provider failures are visible as unavailable, never as a fabricated answer',()=>fixture(async s=>{
+ const r=await roomHandler(post({askAgent:true}),s,env);assert.equal(r.status,201);
+ const provider={quote:()=>10,generate:async()=>{throw Error('provider unavailable')}};
+ await audienceStep(s,provider,env);
+ const d=await (await roomHandler(get(),s,env)).json();assert.equal(d.messages.length,1);assert.equal(d.messages[0].response_status,'unavailable');
+ assert.equal((await audienceStep(s,provider,env)).status,'no_messages');
+}));
