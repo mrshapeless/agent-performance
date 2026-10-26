@@ -2,7 +2,7 @@
 export const ACTIVE_INSTANCE = 'generation_02';
 export function scopedSQL(sql, instance = ACTIVE_INSTANCE) {
   if (!/^[a-z][a-z0-9_]{0,40}$/.test(instance)) throw Error('INVALID_INSTANCE');
-  return sql.replace(/\bagent_(events|operations|assets|oauth_states|oauth_tokens|inbox|optouts|media_jobs|manual_replies|reply_sync)\b/g, name => `"${instance}".${name}`);
+  return sql.replace(/\bagent_(events|operations|assets|oauth_states|oauth_tokens|inbox|optouts|media_jobs|manual_replies|reply_sync|room)\b/g, name => `"${instance}".${name}`);
 }
 export function scopedPool(pool,instance=ACTIVE_INSTANCE) {
   return {query:(sql,args)=>pool.query(scopedSQL(sql,instance),args),connect:async()=>{

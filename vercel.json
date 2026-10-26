@@ -46,6 +46,10 @@
     "api/manual-replies.mjs": {
       "maxDuration": 120,
       "includeFiles": "private/**"
+    },
+    "api/room.mjs": {
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     }
   },
   "crons": [
@@ -67,7 +71,7 @@
     },
     {
       "path": "/api/audience",
-      "schedule": "2-57/5 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/media",

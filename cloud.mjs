@@ -1,3 +1,4 @@
+import {roomHandler} from './room.mjs';
 import {studioContext,validateStudioChoice} from './studio.mjs';
 import { observe, audienceStep, webInbox } from './experience.mjs';
 import { accountSetup, accountStatus } from './accounts.mjs';
@@ -52,17 +53,18 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     const social = url.pathname === '/api/social';
     const media = url.pathname === '/api/media';
     const inbox = url.pathname === '/api/inbox';
+    const room = url.pathname === '/api/room';
     const observation = url.pathname === '/api/observe';
     const audience = url.pathname === '/api/audience';
     const manual = url.pathname === '/api/manual-replies';
     const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
     const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience','/api/media'].includes(url.pathname);
     const publicRead = !manual && !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
-    if (!inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
+    if (!room && !inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
     if (manual && request.method==='POST' && (env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true'))return reply({error:'EXECUTION_DISABLED'},409);
-    if (!manual && !inbox && (tick || request.method === 'POST')) {
+    if (!room && !manual && !inbox && (tick || request.method === 'POST')) {
       if (env.VERCEL_ENV !== 'production') return reply({ error: 'PRODUCTION_ONLY' }, 403);
       if (env.AGENT_ENABLED !== 'true') return reply({ error: 'AGENT_DISABLED' }, 409);
       kind = tick ? 'auto' : url.searchParams.get('action');
@@ -75,6 +77,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     try {
       store = await openStore();
       if (manual) return await manualReplyHandler(request,store,request.method==='POST'?createProvider():null,env);
+      if (room) return await roomHandler(request,store,env);
       if (inbox) return await webInbox(request,store,env);
       if (observation) { const observed=await observe(store,env,now());let threads;try{threads=await syncReplyThreads(store,env,now());}catch(e){threads={status:'deferred',error:['DAILY_ALLOWANCE_EXHAUSTED','UNRESOLVED_OPERATION'].includes(e.message)?e.message:'THREAD_SYNC_UNAVAILABLE'};}return reply({...observed,threads}); }
       // Public X replies stay off; this worker may only draft in the private queue.

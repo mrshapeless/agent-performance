@@ -74,3 +74,12 @@ UPDATE agent_media_jobs SET state='approved',
 WHERE id IN ('media-248996','media-248998') AND state='rejected'
 AND data->>'assetId' IS NOT NULL AND data->'review'->>'text' IS NOT NULL
 AND NOT(data ? 'error');
+CREATE TABLE IF NOT EXISTS agent_room (
+ seq BIGSERIAL PRIMARY KEY,id TEXT NOT NULL UNIQUE,session_id TEXT NOT NULL,
+ nickname TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('visitor','agent')),
+ text TEXT NOT NULL,reply_to TEXT REFERENCES agent_room(id),
+ inbox_id TEXT UNIQUE REFERENCES agent_inbox(id),created TIMESTAMPTZ NOT NULL DEFAULT now(),
+ hidden BOOLEAN NOT NULL DEFAULT false,moderation_reason TEXT,
+ request_key TEXT,UNIQUE(session_id,request_key)
+);
+CREATE INDEX IF NOT EXISTS room_visible_recent ON agent_room(seq DESC) WHERE hidden=false;
