@@ -83,3 +83,13 @@ CREATE TABLE IF NOT EXISTS agent_room (
  request_key TEXT,UNIQUE(session_id,request_key)
 );
 CREATE INDEX IF NOT EXISTS room_visible_recent ON agent_room(seq DESC) WHERE hidden=false;
+CREATE TABLE IF NOT EXISTS agent_agenda (
+ id TEXT PRIMARY KEY,project_id TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('active','commissioned','completed','abandoned')),
+ objective TEXT NOT NULL,next_step TEXT NOT NULL,artifact TEXT NOT NULL DEFAULT '',
+ version INTEGER NOT NULL DEFAULT 1,updated TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS agent_lessons (
+ id TEXT PRIMARY KEY,claim TEXT NOT NULL,conditions TEXT NOT NULL,
+ evidence JSONB NOT NULL,counterevidence JSONB NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('hypothesis','supported','retired')),updated TIMESTAMPTZ NOT NULL DEFAULT now()
+);

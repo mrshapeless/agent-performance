@@ -1,3 +1,4 @@
+import {agenda,lessons} from './memory.mjs';
 import { createHash } from 'node:crypto';
 
 // One artist. This transaction lock serializes state changes across all instances.
@@ -63,12 +64,13 @@ export class PostgresStore {
       return { replay: false, kind, ...request };
     });
   }
-  async complete(id, cost, result, asset) {
+  async complete(id, cost, result, asset, applyState) {
     if (!Number.isSafeInteger(cost) || cost < 0) throw Error('INVALID_COST');
     return this.transaction(async client => {
       const row = (await client.query('SELECT * FROM agent_operations WHERE id=$1', [id])).rows[0];
       if (!row) throw Error('UNKNOWN_OPERATION');
       if (row.status === 'complete') return row.result;
+      if (applyState) await applyState(client);
       if (asset) await client.query('INSERT INTO agent_assets(id,mime,bytes,url) VALUES ($1,$2,$3,$4)', [id,asset.mime,asset.bytes??null,asset.url??null]);
       const kind = row.kind === 'birth' ? 'identity' : result.action;
       await this.append(client, kind, result);
@@ -107,7 +109,7 @@ export class PostgresStore {
     const appearance=await this.latest('appearance_image');
     const portraitAttempt=await this.operation('persona-appearance-v1-repair1')??await this.operation('persona-appearance-v1');
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
-    return { portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
+    return { cognition: {lastDecision:await this.latest('cognitive_decision'),lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars, replicateBudget: state.replicateBudget,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -115,12 +117,12 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);
       const keys = row.kind === 'identity'
-        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent','experimentId','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'];
+        ? ['name','voice','interests','visualDirection','summary'] : ['text','summary','choice','taskId','alt','assetId','url','postId','mime','medium','prompt','decision','projectId','intent','experimentId','observedResult','hypothesisResult','noveltyEvidence','craftEvidence','craftResult','visualLanguageResult','referenceComparison','viewerHook','nextExperiment'];
       return { seq: String(row.seq), kind: row.kind, created: row.created, digest: row.digest,
         content: Object.fromEntries(keys.filter(k => typeof p[k] === 'string').map(k => [k,p[k]])) };
     });
