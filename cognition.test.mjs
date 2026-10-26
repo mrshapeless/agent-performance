@@ -15,6 +15,10 @@ test('archive reaches old evidence, separates editorial interpretation and exclu
  const {s,db}=await fixture();try{
  await s.transaction(async c=>{await s.append(c,'record_note',{text:'The amber chair was an editorial suggestion.',prompt:'PRIVATE_PROMPT'});await s.append(c,'private_memory',{text:'amber PRIVATE_SECRET'});for(let i=0;i<80;i++)await s.append(c,'draft_text',{text:'Unrelated item '+i});});
  const found=await recall(s,['amber chair']);assert.equal(found.length,1);assert.equal(found[0].source,'editorial_record');assert.doesNotMatch(JSON.stringify(found),/PRIVATE/);
+ await s.pool.query("INSERT INTO agent_room(id,session_id,nickname,role,text) VALUES('room-test','session','Visitor','visitor','I remember the amber chair')");
+ assert.ok((await recall(s,['amber'])).some(r=>r.id==='room:room-test'));
+ await s.pool.query("UPDATE agent_room SET hidden=true WHERE id='room-test'");
+ assert.equal((await recall(s,['amber'],12,['room:room-test'])).some(r=>r.id==='room:room-test'),false);
  assert.match(scopedSQL('SELECT * FROM agent_agenda JOIN agent_lessons ON true'),/"generation_02"\.agent_lessons/);
  }finally{await db.close()}
 });
@@ -41,6 +45,8 @@ test('commission remains pending across restart and completes only with matching
  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('chapter-art','forgotten-objects','commissioned','Make art','Publish it')");
  await s.transaction(c=>s.append(c,'x_draft',{agendaId:'chapter-art',text:'Not published'}));await reconcileAgenda(s);assert.equal((await agenda(s))[0].status,'commissioned');
  await s.transaction(c=>s.append(c,'x_post',{agendaId:'chapter-art',postId:'123',text:'Published'}));await reconcileAgenda(new PostgresStore(s.pool));assert.deepEqual(await agenda(s),[]);
+ await s.pool.query("UPDATE agent_agenda SET status='commissioned',version=3 WHERE id='chapter-art'");
+ await reconcileAgenda(s);assert.equal((await agenda(s))[0].status,'commissioned');
  }finally{await db.close()}
 });
 test('social worker executes a commission exactly once and does not invent another post',async()=>{
