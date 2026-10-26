@@ -4,11 +4,11 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
 import {studioStep,validateStudio,validateStudioChoice,studioSchema} from './studio.mjs';
-import {socialStep} from './integrations.mjs';
-const snapshot=()=>({voice:'Curious and spare',visualDirection:'Ink experiments',interests:[{topic:'Edges',why:'My earlier image left a boundary unresolved.',question:'When does a boundary become a shape?'}],criteria:['Each work tests a distinct transformation.'],tensions:['Precision versus ambiguity'],projects:[{id:'moving-edge',title:'Moving edge',status:'active',question:'Can a line become a place?',intent:'Explore one line across several works.',nextStep:'Write the first transformation.',assessment:'New project; no outcome yet.',evidence:[]}],summary:'Starting an independent series from an unresolved visual question.'});
+import {socialStep,setupAppearance} from './integrations.mjs';
+const snapshot=()=>({persona:{selfDescription:'I collect awkward shapes.',desire:'Make an unlikely shape feel familiar.',temperament:'Playful but stubborn about edges.',relationshipToAudience:'Invite disagreement about the work.',voiceExamples:['This edge refuses to behave.','I made it too smooth.','What would you remove?'],embodiment:{description:'A folded paper creature with an expressive face.',recognitionAnchors:'Folded cheek and uneven eyes.',portraitPrompt:'Square paper creature portrait with uneven eyes.'},growthNote:'A first provisional self-description.'},voice:'Curious and spare',visualDirection:'Ink experiments',interests:[{topic:'Edges',why:'My earlier image left a boundary unresolved.',question:'When does a boundary become a shape?'}],criteria:['Each work tests a distinct transformation.'],tensions:['Precision versus ambiguity'],projects:[{id:'moving-edge',title:'Moving edge',status:'active',question:'Can a line become a place?',intent:'Explore one line across several works.',nextStep:'Write the first transformation.',assessment:'New project; no outcome yet.',evidence:[]}],summary:'Starting an independent series from an unresolved visual question.'});
 test('legacy schema failure gets exactly one bounded repair attempt with a provider schema',async()=>{
  const {s,db}=await fixture();const now=new Date('2026-10-22T20:00:00Z');let calls=0;
- try{const id='studio-'+Math.floor(now.getTime()/21600000);await s.begin(id,'step',()=>({maximum:10}));await s.complete(id,10,{action:'studio_failed'});
+ try{const id='studio-'+Math.floor(now.getTime()/21600000)+'-persona-v1';await s.begin(id,'step',()=>({maximum:10}));await s.complete(id,10,{action:'studio_failed'});
  const provider={quote:()=>100,generate:async(_system,_prompt,media,schema)=>{calls++;assert.equal(media,null);assert.deepEqual(schema,studioSchema);return {costMicrodollars:20,value:snapshot()}}};
  assert.equal((await studioStep(s,provider,now)).status,'studio_revised');assert.equal((await studioStep(s,provider,now)).status,'studio_already_attempted');assert.equal(calls,1);
  }finally{await db.close()}
@@ -17,7 +17,7 @@ async function fixture(){const db=new PGlite();await db.exec(await readFile(new 
 
 test('studio persists across restarts, reaches the original-post planner and links a real publication',async()=>{
  const {s,db}=await fixture();const now=new Date('2026-10-22T20:00:00Z');let calls=0,posts=0;
- const provider={quote:()=>100,generate:async(system,prompt)=>{calls++;if(calls===1)return {costMicrodollars:50,value:snapshot()};assert.match(prompt,/moving-edge/);assert.match(prompt,/News is optional/);return {costMicrodollars:50,value:{action:'x_draft',intent:'project',projectId:'moving-edge',medium:'text',text:'A line folds until it remembers a room.',summary:'First transformation in my own series.'}}}};
+ const provider={quote:()=>100,generate:async(system,prompt)=>{calls++;if(calls===1)return {costMicrodollars:50,value:snapshot()};assert.match(prompt,/moving-edge/);assert.match(prompt,/folded paper creature/i);assert.match(prompt,/News is optional/);return {costMicrodollars:50,value:{action:'x_draft',intent:'project',projectId:'moving-edge',medium:'text',text:'A line folds until it remembers a room.',summary:'First transformation in my own series.'}}}};
  const x={verify:async()=>({}),post:async(text,reply)=>{assert.equal(reply,null);posts++;return {id:'123',url:'https://x.com/i/web/status/123'}}};
  const env={X_ENABLED:'true',X_REPLIES_ENABLED:'false'};
  try{
@@ -45,5 +45,33 @@ test('invalid paid revision preserves prior state, settles actual cost and never
  try{await studioStep(s,good,new Date('2026-10-22T00:00:00Z'));const bad={quote:()=>100,generate:async()=>{calls++;return {costMicrodollars:40,value:{voice:'incomplete'}}}};
  await studioStep(s,bad,new Date('2026-10-22T06:00:00Z'));await studioStep(s,bad,new Date('2026-10-22T06:30:00Z'));
  assert.equal(calls,1);assert.equal((await s.latest('studio_revision')).voice,'Curious and spare');assert.equal((await s.status()).unresolved,0);assert.equal((await s.status()).todayMicrodollars,71);
+ }finally{await db.close()}
+});
+
+
+test('persona is allowlisted, reaches planning and self-portrait renders once across revisions',async()=>{
+ const {s,db}=await fixture();let renders=0;
+ try{
+ const raw=snapshot();raw.persona.privateNote='must not persist';raw.persona.embodiment.extra='must not persist';
+ const clean=validateStudio(raw,null,[]);assert.equal(clean.persona.privateNote,undefined);assert.equal(clean.persona.embodiment.extra,undefined);
+ await s.begin('persona-fixture','step',()=>({maximum:0}));await s.complete('persona-fixture',0,clean);
+ const image=()=>({quote:()=>100,generate:async prompt=>{renders++;assert.match(prompt,/uneven eyes/);return {bytes:Buffer.from('fixture'),mime:'image/png',costMicrodollars:10}}});
+ assert.equal((await setupAppearance(s,null,{},image)).status,'complete');
+ const changed=snapshot();changed.persona.embodiment.portraitPrompt='A different portrait proposal';
+ await s.begin('persona-later','step',()=>({maximum:0}));await s.complete('persona-later',0,validateStudio(changed,clean,[]));
+ assert.equal((await setupAppearance(s,null,{},image)).status,'complete');assert.equal(renders,1);
+ assert.equal((await s.publicRuntime()).appearance.assetId,'persona-appearance-v1');assert.ok(await s.asset('persona-appearance-v1'));
+ const bad=snapshot();bad.persona.voiceExamples=[];assert.throws(()=>validateStudio(bad,null,[]),/INVALID/);
+ }finally{await db.close()}
+});
+
+test('failed portrait preserves the previous image and does not automatically spend again',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ try{
+ await s.begin('old-portrait','step',()=>({maximum:0}));await s.complete('old-portrait',0,{action:'appearance_image',assetId:'old-portrait',text:'old'},{bytes:Buffer.from('old'),mime:'image/png'});
+ await s.begin('persona-fixture','step',()=>({maximum:0}));await s.complete('persona-fixture',0,validateStudio(snapshot(),null,[]));
+ const image=()=>({quote:()=>100,generate:async()=>{calls++;throw Error('provider unavailable')}});
+ assert.equal((await setupAppearance(s,null,{},image)).status,'failed');assert.equal((await setupAppearance(s,null,{},image)).status,'failed');
+ assert.equal(calls,1);assert.equal((await s.publicRuntime()).appearance.assetId,'old-portrait');assert.equal((await s.status()).unresolved,0);
  }finally{await db.close()}
 });

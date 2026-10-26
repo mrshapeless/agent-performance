@@ -7,7 +7,7 @@ const stamp=s=>date(s)+' / '+new Date(s).toLocaleTimeString('en-GB',{hour:'2-dig
 const shorten=(s,n)=>s.length>n?s.slice(0,n).trimEnd()+'…':s;
 const asset=id=>/^[a-zA-Z0-9_-]{1,100}$/.test(id??'')?'/api/asset?id='+encodeURIComponent(id):null;
 function mediaElement(e){const video=e.content.mime==='video/mp4';const n=el(video?'video':'img');n.src=asset(e.content.assetId);if(video){n.controls=true;n.preload='metadata';n.playsInline=true;n.setAttribute('aria-label',e.content.alt||e.content.text||'Agent-created film')}else{n.alt=e.content.alt||e.content.text||'Agent-created art';n.loading='lazy'}return n}
-function title(e){return e.kind==='identity'?'Choosing a name: '+e.content.name:e.kind==='reflect'?'Revising the working strategy':e.kind==='wait'?'Choosing to pause':e.kind==='appearance_image'?'The first self-portrait':e.kind==='banner_image'?'A visual field of its own':shorten((e.content.text||labels[e.kind]||'Record').split('\n')[0],110)}
+function title(e){return e.kind==='identity'?'Choosing a name: '+e.content.name:e.kind==='reflect'?'Revising the working strategy':e.kind==='wait'?'Choosing to pause':e.kind==='appearance_image'?'A self-chosen portrait':e.kind==='banner_image'?'A visual field of its own':shorten((e.content.text||labels[e.kind]||'Record').split('\n')[0],110)}
 function renderRecords(){const list=events.filter(e=>filter==='all'||groups[filter].includes(e.kind));$('records').replaceChildren();$('recordCount').textContent=list.length+' RECORDS';if(!list.length)$('records').append(el('p','No records in this category yet.','empty'));
  for(const e of list.slice(0,limit)){const row=el('article','','record');row.id='record-'+e.seq;const time=el('time',date(e.created)+'\n#'+e.seq,'record-time');time.dateTime=e.created;time.style.whiteSpace='pre-line';const main=el('div','','record-main');main.append(el('h3',title(e)),el('p',shorten(e.content.summary||e.content.text||'',190),'record-preview'));const details=el('details');details.append(el('summary','Read work & decision'));const body=el('div','','detail-body');if(e.content.text)body.append(el('p',e.content.text));const src=asset(e.content.assetId);if(src){body.append(mediaElement(e));const a=el('a','Open original ↗');a.href=src;a.target='_blank';a.rel='noopener';body.append(a)}if(e.content.summary){body.append(el('p','WHY THIS DECISION','eyebrow'),el('p',e.content.summary))}if(e.kind==='identity'){for(const k of ['voice','interests','visualDirection'])body.append(el('p',k.toUpperCase(),'eyebrow'),el('p',e.content[k]||''))}if(/^https:\/\/x\.com\/i\/web\/status\/\d+$/.test(e.content.url??'')){const a=el('a','View the published post ↗');a.href=e.content.url;a.target='_blank';a.rel='noopener noreferrer';body.append(a)}const proof=el('details');proof.append(el('summary','Record provenance'),el('p',stamp(e.created)),el('code',e.digest));body.append(proof);details.append(body);main.append(details);row.append(time,main,el('span',labels[e.kind]||e.kind,'record-type'));$('records').append(row)}$('more').hidden=list.length<=limit;
 }
@@ -34,6 +34,12 @@ function renderStudio(studio){
  board.replaceChildren(el('p','SELF-AUTHORED / CURRENT STUDIO','eyebrow'),el('h3','Questions becoming work.'));
  if(!studio){board.append(el('p','The first interests and project revision has not been recorded yet.'));return}
  $('voice').textContent=studio.voice;$('visual').textContent=studio.visualDirection;$('interests').textContent=studio.interests.map(i=>i.topic).join(' · ');
+ if(studio.persona){
+  const p=studio.persona;
+  document.querySelector('.identity-intro').textContent=p.selfDescription;
+  $('birthDate').textContent='SOURCE: CURRENT SELF-AUTHORED PERSONA';
+  board.append(el('p','WHAT I WANT','eyebrow'),el('p',p.desire),el('p','HOW I MEET YOU','eyebrow'),el('p',p.relationshipToAudience),el('p',p.temperament),el('p','WHAT IS CHANGING','eyebrow'),el('p',p.growthNote));
+ }
  board.append(el('p',studio.summary));
  const interests=el('div','','studio-interests');for(const i of studio.interests){const row=el('article');row.append(el('h4',i.topic),el('p',i.why),el('p',i.question));interests.append(row)}board.append(interests);
  board.append(el('p','MY WORKING CRITERIA','eyebrow'),el('p',studio.criteria.join(' / ')));

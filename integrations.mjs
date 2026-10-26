@@ -8,7 +8,26 @@ import {mediaCapabilities} from './media-providers.mjs';
 import {planExperiment,creativeFreedom,referenceInfluence,diversityContext} from './experiments.mjs';
 const validText=(x,max=4000)=>typeof x==='string'&&x.trim()&&x.length<=max;
 
-export async function setupAppearance(store,provider,env){
+export async function setupAppearance(store,provider,env,makeImage=e=>new AppearanceImage(e)){
+  const studio=await store.latest('studio_revision');
+  if(studio?.persona){
+    const id='persona-appearance-v1';
+    const old=await store.operation(id);
+    if(old)return {phase:'appearance',status:old.status==='complete'?(old.result?.action==='appearance_image'?'complete':'failed'):old.status};
+    const image=makeImage(env),portrait=studio.persona.embodiment;
+    const prompt=`Self-authored AI artist portrait. ${portrait.portraitPrompt} Recognition anchors: ${portrait.recognitionAnchors}. An expressive face readable at avatar scale. Keep the chosen material character; no generic brand logo or advertising polish. Square composition.`;
+    const req=await store.begin(id,'step',()=>({prompt,maximum:image.quote(prompt)}));
+    if(req.replay)return {phase:'appearance',status:req.status};
+    let cost=req.maximum;
+    try{
+      const output=await image.generate(req.prompt);cost=output.costMicrodollars;
+      await store.complete(id,cost,{action:'appearance_image',text:portrait.description,summary:'A new self-portrait chosen through the artist’s own persona revision. Social profile changes are separate.',assetId:id},output);
+      return {phase:'appearance',status:'complete'};
+    }catch(error){
+      await store.complete(id,cost,{action:'appearance_failed',text:'The self-portrait attempt failed. The previous image remains available.'});
+      return {phase:'appearance',status:'failed'};
+    }
+  }
   const brief=await store.latest('appearance_brief');
   if(!brief){
     const id='appearance-brief-v1';
