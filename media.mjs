@@ -19,7 +19,7 @@ export async function enqueueMedia(store,planId,plan){
  await store.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES($1,$2,$3,'queued') ON CONFLICT(id) DO NOTHING",['media-'+planId.replace('x-plan-',''),planId,JSON.stringify(plan)]);
  return (await store.pool.query('SELECT * FROM agent_media_jobs WHERE plan_id=$1',[planId])).rows[0];
 }
-export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data ? 'styleAudit') ORDER BY created LIMIT 1")).rows[0]??null;}
+export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND available_at<=now() AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data ? 'styleAudit') ORDER BY created LIMIT 1")).rows[0]??null;}
 export async function finishMedia(store,planId){await store.pool.query("UPDATE agent_media_jobs SET state='published',updated=now() WHERE plan_id=$1 AND state='ready'",[planId]);}
 async function patch(store,job,state,data={}){
  const result=await store.pool.query("UPDATE agent_media_jobs SET state=$1,data=data || $2::jsonb,lease_until=NULL,lease_token=NULL,updated=now() WHERE id=$3 AND lease_token=$4 RETURNING id",[state,JSON.stringify(data),job.id,job.lease_token]);
@@ -39,7 +39,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   // Recover the pre-finalize-response image uploader once, using the saved asset.
   // A new upload operation is charged; paid image generation is never repeated.
   await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
-  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE")).rows[0];
+  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE available_at<=now() AND (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE")).rows[0];
   if(!row)return null;
   await c.query("UPDATE agent_media_jobs SET lease_token=$1,lease_until=now()+interval '3 minutes' WHERE id=$2",[token,row.id]);
   return {...row,lease_token:token};

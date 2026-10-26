@@ -45,6 +45,8 @@
   "experiments.mjs",
   "experiments.test.mjs",
   "gemini.mjs",
+  "import-media.mjs",
+  "import-media.test.mjs",
   "instance.mjs",
   "instance.test.mjs",
   "integrations.mjs",

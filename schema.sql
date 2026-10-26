@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS agent_media_jobs (
  created TIMESTAMPTZ NOT NULL DEFAULT now(),updated TIMESTAMPTZ NOT NULL DEFAULT now(),
  lease_until TIMESTAMPTZ,lease_token TEXT
 );
+ALTER TABLE agent_media_jobs ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT '-infinity';
 
 -- Only Replicate generation reservations participate in the daily spending limit.
 ALTER TABLE agent_operations ADD COLUMN IF NOT EXISTS budget_provider TEXT;

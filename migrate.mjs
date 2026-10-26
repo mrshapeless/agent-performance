@@ -4,6 +4,7 @@ import pg from 'pg';
 import {PostgresStore} from './postgres.mjs';
 import { readFile } from 'node:fs/promises';
 import { installBroadcastIdentity } from './broadcast-identity.mjs';
+import { importApprovedMedia } from './import-media.mjs';
 
 // Never mutate production state from preview builds.
 if (process.env.VERCEL_ENV === 'preview') {
@@ -32,6 +33,11 @@ if (process.env.VERCEL_ENV === 'preview') {
     try { broadcastImages={avatar:await readFile(new URL('./private/broadcast-avatar.png',import.meta.url)),banner:await readFile(new URL('./private/broadcast-banner.png',import.meta.url))}; }
     catch(error){if(error.code!=='ENOENT')throw error;}
     await installBroadcastIdentity(client,new PostgresStore(pool),broadcastImages);
+    let approvedBatch;
+    try{approvedBatch=JSON.parse(await readFile(new URL('./private/approved-media/manifest.json',import.meta.url),'utf8'));}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+    const imported=await importApprovedMedia(client,new PostgresStore(pool),approvedBatch,file=>readFile(new URL('./private/approved-media/'+file,import.meta.url)));
+    if(imported.length)console.log('Approved media queued:',JSON.stringify(imported));
     await client.query('COMMIT');
     console.log('Schema v1 ready.');
   } catch {
