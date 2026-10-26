@@ -105,7 +105,7 @@ export class PostgresStore {
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
     const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
     const appearance=await this.latest('appearance_image');
-    const portraitAttempt=await this.operation('persona-appearance-v1');
+    const portraitAttempt=await this.operation('persona-appearance-v1-repair1')??await this.operation('persona-appearance-v1');
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
     return { portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars, replicateBudget: state.replicateBudget,

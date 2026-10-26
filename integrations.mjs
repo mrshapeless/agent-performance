@@ -11,7 +11,9 @@ const validText=(x,max=4000)=>typeof x==='string'&&x.trim()&&x.length<=max;
 export async function setupAppearance(store,provider,env,makeImage=e=>new AppearanceImage(e)){
   const studio=await store.latest('studio_revision');
   if(studio?.persona){
-    const id='persona-appearance-v1';
+    const base='persona-appearance-v1',prior=await store.operation(base);
+    // One diagnostic recovery for the first release's settled, unclassified failure.
+    const id=prior?.result?.action==='appearance_failed'&&!prior.result.errorCode?base+'-repair1':base;
     const old=await store.operation(id);
     if(old)return {phase:'appearance',status:old.status==='complete'?(old.result?.action==='appearance_image'?'complete':'failed'):old.status};
     const image=makeImage(env),portrait=studio.persona.embodiment;
