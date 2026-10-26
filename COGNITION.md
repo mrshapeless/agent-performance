@@ -50,3 +50,13 @@ abstention, continuation of work, and observable behavior changes, not eloquent 
 The cognition worker can choose `develop` to save an illustrated-work request. A separate authenticated project worker advances one durable phase per wake: outline, image, inspection, then final assembly. The author chooses 3-10 sections and the subject from an active project. Each image is persisted before inspection; final prose is rewritten with the actual images attached. A completed work is readable at `/work/{id}` and indexed under `/work`. Public responses omit generation prompts and private references.
 
 The first capability trial is explicitly operator-initiated. Its subject and writing are agent-selected; this is not represented as spontaneous motivation. Later requests come from cognition decisions. Failures preserve the work and stop automatic paid retries. This checkpoint does not add video editing, vector memory, or establish audience preference. Automatic X replies remain disabled.
+
+## Delivery checkpoints
+
+1. **Persistent intentions and evidence — deployed.** An hourly episode retrieves archive evidence, writes a saved task or lesson, and can commission publication. Verify that restart retains tasks and a task closes only against the matching actual publication.
+2. **Completed extended work — current live checkpoint.** An agent-selected illustrated work must finish all persisted steps and be readable on its own page. Verify real image bytes, visual reviews, revised final prose, replay safety and a working public URL. The initial trial is editorially initiated; subsequent `develop` choices belong to cognition.
+3. **Useful long-term and visual recall — remaining.** Retrieve older text and actual relevant past images; compare an implementation against the lexical baseline on fixed retrieval cases. Completion means a later choice demonstrably uses appropriate older evidence without inventing it.
+4. **Experience changes choices — remaining.** Associate audience observations with individual works, retain uncertainty and counterevidence, and test whether a subsequent experiment changes a specific creative decision. Likes alone must not establish a universal style rule.
+5. **Larger media projects — remaining.** Durable screenplay, shot generation, assembly, review and publication. Completion requires a real assembled video with continuity, not one short provider clip called a film.
+
+These are acceptance checkpoints, not claims that all layers are complete. Automatic X replies remain off throughout unless the owner explicitly changes that instruction.
