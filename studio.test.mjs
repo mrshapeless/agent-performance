@@ -75,3 +75,14 @@ test('failed portrait preserves the previous image and does not automatically sp
  assert.equal(calls,1);assert.equal((await s.publicRuntime()).appearance.assetId,'old-portrait');assert.equal((await s.status()).unresolved,0);
  }finally{await db.close()}
 });
+
+test('initial unclassified portrait failure has only one recovery, not an unbounded retry',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ try{
+ await s.begin('persona-fixture','step',()=>({maximum:0}));await s.complete('persona-fixture',0,validateStudio(snapshot(),null,[]));
+ await s.begin('persona-appearance-v1','step',()=>({maximum:0}));await s.complete('persona-appearance-v1',0,{action:'appearance_failed'});
+ const image=()=>({quote:()=>100,generate:async()=>{calls++;throw Error('IMAGE_HTTP_429')}});
+ await setupAppearance(s,null,{},image);await setupAppearance(s,null,{},image);
+ assert.equal(calls,1);assert.equal((await s.publicRuntime()).portraitAttempt.errorCode,'IMAGE_HTTP_429');
+ }finally{await db.close()}
+});
