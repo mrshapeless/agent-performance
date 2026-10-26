@@ -53,7 +53,7 @@ export async function cognitionStep(store,provider,now=new Date()){
   const answer=await provider.generate(constitution,req.prompt,null,decisionSchema);cost=answer.costMicrodollars;
   const v=validateDecision(answer.value,studio,memories,tasks,known);
   // Task, incremental lesson and operation completion commit together.
-  await store.complete(id,cost,{action:'cognitive_decision',choice:v.action,text:v.text,summary:v.summary,projectId:v.projectId||null,taskId:v.taskId||null,evidence:v.evidence},null,async c=>{
+  await store.complete(id,cost,{action:'cognitive_decision',choice:v.action,text:v.text,summary:v.summary,projectId:v.projectId||null,taskId:v.taskId||null,evidence:v.evidence,lesson:v.lesson.id?v.lesson:null},null,async c=>{
    if(['write','commission'].includes(v.action)){
     const old=(await c.query('SELECT * FROM agent_agenda WHERE id=$1',[v.taskId])).rows[0];
     if(old&&(old.status!=='active'||old.project_id!==v.projectId))throw Error('STALE_TASK');
