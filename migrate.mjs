@@ -3,6 +3,7 @@ import { ACTIVE_INSTANCE } from './instance.mjs';
 import pg from 'pg';
 import {PostgresStore} from './postgres.mjs';
 import { readFile } from 'node:fs/promises';
+import { installBroadcastIdentity } from './broadcast-identity.mjs';
 
 // Never mutate production state from preview builds.
 if (process.env.VERCEL_ENV === 'preview') {
@@ -24,6 +25,10 @@ if (process.env.VERCEL_ENV === 'preview') {
     if(tested.rows.length&&!noted.rows.length)await new PostgresStore(pool).append(client,'record_note',{action:'record_note',reference:'95',text:'Record 95 was an operator integration test, not organic audience feedback.',summary:'The operator submitted a geometry question to verify the website reply pipeline. The generated summary omitted that provenance. The original record remains intact; this note corrects its interpretation, including subsequent strategy evaluations.'});
     const diversityNote=await client.query("SELECT seq FROM agent_events WHERE kind='record_note' AND payload::jsonb->>'reference'='diversity-policy-v1'");
     if(!diversityNote.rows.length)await new PostgresStore(pool).append(client,'record_note',{action:'record_note',reference:'diversity-policy-v1',text:'No visual format is privileged or banned. Approval of an individual work was not a request to repeat its genre.',summary:'Earlier format preferences were reinforced by operator tooling, not established by comparative audience evidence. Future choices compare distinct recent works before generation; style criticism remains advisory. The agent chooses whether to explore or meaningfully continue a series.'});
+    let broadcastImages;
+    try { broadcastImages={avatar:await readFile(new URL('./private/broadcast-avatar.png',import.meta.url)),banner:await readFile(new URL('./private/broadcast-banner.png',import.meta.url))}; }
+    catch(error){if(error.code!=='ENOENT')throw error;}
+    await installBroadcastIdentity(client,new PostgresStore(pool),broadcastImages);
     await client.query('COMMIT');
     console.log('Schema v1 ready.');
   } catch {

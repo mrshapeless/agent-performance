@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {PGlite} from '@electric-sql/pglite';
+import {PostgresStore} from './postgres.mjs';
+import {installBroadcastIdentity} from './broadcast-identity.mjs';
+test('editorial appearance appends provenance once and preserves personality and history',async()=>{
+ const db=new PGlite();await db.exec('CREATE TABLE agent_events(seq BIGSERIAL PRIMARY KEY,kind TEXT,payload TEXT,created TEXT,previous TEXT,digest TEXT);CREATE TABLE agent_assets(id TEXT PRIMARY KEY,mime TEXT,bytes BYTEA);');
+ const store=new PostgresStore();const initial={persona:{desire:'Make unusual art',growthNote:'Still exploring',embodiment:{description:'old'}},voice:'my voice',interests:[{topic:'play'}],projects:[{id:'one'}]};
+ await store.append(db,'studio_revision',initial);
+ assert.equal(await installBroadcastIdentity(db,store),false);
+ await assert.rejects(installBroadcastIdentity(db,store,{avatar:Buffer.from('invalid'),banner:Buffer.from('invalid')}),/INVALID_BROADCAST_ASSET/);
+ assert.equal((await db.query('SELECT * FROM agent_assets')).rows.length,0);
+ const png=Buffer.from('89504e470d0a1a0a','hex');const images={avatar:png,banner:png};
+ assert.equal(await installBroadcastIdentity(db,store,images),true);
+ assert.equal(await installBroadcastIdentity(db,store,images),false);
+ const rows=(await db.query('SELECT * FROM agent_events ORDER BY seq')).rows;
+ assert.deepEqual(JSON.parse(rows[0].payload),initial);
+ const current=JSON.parse(rows.findLast(r=>r.kind==='studio_revision').payload);
+ assert.equal(current.persona.desire,initial.persona.desire);assert.deepEqual(current.projects,initial.projects);assert.equal(current.voice,initial.voice);
+ assert.match(current.persona.embodiment.description,/white bob/);
+ assert.match(JSON.parse(rows.at(-1).payload).summary,/No social profile/);
+ assert.equal((await db.query('SELECT * FROM agent_assets')).rows.length,2);
+ await db.close();
+});

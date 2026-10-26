@@ -27,6 +27,8 @@
   "api/x-auth.mjs",
   "appearance.mjs",
   "architecture.html",
+  "broadcast-identity.mjs",
+  "broadcast-identity.test.mjs",
   "cli.mjs",
   "cloud.mjs",
   "cloud.test.mjs",
