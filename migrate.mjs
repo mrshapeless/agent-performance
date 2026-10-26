@@ -18,6 +18,9 @@ if (process.env.VERCEL_ENV === 'preview') {
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${ACTIVE_INSTANCE}"`);
     await client.query(`SET LOCAL search_path TO "${ACTIVE_INSTANCE}"`);
     await client.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
+    // Bounded repair of the initial timestamp-CAS incompatibility. Integer versions
+    // avoid losing PostgreSQL microseconds through the JavaScript Date adapter.
+    await client.query("UPDATE agent_works SET phase='render',version=version+1,data=(data-'error'-'failedPhase')||'{\"timestampRepair\":true}'::jsonb,updated=now() WHERE id='first-independent-work-v1' AND phase='failed' AND data->>'error'='INVALID_WORK' AND data->>'failedPhase'='render' AND NOT(data ? 'timestampRepair') AND jsonb_array_length(data->'assets')=0");
     await recoverRejectedX(client,ACTIVE_INSTANCE);
     // Preserve the original record and append verified operator-test provenance.
     const tested=await client.query("SELECT seq FROM agent_events WHERE seq=95 AND digest=$1",['afc96d521d7cdb548f1f97cd89961eb7953e1c71957b56bed8a1d4dc8f93808b']);

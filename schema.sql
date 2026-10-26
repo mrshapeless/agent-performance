@@ -95,3 +95,5 @@ CREATE TABLE IF NOT EXISTS agent_lessons (
 );
 
 CREATE TABLE IF NOT EXISTS agent_works (id text PRIMARY KEY, phase text NOT NULL CHECK(phase IN ('render','review','assemble','published','failed')), plan jsonb NOT NULL, data jsonb NOT NULL, created timestamptz NOT NULL DEFAULT now(), updated timestamptz NOT NULL DEFAULT now());
+
+ALTER TABLE agent_works ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;

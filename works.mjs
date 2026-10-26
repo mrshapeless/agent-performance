@@ -47,7 +47,7 @@ export async function workStep(store,provider,env,services=new MediaProviders(en
   }catch(e){await store.complete(id+'-outline',cost,{action:'work_failed',summary:'Outline was not applied.',errorCode:e.message==='INVALID_WORK'?'INVALID_WORK':'PROVIDER_UNAVAILABLE'});return {status:'outline_failed'};}
  }
  const index=w.phase==='render'?(w.data.assets??[]).length:(w.data.reviews??[]).length;
- const op=w.id+'-'+w.phase+'-'+index;
+ const op=w.id+'-'+w.phase+'-'+index+'-v'+w.version;
  const req=await store.begin(op,'step',()=>({maximum:w.phase==='render'?services.imageQuote(w.plan.sections[index].prompt):provider.quote(constitution,JSON.stringify(w.plan)+JSON.stringify(w.data))}));
  if(req.replay)return {status:req.status,workId:w.id};let cost=req.maximum;
  try{
@@ -69,7 +69,7 @@ export async function workStep(store,provider,env,services=new MediaProviders(en
   }else throw Error('INVALID_WORK');
   data.history.push({stage:w.phase,summary:result.summary,at:new Date().toISOString()});
   await store.complete(op,cost,result,asset,async c=>{
-   const updated=await c.query('UPDATE agent_works SET phase=$1,data=$2,updated=now() WHERE id=$3 AND phase=$4 AND updated=$5 RETURNING id',[next,JSON.stringify(data),w.id,w.phase,w.updated]);check(updated.rows.length===1);
+   const updated=await c.query('UPDATE agent_works SET phase=$1,data=$2,version=version+1,updated=now() WHERE id=$3 AND phase=$4 AND version=$5 RETURNING id',[next,JSON.stringify(data),w.id,w.phase,w.version]);check(updated.rows.length===1);
   });return {status:next,workId:w.id,rendered:data.assets.length,total:w.plan.sections.length};
  }catch(e){await store.complete(op,cost,{action:'work_failed',workId:w.id,summary:'The saved work is preserved; the failed step was not silently repeated.',errorCode:e.message==='INVALID_WORK'?'INVALID_WORK':'PROVIDER_OR_STORAGE_UNAVAILABLE'},null,async c=>{await c.query("UPDATE agent_works SET phase='failed',data=data||$2::jsonb,updated=now() WHERE id=$1",[w.id,JSON.stringify({failedPhase:w.phase,error:e.message==='INVALID_WORK'?'INVALID_WORK':'PROVIDER_OR_STORAGE_UNAVAILABLE'})]);});return {status:'failed',workId:w.id};}
 }
