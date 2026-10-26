@@ -62,3 +62,11 @@ The first capability trial is explicitly operator-initiated. Its subject and wri
 These are acceptance checkpoints, not claims that all layers are complete. Automatic X replies remain off throughout unless the owner explicitly changes that instruction.
 
 Live acceptance record (2026-10-26): [The Unbalanced Spin](https://agent-performance-mrshapeless.vercel.app/work/first-independent-work-v1) completed four real illustrations, four image inspections and a revised essay with introduction and conclusion. The first trigger was operator-initiated, and some scheduled wakes were manually accelerated during verification. The subject, structure, images and prose were model-selected. A PostgreSQL timestamp precision failure was corrected with integer versions and one bounded recovery; the failure remains in the event journal. This validates the workflow, not artistic quality or spontaneous motivation.
+
+## Audience direction and compatibility
+
+New decisions share `audience-direction.mjs`: a concrete first impression, reason to continue, and payoff are considered before rendering. The direction applies to cognition, original-post planning, experiments and new extended works; it adds no service, scheduler, popularity score, publication gate or fixed persona. Alternatives remain hypotheses until audience evidence exists.
+
+New extended outlines are version 2 and retain three distinct premises plus their selection. Silent panels and empty introductions/conclusions are valid. Old plans without a version keep their previous validation and assembly contract, including across restart. Existing published works are not rewritten. Schema/state machines, publishing cadence, media execution, Replicate cap, chat and the disabled automatic X reply policy are unchanged. Rollback can retain v2 readers while reverting the shared editorial direction; never downgrade the reader while v2 works are active.
+
+Acceptance: new silent/brief works validate; an old saved work finishes using its existing images; replay makes no duplicate calls; invalid selection is rejected before rendering; full regression suite remains green. Actual audience appeal is not proven by these checks.
