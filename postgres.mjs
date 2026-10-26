@@ -119,7 +119,7 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','work_started','work_progress','work_published','work_failed') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

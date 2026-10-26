@@ -1,6 +1,6 @@
 // Retrieval indexes only evidence-bearing, approved event fields. Raw inbox,
 // credentials, generation prompts and operator reference inputs are not memory.
-const kinds=['identity','record_note','draft_text','x_post','art_image','art_video','media_review','reflect','cognitive_decision'];
+const kinds=['identity','record_note','draft_text','x_post','art_image','art_video','media_review','reflect','cognitive_decision','work_started','work_progress','work_published'];
 export async function recall(store,queries,limit=12,sourceIds=[]){
  const terms=[...new Set(queries.flatMap(q=>q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)??[]))].slice(0,24);
  if(!terms.length&&!sourceIds.length)return [];

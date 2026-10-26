@@ -50,6 +50,14 @@
     "api/room.mjs": {
       "maxDuration": 120,
       "includeFiles": "private/**"
+    },
+    "api/works.mjs": {
+      "maxDuration": 120,
+      "includeFiles": "private/**"
+    },
+    "api/project.mjs": {
+      "maxDuration": 120,
+      "includeFiles": "private/**"
     }
   },
   "crons": [
@@ -76,9 +84,17 @@
     {
       "path": "/api/media",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/project",
+      "schedule": "*/2 * * * *"
     }
   ],
   "rewrites": [
+    {
+      "source": "/work/:id",
+      "destination": "/work-detail.html"
+    },
     {
       "source": "/admin",
       "destination": "/admin.html"

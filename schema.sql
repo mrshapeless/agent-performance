@@ -93,3 +93,5 @@ CREATE TABLE IF NOT EXISTS agent_lessons (
  evidence JSONB NOT NULL,counterevidence JSONB NOT NULL,
  status TEXT NOT NULL CHECK(status IN ('hypothesis','supported','retired')),updated TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS agent_works (id text PRIMARY KEY, phase text NOT NULL CHECK(phase IN ('render','review','assemble','published','failed')), plan jsonb NOT NULL, data jsonb NOT NULL, created timestamptz NOT NULL DEFAULT now(), updated timestamptz NOT NULL DEFAULT now());

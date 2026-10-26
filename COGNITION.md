@@ -44,3 +44,9 @@ Unknown external writes remain subject to timeline reconciliation, never blind r
 The next memory comparison must use the same held-out scenarios, model and context
 budget for this baseline and Hindsight. Measure source accuracy, contradictions,
 abstention, continuation of work, and observable behavior changes, not eloquent claims.
+
+## Extended works checkpoint
+
+The cognition worker can choose `develop` to save an illustrated-work request. A separate authenticated project worker advances one durable phase per wake: outline, image, inspection, then final assembly. The author chooses 3-10 sections and the subject from an active project. Each image is persisted before inspection; final prose is rewritten with the actual images attached. A completed work is readable at `/work/{id}` and indexed under `/work`. Public responses omit generation prompts and private references.
+
+The first capability trial is explicitly operator-initiated. Its subject and writing are agent-selected; this is not represented as spontaneous motivation. Later requests come from cognition decisions. Failures preserve the work and stop automatic paid retries. This checkpoint does not add video editing, vector memory, or establish audience preference. Automatic X replies remain disabled.
