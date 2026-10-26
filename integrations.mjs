@@ -24,7 +24,7 @@ export async function setupAppearance(store,provider,env,makeImage=e=>new Appear
       await store.complete(id,cost,{action:'appearance_image',text:portrait.description,summary:'A new self-portrait chosen through the artist’s own persona revision. Social profile changes are separate.',assetId:id},output);
       return {phase:'appearance',status:'complete'};
     }catch(error){
-      await store.complete(id,cost,{action:'appearance_failed',text:'The self-portrait attempt failed. The previous image remains available.'});
+      await store.complete(id,cost,{action:'appearance_failed',errorCode:/^IMAGE_[A-Z0-9_]+$/.test(error.message)?error.message:'PORTRAIT_PROVIDER_OR_STORAGE_ERROR',text:'The self-portrait attempt failed. The previous image remains available.'});
       return {phase:'appearance',status:'failed'};
     }
   }
