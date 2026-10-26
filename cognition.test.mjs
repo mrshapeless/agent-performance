@@ -63,3 +63,8 @@ test('social worker executes a commission exactly once and does not invent anoth
  assert.equal(posts,1);assert.deepEqual(await agenda(s),[]);
  }finally{await db.close()}
 });
+
+test('cognition can request an extended work without publishing or losing its intent',async()=>{
+ const {s,db}=await fixture();let calls=0;const now=new Date('2026-10-26T22:00:00Z');const v={...choice(),action:'develop',nextStep:'Develop a three-part illustrated story.'};const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls===1?{queries:['chair']}:v})};
+ try{await cognitionStep(s,provider,now);assert.equal((await cognitionStep(s,provider,now)).choice,'develop');const request=await s.latest('work_request');assert.equal(request.projectId,v.projectId);assert.equal(request.text,v.text);assert.equal(await s.latest('x_post'),null);await cognitionStep(s,provider,now);assert.equal(calls,2);}finally{await db.close()}
+});
