@@ -1,3 +1,4 @@
+import {publicWorkspace} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
 import { createHash } from 'node:crypto';
 
@@ -50,7 +51,9 @@ export class PostgresStore {
       const studio=studioRow?JSON.parse(studioRow.payload):null;
       const projectHistory=(await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse().map(r=>({seq:String(r.seq),kind:r.kind,payload:JSON.parse(r.payload)}));
       const visualHistory=(await client.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state='published' ORDER BY updated DESC LIMIT 8")).rows.map(r=>({id:r.id,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,description:r.data.review?.alt??r.plan.alt,construction:r.plan.prompt,decision:r.data.styleAudit?.decision??r.data.review?.decision}));
-      const request = buildRequest(identity, recent, { kind, external, studio, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
+      const workspaceRow=(await client.query("SELECT payload FROM agent_events WHERE kind='workspace_broadcast' ORDER BY seq DESC LIMIT 1")).rows[0];
+      const workspace=workspaceRow?JSON.parse(workspaceRow.payload):null;
+      const request = buildRequest(identity, recent, { kind, external, studio, workspace, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
         strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT
@@ -111,7 +114,7 @@ export class PostgresStore {
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
     const decision=await this.latest('cognitive_decision');
     const publicDecision=decision?Object.fromEntries(['action','choice','text','summary','projectId','taskId','evidence'].filter(k=>k in decision).map(k=>[k,decision[k]])):null;
-    return { cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
+    return { workspace:await publicWorkspace(this), cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars, replicateBudget: state.replicateBudget,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -119,7 +122,7 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','work_started','work_progress','work_published','work_failed') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','workspace_broadcast','workspace_outcome','workspace_note','work_started','work_progress','work_published','work_failed') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

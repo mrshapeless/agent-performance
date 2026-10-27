@@ -3,6 +3,7 @@
   ".githooks/pre-push",
   ".gitignore",
   ".vercelignore",
+  "AGENT-ARCHITECTURE.md",
   "AGENTS.md",
   "BUDGET.md",
   "COGNITION.md",
@@ -96,5 +97,8 @@
   "visual-references.test.mjs",
   "works.mjs",
   "works.test.mjs",
+  "workspace-state.mjs",
+  "workspace.mjs",
+  "workspace.test.mjs",
   "x.mjs"
 ]

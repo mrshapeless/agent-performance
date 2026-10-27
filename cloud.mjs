@@ -1,6 +1,7 @@
 import {workStep,publicWorks} from './works.mjs';
 import {roomHandler} from './room.mjs';
 import {cognitionStep} from './cognition.mjs';
+import {workspaceStep} from './workspace.mjs';
 import {studioContext,validateStudioChoice} from './studio.mjs';
 import { observe, audienceStep, webInbox } from './experience.mjs';
 import { accountSetup, accountStatus } from './accounts.mjs';
@@ -100,7 +101,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if (social) return reply(await socialStep(store,createProvider(),env,now()));
       if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
       if (!tick && request.method === 'GET') return reply({ ...await store.status(), accounts:await accountStatus(store,env), enabled:env.AGENT_ENABLED==='true' });
-      if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) return reply(await cognitionStep(store,createProvider(),now()));
+      if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) return reply(await (env.COGNITION_LEGACY==='true'?cognitionStep:workspaceStep)(store,createProvider(),now()));
       // A one-time capability transition must not wait behind an already completed hourly tick.
       if(tick && await store.latest('observation') && !(await store.latest('reflect'))?.text?.includes('experience-v1')) id='experience-v1';
       return reply(await cloudRun(store, createProvider(), kind, id));

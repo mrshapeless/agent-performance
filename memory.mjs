@@ -1,6 +1,6 @@
 // Retrieval indexes only evidence-bearing, approved event fields. Raw inbox,
 // credentials, generation prompts and operator reference inputs are not memory.
-const kinds=['identity','record_note','draft_text','x_post','art_image','art_video','media_review','reflect','cognitive_decision','work_started','work_progress','work_published'];
+const kinds=['identity','record_note','draft_text','x_post','art_image','art_video','media_review','reflect','cognitive_decision','workspace_note','workspace_outcome','work_started','work_progress','work_published'];
 export async function recall(store,queries,limit=12,sourceIds=[]){
  const terms=[...new Set(queries.flatMap(q=>q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)??[]))].slice(0,24);
  if(!terms.length&&!sourceIds.length)return [];
@@ -17,7 +17,7 @@ export async function recall(store,queries,limit=12,sourceIds=[]){
 }
 export async function lessons(store){return (await store.pool.query("SELECT id,claim,conditions,evidence,counterevidence,status FROM agent_lessons ORDER BY updated DESC LIMIT 30")).rows;}
 export async function agenda(store){return (await store.pool.query("SELECT id,project_id,status,objective,next_step,artifact,version,updated FROM agent_agenda WHERE status IN ('active','commissioned') ORDER BY updated LIMIT 8")).rows;}
-export async function commissionedTask(store){return (await store.pool.query("SELECT * FROM agent_agenda WHERE status='commissioned' ORDER BY updated LIMIT 1")).rows[0]??null;}
+export async function commissionedTask(store){return (await store.pool.query("SELECT a.* FROM agent_agenda a WHERE status='commissioned' AND (goal_id IS NULL OR EXISTS(SELECT 1 FROM agent_goals g WHERE g.id=a.goal_id AND g.status='active')) ORDER BY updated LIMIT 1")).rows[0]??null;}
 export async function reconcileAgenda(store){
  await store.pool.query(`UPDATE agent_agenda a SET status='completed',updated=now(),version=version+1
  WHERE status='commissioned' AND EXISTS (SELECT 1 FROM agent_events e WHERE e.kind='x_post' AND e.payload::jsonb->>'agendaId'=a.id AND COALESCE(e.payload::jsonb->>'agendaVersion','1')=a.version::text)`);

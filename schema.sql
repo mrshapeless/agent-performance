@@ -98,3 +98,18 @@ CREATE TABLE IF NOT EXISTS agent_lessons (
 CREATE TABLE IF NOT EXISTS agent_works (id text PRIMARY KEY, phase text NOT NULL CHECK(phase IN ('render','review','assemble','published','failed')), plan jsonb NOT NULL, data jsonb NOT NULL, created timestamptz NOT NULL DEFAULT now(), updated timestamptz NOT NULL DEFAULT now());
 
 ALTER TABLE agent_works ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS agent_goals (
+ id TEXT PRIMARY KEY,status TEXT NOT NULL CHECK(status IN ('active','paused','completed','abandoned')),
+ objective TEXT NOT NULL,why TEXT NOT NULL,success TEXT NOT NULL,evidence JSONB NOT NULL DEFAULT '[]',
+ version INTEGER NOT NULL DEFAULT 1,updated TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE agent_agenda ADD COLUMN IF NOT EXISTS goal_id TEXT;
+CREATE TABLE IF NOT EXISTS agent_predictions (
+ id TEXT PRIMARY KEY,goal_id TEXT NOT NULL,task_id TEXT NOT NULL,
+ metric TEXT NOT NULL CHECK(metric IN ('publication','visual_alignment','draft_saved')),
+ probability DOUBLE PRECISION NOT NULL CHECK(probability>=0 AND probability<=1),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','observed','unknown')),
+ outcome INTEGER CHECK(outcome IN (0,1)),evidence JSONB NOT NULL DEFAULT '[]',
+ created TIMESTAMPTZ NOT NULL DEFAULT now(),deadline TIMESTAMPTZ NOT NULL
+);
