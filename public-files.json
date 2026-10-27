@@ -52,6 +52,7 @@
   "instance.test.mjs",
   "integrations.mjs",
   "integrations.test.mjs",
+  "home-timeline.mjs",
   "kernel.mjs",
   "kernel.test.mjs",
   "manual-replies.mjs",

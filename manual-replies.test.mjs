@@ -45,3 +45,19 @@ test('opt-out prevents prepared drafts from opening and failed search access bac
  const now=new Date();assert.equal((await syncReplyThreads(s,env,now,client)).error,'X_HTTP_403');assert.equal((await syncReplyThreads(s,env,new Date(+now+900001),client)).status,'read_access_paused');assert.equal(calls,1);
  assert.throws(()=>replyIntent('123&foo=bar','hello'));
 }));
+
+test('home timeline stays private, deduplicates, paginates and never enters automatic replies',()=>fixture(async s=>{
+ const {syncHomeTimeline}=await import('./home-timeline.mjs');let reads=0;
+ const client=()=>({verify:async()=>({id:'1'}),request:async(method,path)=>{assert.equal(method,'GET');assert.match(path,/\/users\/1\/timelines\/reverse_chronological/);reads++;if(reads===2)assert.match(path,/pagination_token=older/);return {data:[{id:'900',author_id:'7',text:'A strange little painting',attachments:{media_keys:['m']}}],includes:{users:[{id:'7',username:'painter'}]},meta:{next_token:'older'}};}});
+ const now=new Date('2026-10-27T12:00:00Z');
+ assert.equal((await syncHomeTimeline(s,env,false,client,now)).count,1);
+ await syncHomeTimeline(s,env,false,client,now);assert.equal(reads,1);
+ assert.equal((await syncHomeTimeline(s,env,true,client,new Date(+now+61000))).count,0);
+ assert.equal((await manualDraftStep(s,{quote:()=>assert.fail('no automatic home drafts')},env)).status,'no_manual_drafts');
+ const home=await (await manualReplyHandler(new Request(origin+'/api/manual-replies?source=home'),s,null,env)).json();assert.equal(home.items.length,1);assert.equal(home.items[0].metadata.hasMedia,true);
+ const mentions=await (await manualReplyHandler(new Request(origin+'/api/manual-replies'),s,null,env)).json();assert.equal(mentions.items.length,0);
+ assert.equal(JSON.stringify(await s.publicJournal()).includes('strange little painting'),false);
+ assert.equal((await s.pool.query("SELECT status FROM agent_inbox WHERE id='x-900'")).rows[0].status,'ignored');
+ const open=new Request('https://alidade.art/api/manual-replies',{method:'POST',headers:{origin:'https://alidade.art'},body:JSON.stringify({id:'x-900',version:0,action:'open',text:'A tiny world with its own weather.'})});
+ const result=await (await manualReplyHandler(open,s,null,env)).json();assert.equal(new URL(result.url).searchParams.get('in_reply_to'),'900');assert.equal(reads,2);
+}));

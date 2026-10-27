@@ -10,7 +10,8 @@ function replyCard(item){
  left.append(status,el('h3',item.metadata.username?'@'+item.metadata.username:item.author),el('p',item.text));
  if(item.metadata.rootText)left.append(el('p','Original post: '+item.metadata.rootText,'reply-context'));
  if(item.metadata.parentText)left.append(el('p','In reply to: '+item.metadata.parentText,'reply-context'));
- const link=el('a','View comment in X ↗');link.href='https://x.com/i/web/status/'+encodeURIComponent(postId);link.target='_blank';link.rel='noopener noreferrer';left.append(link);
+ if(item.metadata.hasMedia)left.append(el('p','Contains media. Open in X before replying; the draft uses text only.','reply-context'));
+ const link=el('a','View post in X ↗');link.href='https://x.com/i/web/status/'+encodeURIComponent(postId);link.target='_blank';link.rel='noopener noreferrer';left.append(link);
  const date=el('p',new Date(item.metadata.created??item.created).toLocaleString(),'mono dim');left.append(date);
  const label=el('label','REPLY DRAFT'),input=el('textarea');input.value=item.draft;input.setAttribute('aria-label','Draft reply to '+(item.metadata.username??item.author));
  const counter=el('p','','reply-counter'),actions=el('div',undefined,'actions'),reason=el('p',item.reason,'mono dim'),feedback=el('p','','mono');
@@ -41,12 +42,16 @@ async function loadReplies(more=false){
  if(replyDirty&&!confirm('Refresh and discard unsaved draft edits?'))return;
  replyLoading=true;$('replyRefresh').disabled=true;$('replyNotice').textContent='Loading private inbox…';
  const session=secret;
- try{const offset=more?replyOffset:0;const r=await fetch('/api/manual-replies?'+new URLSearchParams({filter:$('replyFilter').value,offset:String(offset)}),{headers:{Authorization:'Bearer '+secret},cache:'no-store'});const d=await r.json();if(!r.ok){if(r.status===401)lock();throw Error(d.error||'Unable to load inbox');}if(secret!==session)return;
+ try{const offset=more?replyOffset:0;const r=await fetch('/api/manual-replies?'+new URLSearchParams({source:$('replySource').value,filter:$('replyFilter').value,offset:String(offset)}),{headers:{Authorization:'Bearer '+secret},cache:'no-store'});const d=await r.json();if(!r.ok){if(r.status===401)lock();throw Error(d.error||'Unable to load inbox');}if(secret!==session)return;
   if(!more)$('replyItems').replaceChildren();for(const item of d.items)$('replyItems').append(replyCard(item));replyOffset=offset+d.items.length;replyDirty=false;
   $('replyMore').hidden=!d.more;
-  const latest=d.sync[0];$('replySync').textContent='Send from @'+d.account.replace(/^@/,'')+' · Automatic replies OFF · Mentions: '+(d.mentionsAt?new Date(d.mentionsAt).toLocaleString():'not synced')+' · Conversation scan: '+(latest?new Date(latest.updated).toLocaleString():'not yet run');
+  const home=$('replySource').value==='home';$('homeSync').hidden=!home;$('homeOlder').hidden=!home;const homeState=d.sync.find(s=>s.id==='home-timeline');$('homeOlder').disabled=!homeState?.data?.next;const latest=home?homeState:d.sync.find(s=>s.id!=='home-timeline');$('replySync').textContent='Send from @'+d.account.replace(/^@/,'')+' · Automatic replies OFF · Mentions: '+(d.mentionsAt?new Date(d.mentionsAt).toLocaleString():'not synced')+' · Last source fetch: '+(latest?new Date(latest.updated).toLocaleString():'not yet run');
   const errors=[...d.mentionErrors,...d.sync.filter(s=>s.error).map(s=>s.error)];$('replyNotice').textContent=(d.items.length?'Drafts stay private. Review before sending.':'No comments in this view yet.')+(errors.length?' Sync warnings: '+[...new Set(errors)].join('; '):'');
  }catch(e){$('replyNotice').textContent=e.message;}finally{replyLoading=false;$('replyRefresh').disabled=false;}
 }
 $('replyRefresh').onclick=()=>loadReplies();$('replyMore').onclick=()=>loadReplies(true);$('replyFilter').onchange=()=>loadReplies();
 window.addEventListener('beforeunload',e=>{if(replyDirty){e.preventDefault();e.returnValue='';}});
+
+$('replySource').onchange=()=>loadReplies();
+async function fetchHome(older=false){if(replyLoading||!secret)return;replyLoading=true;$('homeSync').disabled=true;$('homeOlder').disabled=true;try{const d=await replyAPI({action:'sync_home',older});if(d.error)throw Error(d.error);replyLoading=false;await loadReplies();$('replyNotice').textContent=d.status==='synced'?'Fetched '+d.count+' new posts. Choose Prepare draft on a post.':d.status;}catch(e){$('replyNotice').textContent='Home fetch: '+e.message;}finally{replyLoading=false;$('homeSync').disabled=false;}}
+$('homeSync').onclick=()=>fetchHome();$('homeOlder').onclick=()=>fetchHome(true);
