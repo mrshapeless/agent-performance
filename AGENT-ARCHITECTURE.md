@@ -108,6 +108,23 @@ broadcast, external observations or outcome feedback independently, hold the mod
 and input set fixed, and compare multiple seeds without publishing trial outputs.
 Do not run a public destructive experiment to manufacture a consciousness claim.
 
+## First production observation
+
+On 27 October 2026, episode `workspace-v1-498080` completed real-provider
+proposal collection and arbitration. It persisted a new active goal, a media
+commission (`ws-498080-perception`), a shared self-model, alternative-selection
+records and a pending visual-alignment forecast. Earlier invalid responses were
+rejected without applying their state; bounded schema repairs reused the saved
+proposals. Regression suite: 84 passing tests.
+
+The chosen commission was a graphic award for a computer fan. Arbitration favored
+correcting the internal visual review over exploration, and retained the old
+infrastructure theme. This is evidence that the decision mechanism executes, **not**
+evidence that creative fixation has been solved. Neither the commissioned output
+nor its forecast outcome had been observed at this checkpoint. Subsequent evaluation
+must test critic fixation and thematic freedom, not reward another fluent self-report.
+Automatic X replies remained disabled and the public journal was available.
+
 ## Rollback
 
 `COGNITION_LEGACY=true` selects the prior cognitive worker. Added state is retained,
