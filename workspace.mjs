@@ -9,6 +9,18 @@ const actions=['commission','write','study','reflect','wait','develop'];
 export const modules=['perception','recall','exploration','self_monitor'];
 export const candidateSchema=object({action:{type:'string',enum:actions},goalId:str,projectId:str,objective:str,why:str,success:str,proposal:str,novelty:str,uncertainty:str,evidence:list(str),prediction:object({metric:{type:'string',enum:['publication','visual_alignment','draft_saved','none']},probability:number}),queries:list(str,0,3)});
 export const broadcastSchema=object({selectedId:str,attention:list(str,1,3),summary:str,selection:list(object({id:str,reason:str}),1,4),selfModel:object({desire:str,preferences:list(str,1,5),uncertainties:list(str,1,5),change:str}),evidence:list(str),goalChanges:list(object({id:str,status:{type:'string',enum:['active','paused','completed','abandoned']},reason:str}),0,8),sources:list({type:'string',enum:['BBC World','BBC Technology','NASA','Colossal','Hyperallergic']},1,5),note:object({claim:str,evidence:list(str),links:list(str)})});
+export function broadcastContract(candidates,snapshot){
+ const schema=structuredClone(broadcastSchema),p=schema.properties;
+ const candidatesEnum={type:'string',enum:candidates.map(c=>c.id)};
+ const evidenceIds=snapshot.evidence.map(e=>e.id);
+ const evidenceList=list(evidenceIds.length?{type:'string',enum:evidenceIds}:str,0,evidenceIds.length?8:0);
+ p.selectedId=candidatesEnum;p.attention.items=candidatesEnum;
+ p.selection.items.properties.id=candidatesEnum;p.selection.items.properties.reason={type:'string',maxLength:700};
+ p.evidence=evidenceList;p.note.properties.evidence=evidenceList;p.note.properties.links=evidenceList;p.note.properties.claim={type:'string',maxLength:1500};
+ if(!snapshot.state.goals.length)p.goalChanges.maxItems=0;
+ else p.goalChanges.items.properties.id={type:'string',enum:snapshot.state.goals.map(g=>g.id)};
+ return schema;
+}
 const text=(x,n=1800)=>typeof x==='string'&&x.trim()&&x.length<=n;
 const slug=x=>typeof x==='string'&&/^[a-z][a-z0-9-]{2,60}$/.test(x);
 let validationCheck=0;
@@ -72,8 +84,10 @@ export async function workspaceStep(store,provider,now=new Date()){
  const episode=open?open.id.replace(/-snapshot$/,''):'workspace-v1-'+Math.floor(now.getTime()/3600000);
  const prior=await store.operation(episode+'-broadcast');
  const repair=prior?.result?.action==='cognition_failed'&&!prior.result.failureCode;
- const broadcastId=episode+'-broadcast'+(repair?'-repair1':'');
- const done=repair?await store.operation(broadcastId):prior;if(done)return {status:done.status,replay:true};
+ const firstRepair=repair?await store.operation(episode+'-broadcast-repair1'):null;
+ const linkRepair=firstRepair?.result?.failureCode==='INVALID_WORKSPACE_OUTPUT_14';
+ const broadcastId=episode+'-broadcast'+(linkRepair?'-repair2':repair?'-repair1':'');
+ const done=linkRepair?await store.operation(broadcastId):repair?firstRepair:prior;if(done)return {status:done.status,replay:true};
  let snapshot=(await store.operation(episode+'-snapshot'))?.result;
  if(!snapshot){
   const evidence=await workspaceEvidence(store,Math.floor(now.getTime()/3600000));
@@ -105,7 +119,7 @@ export async function workspaceStep(store,provider,now=new Date()){
  const req=await store.begin(id,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:req.status};let cost=req.maximum;
  let stage='provider';
  try{
-  const answer=await provider.generate(constitution,req.prompt,null,broadcastSchema);cost=answer.costMicrodollars;
+  const answer=await provider.generate(constitution,req.prompt,null,broadcastContract(candidates,snapshot));cost=answer.costMicrodollars;
   stage='validate';
   const v=validateBroadcast(answer.value,candidates,snapshot),chosen=candidates.find(c=>c.id===v.selectedId),taskId='ws-'+episode.split('-').at(-1)+'-'+chosen.id;
   const study=chosen.action==='study'?await recall(store,chosen.queries,12):[];
