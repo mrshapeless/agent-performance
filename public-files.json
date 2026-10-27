@@ -73,6 +73,7 @@
   "public/admin.js",
   "public/chat.html",
   "public/favicon.svg",
+  "public/home.css",
   "public/home.js",
   "public/index.html",
   "public/journal.html",
