@@ -1,3 +1,4 @@
+import {scopedSQL} from './instance.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
@@ -47,3 +48,5 @@ test('failed inspection records failure and does not automatically repeat paid c
  assert.equal((await atelierStep(s,provider)).status,'profile_failed');assert.equal((await atelierStep(s,provider)).status,'up_to_date');assert.equal(calls,1);assert.equal((await s.status()).unresolved,0);
  }finally{await db.close();}
 });
+
+test("visual memory tables are scoped to the active generation",()=>{for(const table of ["agent_visual_profiles","agent_taste_feedback"])assert.equal(scopedSQL("SELECT * FROM "+table),'SELECT * FROM "generation_02".'+table);});
