@@ -124,6 +124,10 @@
     {
       "source": "/chat",
       "destination": "/chat.html"
+    },
+    {
+      "source": "/behind",
+      "destination": "/behind.html"
     }
   ],
   "headers": [
