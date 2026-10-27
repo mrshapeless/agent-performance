@@ -1,4 +1,9 @@
-# Persistent agency: first production increment
+# Persistent agency: legacy controller
+
+This document describes the retained rollback controller. The default runtime is
+now documented in [AGENT-ARCHITECTURE.md](AGENT-ARCHITECTURE.md), including its
+research basis, implemented mechanisms and unverified consciousness hypotheses.
+Set `COGNITION_LEGACY=true` only to select this older controller.
 
 The hourly episode has two checkpointed phases, advanced by the five-minute tick:
 1. The artist chooses archive queries from its studio, unfinished tasks and lessons.
