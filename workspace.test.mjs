@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext} from './workspace.mjs';
+import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract} from './workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from './workspace-state.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
@@ -48,6 +48,16 @@ test('bounded attention and source provenance are enforced; no consciousness sco
 });
 test('a prediction without observed result expires to unknown, never negative audience evidence',async()=>{
  const {s,db}=await fixture();try{await s.pool.query("INSERT INTO agent_predictions(id,goal_id,task_id,metric,probability,deadline) VALUES('p','g','t','publication',.8,$1)",[now.toISOString()]);await reconcilePredictions(s,now);const p=(await workspaceState(s)).predictions[0];assert.equal(p.status,'unknown');assert.equal(p.outcome,null);}finally{await db.close();}
+});
+test('live memory-link regression: model contract permits only actual evidence IDs and bounded notes',()=>{
+ const snapshot={studio,state:{goals:[],predictions:[]},evidence:[{id:'7'},{id:'room:example'}],tasks:[]};
+ const candidates=modules.map(id=>({...candidate(),id}));
+ const schema=broadcastContract(candidates,snapshot);
+ assert.deepEqual(schema.properties.note.properties.links.items.enum,['7','room:example']);
+ assert.equal(schema.properties.note.properties.claim.maxLength,1500);
+ assert.equal(schema.properties.goalChanges.maxItems,0);
+ assert.throws(()=>validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:['invented-memory']}},candidates,snapshot),/INVALID/);
+ assert.equal(validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:[]}},candidates,snapshot).note.evidence[0],'7');
 });
 test('memory sampling and broadcast ablations change available evidence, not merely an explanatory caption',async()=>{
  const {s,db}=await fixture();try{
