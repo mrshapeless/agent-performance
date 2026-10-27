@@ -1,3 +1,4 @@
+import {creativeMemory} from './atelier.mjs';
 import {publicWorkspace} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
 import { createHash } from 'node:crypto';
@@ -53,7 +54,8 @@ export class PostgresStore {
       const visualHistory=(await client.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state='published' ORDER BY updated DESC LIMIT 8")).rows.map(r=>({id:r.id,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,description:r.data.review?.alt??r.plan.alt,construction:r.plan.prompt,decision:r.data.styleAudit?.decision??r.data.review?.decision}));
       const workspaceRow=(await client.query("SELECT payload FROM agent_events WHERE kind='workspace_broadcast' ORDER BY seq DESC LIMIT 1")).rows[0];
       const workspace=workspaceRow?JSON.parse(workspaceRow.payload):null;
-      const request = buildRequest(identity, recent, { kind, external, studio, workspace, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
+      const taste = await creativeMemory(client.query.bind(client));
+      const request = buildRequest(identity, recent, { kind, external, studio, workspace, taste, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
         strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT

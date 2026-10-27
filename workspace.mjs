@@ -1,3 +1,4 @@
+import {creativeMemory} from './atelier.mjs';
 import {constitution} from './domain.mjs';
 import {agenda,reconcileAgenda,recall} from './memory.mjs';
 import {workspaceState,workspaceEvidence,reconcilePredictions} from './workspace-state.mjs';
@@ -66,7 +67,7 @@ const directions={
 };
 export function moduleContext(name,s){
  const filter=name==='recall'?e=>!['headline','conversation'].includes(e.kind):name==='perception'?e=>['headline','conversation','x_post','media_review','audience_measurement'].includes(e.kind):name==='self_monitor'?e=>['workspace_outcome','record_note','workspace_note','media_review','audience_measurement'].includes(e.kind):e=>['headline','conversation','workspace_note','record_note'].includes(e.kind);
- return {previousBroadcast:s.state.broadcast,goals:s.state.goals,predictions:name==='self_monitor'?s.state.predictions:[],evidence:s.evidence.filter(filter),studio:{persona:s.studio.persona,projects:s.studio.projects},tasks:s.tasks};
+ return {visualExperience:s.taste??null,previousBroadcast:s.state.broadcast,goals:s.state.goals,predictions:name==='self_monitor'?s.state.predictions:[],evidence:s.evidence.filter(filter),studio:{persona:s.studio.persona,projects:s.studio.projects},tasks:s.tasks};
 }
 async function candidateImage(store,evidence){
  const e=evidence.find(e=>e.kind==='x_post'&&e.assetId);if(!e)return null;
@@ -93,7 +94,7 @@ export async function workspaceStep(store,provider,now=new Date()){
  if(!snapshot){
   const evidence=await workspaceEvidence(store,Math.floor(now.getTime()/3600000));
   const state=await workspaceState(store),tasks=await agenda(store);
-  snapshot={action:'workspace_snapshot',studio,state,tasks,evidence};
+  snapshot={action:'workspace_snapshot',studio,state,tasks,evidence,taste:await creativeMemory(store.pool.query.bind(store.pool))};
   const req=await store.begin(episode+'-snapshot','step',()=>({maximum:0}));
   if(req.replay)return {status:'snapshot_pending'};
   await store.complete(episode+'-snapshot',0,snapshot);

@@ -113,3 +113,16 @@ CREATE TABLE IF NOT EXISTS agent_predictions (
  outcome INTEGER CHECK(outcome IN (0,1)),evidence JSONB NOT NULL DEFAULT '[]',
  created TIMESTAMPTZ NOT NULL DEFAULT now(),deadline TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_visual_profiles (
+ asset_id text PRIMARY KEY REFERENCES agent_assets(id),
+ observation text NOT NULL,
+ traits jsonb NOT NULL,
+ created timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS agent_taste_feedback (
+ id text PRIMARY KEY,
+ asset_id text NOT NULL REFERENCES agent_visual_profiles(asset_id),
+ other_id text NOT NULL DEFAULT '',
+ verdict text NOT NULL CHECK(verdict IN ('like','pass','prefer')),
+ updated timestamptz NOT NULL DEFAULT now()
+);
