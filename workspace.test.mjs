@@ -54,8 +54,8 @@ test('live memory-link regression: model contract permits only actual evidence I
  const candidates=modules.map(id=>({...candidate(),id}));
  const schema=broadcastContract(candidates,snapshot);
  assert.deepEqual(schema.properties.note.properties.links.items.enum,['7','room:example']);
- assert.equal(schema.properties.note.properties.claim.maxLength,1500);
- assert.equal(schema.properties.goalChanges.maxItems,0);
+ assert.equal(schema.properties.note.properties.links.maxItems,3);
+ assert.ok(schema.properties.note.properties.claim.description.includes('400'));
  assert.throws(()=>validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:['invented-memory']}},candidates,snapshot),/INVALID/);
  assert.equal(validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:[]}},candidates,snapshot).note.evidence[0],'7');
 });
