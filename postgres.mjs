@@ -115,7 +115,7 @@ export class PostgresStore {
     const decision=await this.latest('cognitive_decision');
     const publicDecision=decision?Object.fromEntries(['action','choice','text','summary','projectId','taskId','evidence'].filter(k=>k in decision).map(k=>[k,decision[k]])):null;
     return { workspace:await publicWorkspace(this), cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
-      blocked: !!started && Date.now() - Date.parse(started) > 120_000, todayMicrodollars: state.todayMicrodollars, replicateBudget: state.replicateBudget,
+      blocked: !!started && Date.now() - Date.parse(started) > 120_000,
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
   async publicJournal() {

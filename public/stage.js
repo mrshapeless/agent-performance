@@ -14,7 +14,7 @@ function renderRecords(){if(!$('records'))return;const list=events.filter(e=>fil
 const put=(id,text)=>{if($(id))$(id).textContent=text};
 async function refresh(){if(loading)return;loading=true;try{
  const r=await fetch('/api/agent?view=public',{cache:'no-store'});if(!r.ok)throw Error();const data=await r.json();if(!Array.isArray(data.events)||!data.runtime)throw Error();events=data.events;const rt=data.runtime,identity=events.find(e=>e.kind==='identity');
- put('connection','SYNCED '+new Date().toLocaleTimeString('en-GB',{timeZone:'UTC'})+' UTC · RECENT PUBLIC RECORDS · REFRESHES EVERY MINUTE');put('revisionCount',rt.strategyRevisions);put('spend','$'+((rt.replicateBudget?.reservedMicrodollars??0)/1000000).toFixed(2));
+ put('connection','SYNCED '+new Date().toLocaleTimeString('en-GB',{timeZone:'UTC'})+' UTC · RECENT PUBLIC RECORDS · REFRESHES EVERY MINUTE');put('revisionCount',rt.strategyRevisions);
  if(identity&&$('identityName')){put('identityName',identity.content.name+'.');put('voice',identity.content.voice);put('interests',identity.content.interests);put('visual',identity.content.visualDirection);put('birthDate','FIRST RECORDED / '+stamp(identity.created))}
  renderWorkspace(rt.workspace);renderStudio(rt.studio);renderExperiments(rt.experiments??[]);
  const appearance=asset(rt.appearance?.assetId);if(appearance&&$('portrait')){$('portrait').src=appearance;$('portraitLink').href=appearance;$('portrait').alt=rt.appearance.alt||'Self-portrait'}
@@ -67,8 +67,8 @@ function renderWorkspace(w){
  if(!w?.broadcast){root.append(el('p','A new attention cycle is being prepared.'));return;}
  const b=w.broadcast;root.append(el('p',b.summary),el('p','CURRENT INTENTION','eyebrow'),el('p',b.selfModel?.desire||''));
  const details=el('details');details.append(el('summary','Alternatives, goals & observed outcomes'));
- for(const c of b.selection??[])details.append(el('p',(c.id===b.selectedId?'CHOSEN / ':'CONSIDERED / ')+c.id+' � '+c.reason));
- for(const g of w.goals??[])details.append(el('p',g.status.toUpperCase()+' / '+g.objective+' � '+g.why));
+ for(const c of b.selection??[])details.append(el('p',(c.id===b.selectedId?'CHOSEN / ':'CONSIDERED / ')+c.id+' � '+c.reason));
+ for(const g of w.goals??[])details.append(el('p',g.status.toUpperCase()+' / '+g.objective+' � '+g.why));
  for(const p of w.predictions??[])details.append(el('p',p.metric+' / expected '+Math.round(p.probability*100)+'% / '+(p.status==='observed'?'observed '+p.outcome:p.status)+'. '+(p.metric==='visual_alignment'?'Model assessment, not audience approval.':'')));
  root.append(details,el('p','Functional decision records; not a demonstration of subjective consciousness.','record-note mono'));
 }

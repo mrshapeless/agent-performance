@@ -104,6 +104,9 @@ test('automatic birth, hourly replay, strategy revision and reuse in next episod
     assert.equal(prompts[8].includes('Explore silence through short forms.'),true);
     const runtime=await store.publicRuntime();
     assert.equal(runtime.strategyRevisions,1);
+    assert.equal('todayMicrodollars' in runtime,false);
+    assert.equal('replicateBudget' in runtime,false);
+    assert.ok((await store.status()).replicateBudget, 'private operator status retains budget');
     assert.equal(runtime.unresolved,0);
     assert.equal((await store.publicJournal()).filter(e=>e.kind==='reflect').length,1);
     env.AGENT_ENABLED='false';assert.equal((await handler(req())).status,409);
