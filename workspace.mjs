@@ -11,8 +11,10 @@ export const candidateSchema=object({action:{type:'string',enum:actions},goalId:
 export const broadcastSchema=object({selectedId:str,attention:list(str,1,3),summary:str,selection:list(object({id:str,reason:str}),1,4),selfModel:object({desire:str,preferences:list(str,1,5),uncertainties:list(str,1,5),change:str}),evidence:list(str),goalChanges:list(object({id:str,status:{type:'string',enum:['active','paused','completed','abandoned']},reason:str}),0,8),sources:list({type:'string',enum:['BBC World','BBC Technology','NASA','Colossal','Hyperallergic']},1,5),note:object({claim:str,evidence:list(str),links:list(str)})});
 const text=(x,n=1800)=>typeof x==='string'&&x.trim()&&x.length<=n;
 const slug=x=>typeof x==='string'&&/^[a-z][a-z0-9-]{2,60}$/.test(x);
-const check=x=>{if(!x)throw Error('INVALID_WORKSPACE_OUTPUT');};
+let validationCheck=0;
+const check=x=>{validationCheck++;if(!x)throw Error('INVALID_WORKSPACE_OUTPUT_'+validationCheck);};
 export function validateCandidate(v,snapshot){
+ validationCheck=0;
  check(v&&actions.includes(v.action)&&slug(v.goalId));
  for(const k of ['objective','why','success','proposal','novelty','uncertainty'])check(text(v[k],k==='proposal'?8000:1800));
  check(typeof v.projectId==='string'&&(!v.projectId||snapshot.studio.projects.some(p=>p.id===v.projectId&&p.status==='active')));
@@ -26,6 +28,7 @@ export function validateCandidate(v,snapshot){
  return Object.fromEntries(Object.keys(candidateSchema.properties).map(k=>[k,v[k]]));
 }
 export function validateBroadcast(v,candidates,snapshot){
+ validationCheck=0;
  check(v&&candidates.some(c=>c.id===v.selectedId));
  check(Array.isArray(v.attention)&&v.attention.length>=1&&v.attention.length<=3&&new Set(v.attention).size===v.attention.length&&v.attention.includes(v.selectedId)&&v.attention.every(id=>candidates.some(c=>c.id===id)));
  check(text(v.summary));
@@ -67,7 +70,10 @@ export async function workspaceStep(store,provider,now=new Date()){
  // Resume an existing incomplete cycle across hour boundaries, never discard it.
  const open=(await store.pool.query("SELECT id FROM agent_operations WHERE id LIKE 'workspace-v1-%-snapshot' AND status='complete' AND NOT EXISTS (SELECT 1 FROM agent_operations b WHERE b.id=replace(agent_operations.id,'-snapshot','-broadcast')) ORDER BY id LIMIT 1")).rows[0];
  const episode=open?open.id.replace(/-snapshot$/,''):'workspace-v1-'+Math.floor(now.getTime()/3600000);
- const done=await store.operation(episode+'-broadcast');if(done)return {status:done.status,replay:true};
+ const prior=await store.operation(episode+'-broadcast');
+ const repair=prior?.result?.action==='cognition_failed'&&!prior.result.failureCode;
+ const broadcastId=episode+'-broadcast'+(repair?'-repair1':'');
+ const done=repair?await store.operation(broadcastId):prior;if(done)return {status:done.status,replay:true};
  let snapshot=(await store.operation(episode+'-snapshot'))?.result;
  if(!snapshot){
   const evidence=await workspaceEvidence(store,Math.floor(now.getTime()/3600000));
@@ -93,14 +99,17 @@ export async function workspaceStep(store,provider,now=new Date()){
  }
  const candidates=[];
  for(const name of modules){const r=(await store.operation(episode+'-'+name))?.result;if(r?.action==='workspace_proposal')candidates.push({...r,action:r.choice});}
- const id=episode+'-broadcast';
+ const id=broadcastId;
  if(candidates.length<2){const req=await store.begin(id,'step',()=>({maximum:0}));if(!req.replay)await store.complete(id,0,{action:'cognition_failed',summary:'Fewer than two independent proposals; prior state preserved.'});return {status:'workspace_insufficient_proposals'};}
  const prompt=`Arbitrate attention for one persistent artist. Select one executable proposal, and at most THREE proposal IDs for the shared workspace (include the selectedId). Compare every supplied candidate in selection with a brief public reason; these are summaries of choices, not hidden reasoning. Nothing is privileged by old project membership. You may retain a goal, pause/abandon an obsolete one, or choose a new one. Do not drop an outstanding obligation silently. Update selfModel (desire, preferences, uncertainties, change); this is a revisable functional self-model, not a claim about phenomenal experience. State what evidence changed your mind, or say no change. Review forecasts and their recorded outcomes: model visual reviews are not audience preference; missing observations are unknown. goalChanges may change existing goals only; mark completed only with observed successful action, not a promise. Selected proposal's goal will be activated. Choose 1-5 available sources for future observation from the schema; sources are opportunities, not topics you must illustrate. Save one concise memory note with source evidence and links to supplied older evidence. No fabricated citations or audience evidence. No compulsory genre, object or motif. Cultural imagination and human-readable surprise matter; repetitive technically plausible still-lifes need a reason beyond prior frequency. The chosen proposal is executed unchanged; do not select one and describe a different action. SNAPSHOT: ${JSON.stringify(snapshot)} CANDIDATES: ${JSON.stringify(candidates)}`;
  const req=await store.begin(id,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:req.status};let cost=req.maximum;
+ let stage='provider';
  try{
   const answer=await provider.generate(constitution,req.prompt,null,broadcastSchema);cost=answer.costMicrodollars;
+  stage='validate';
   const v=validateBroadcast(answer.value,candidates,snapshot),chosen=candidates.find(c=>c.id===v.selectedId),taskId='ws-'+episode.split('-').at(-1)+'-'+chosen.id;
   const study=chosen.action==='study'?await recall(store,chosen.queries,12):[];
+  stage='apply';
   await store.complete(id,cost,{action:'workspace_broadcast',episode,...v},null,async c=>{
    for(const g of v.goalChanges){const old=snapshot.state.goals.find(x=>x.id===g.id);const r=await c.query('UPDATE agent_goals SET status=$2,version=version+1,updated=now() WHERE id=$1 AND version=$3 RETURNING id',[g.id,g.status,old.version]);if(!r.rows.length)throw Error('STALE_GOAL');}
    await c.query("INSERT INTO agent_goals(id,status,objective,why,success,evidence) VALUES($1,'active',$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET status='active',objective=EXCLUDED.objective,why=EXCLUDED.why,success=EXCLUDED.success,evidence=EXCLUDED.evidence,version=agent_goals.version+1,updated=now()",[chosen.goalId,chosen.objective,chosen.why,chosen.success,JSON.stringify(chosen.evidence)]);
@@ -116,5 +125,5 @@ export async function workspaceStep(store,provider,now=new Date()){
    await store.append(c,'cognitive_decision',{choice:chosen.action,taskId:['write','commission'].includes(chosen.action)?taskId:null,goalId:chosen.goalId,projectId:chosen.projectId||null,text:chosen.proposal,summary:v.summary,evidence:chosen.evidence,workspaceEpisode:episode});
   });
   return {status:'workspace_decided',choice:chosen.action,taskId,goalId:chosen.goalId};
- }catch{await store.complete(id,cost,{action:'cognition_failed',summary:'Workspace choice could not be applied; previous goals and tasks are preserved.'});return {status:'workspace_decision_failed'};}
+ }catch(error){const failureCode=/^INVALID_WORKSPACE_OUTPUT_\d+$/.test(error.message)?error.message:/^[0-9A-Z]{5}$/.test(error.code??'')?error.code:'WORKSPACE_'+stage.toUpperCase()+'_FAILED';console.error('workspace_failure',stage,failureCode);await store.complete(id,cost,{action:'cognition_failed',failureCode,summary:'Workspace choice could not be applied; previous goals and tasks are preserved.'});return {status:'workspace_decision_failed',failureCode};}
 }
