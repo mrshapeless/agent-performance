@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract} from './workspace.mjs';
+import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,critiqueSchema,validateCritique} from './workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from './workspace-state.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
@@ -12,14 +12,22 @@ const now=new Date('2026-10-27T12:00:00Z');
 const studio={projects:[{id:'old-theme',status:'active'}]};
 const candidate=(action='commission')=>({action,goalId:'new-question',projectId:'',objective:'Explore belonging through a visual joke.',why:'A new question unrelated to the old theme.',success:'A legible first experiment.',proposal:action==='write'?'A real written fragment.':'Create an original visual joke about belonging, without an inherited technical subject.',novelty:'Different cultural association and construction.',uncertainty:'Audience response is unknown.',evidence:[],prediction:{metric:action==='write'?'draft_saved':action==='commission'?'publication':'none',probability:.6},queries:[]});
 const broadcast=()=>({selectedId:'exploration',attention:['exploration','self_monitor'],summary:'Choose a new question rather than repeat an inherited project.',selection:modules.map(id=>({id,reason:id==='exploration'?'Selected for its unanswered question.':'Kept as a competing possibility.'})),selfModel:{desire:'Explore belonging.',preferences:['Playful incongruity'],uncertainties:['Whether it communicates'],change:'A new interest, not a new invented biography.'},evidence:[],goalChanges:[],sources:['Colossal'],note:{claim:'A new goal can be attempted without continuing old projects.',evidence:[],links:[]}});
+const critique=()=>({assessments:modules.map(id=>({id,visibleHook:'A recognizable joke.',imageLanguage:'Uneven sources with visible seams.',nearestRepeat:'None evidenced.',materiallyRepeated:false,legibleHook:true,revision:'No revision needed.'}))});
+test('critique requires every candidate once and typed actionable observations',()=>{
+ const cs=modules.map(id=>({...candidate(),id}));
+ assert.equal(validateCritique(critique(),cs).assessments.length,4);
+ assert.throws(()=>validateCritique({assessments:critique().assessments.slice(1)},cs));
+ const bad=critique();bad.assessments[0].materiallyRepeated='false';assert.throws(()=>validateCritique(bad,cs));
+});
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test'});await s.transaction(c=>s.append(c,'studio_revision',studio));return {s,db};}
 test('workspace resumes across restarts, compares independent proposals, broadcasts and executes once outside old projects',async()=>{
- const {s,db}=await fixture();let calls=0;const provider={quote:()=>10,generate:async(_s,p)=>{calls++;return {costMicrodollars:1,value:calls<=4?candidate():broadcast()}}};
+ const {s,db}=await fixture();let calls=0;const provider={quote:()=>10,generate:async(_s,p,_m,schema)=>{calls++;return {costMicrodollars:1,value:schema===critiqueSchema?critique():calls<=4?candidate():broadcast()}}};
  try{
   for(const name of modules){assert.equal((await workspaceStep(new PostgresStore(s.pool),provider,now)).module,name);assert.equal((await s.pool.query('SELECT * FROM agent_agenda')).rows.length,0);}
+  assert.equal((await workspaceStep(s,provider,now)).status,'creative_reviewed');
   const result=await workspaceStep(s,provider,now);assert.equal(result.status,'workspace_decided');assert.equal(result.choice,'commission');
   const task=(await s.pool.query('SELECT * FROM agent_agenda')).rows[0];assert.equal(task.project_id,'');assert.equal(task.goal_id,'new-question');
-  assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,5);
+  assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,6);
   const state=await workspaceState(s);assert.equal(state.goals.length,1);assert.equal(state.broadcast.attention.length,2);assert.equal(state.predictions[0].status,'pending');
   let shared;await s.begin('test-context','step',(_i,_r,c)=>{shared=c.workspace;return {maximum:0}});await s.complete('test-context',0,{action:'wait'});assert.equal(shared.selectedId,'exploration');
   assert.equal((await s.publicRuntime()).workspace.broadcast.selectedId,'exploration');
@@ -33,8 +41,43 @@ test('workspace resumes across restarts, compares independent proposals, broadca
  }finally{await db.close();}
 });
 test('invalid arbitration preserves earlier intentions atomically; no alternate paid retry',async()=>{
- const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls<=4?candidate():{...broadcast(),selectedId:'invented'}})};
- try{for(let i=0;i<4;i++)await workspaceStep(s,provider,now);assert.equal((await workspaceStep(s,provider,now)).status,'workspace_decision_failed');assert.equal((await s.pool.query('SELECT * FROM agent_goals')).rows.length,0);await workspaceStep(s,provider,now);assert.equal(calls,5);assert.equal((await s.status()).unresolved,0);}finally{await db.close();}
+ const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async(_s,_p,_m,schema)=>({costMicrodollars:1,value:(++calls,schema===critiqueSchema?critique():calls<=4?candidate():{...broadcast(),selectedId:'invented'})})};
+ try{for(let i=0;i<5;i++)await workspaceStep(s,provider,now);assert.equal((await workspaceStep(s,provider,now)).status,'workspace_decision_failed');assert.equal((await s.pool.query('SELECT * FROM agent_goals')).rows.length,0);await workspaceStep(s,provider,now);assert.equal(calls,6);assert.equal((await s.status()).unresolved,0);}finally{await db.close();}
+});
+
+test('material repetition forces an actual durable revision before commission; final critique is advisory',async()=>{
+ const {s,db}=await fixture();let revisions=0,reviews=0,calls=0;
+ const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
+  calls++;
+  if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:true,legibleHook:false,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
+  if(p.startsWith('Revise this')){revisions++;return {costMicrodollars:1,value:{...candidate(),proposal:'An interrupted amateur game screenshot whose score becomes a swarm of faces.'}};}
+  return {costMicrodollars:1,value:p.startsWith('Arbitrate')?broadcast():candidate()};
+ }};
+ try{
+  for(let i=0;i<5;i++)await workspaceStep(s,provider,now);
+  assert.equal((await s.pool.query('SELECT * FROM agent_agenda')).rows.length,0);
+  assert.equal((await workspaceStep(s,provider,now)).status,'creative_revised');
+  assert.equal((await s.pool.query('SELECT * FROM agent_agenda')).rows.length,0);
+  assert.equal((await workspaceStep(new PostgresStore(s.pool),provider,now)).round,'final');
+  assert.equal((await workspaceStep(s,provider,now)).status,'workspace_decided');
+  const task=(await s.pool.query('SELECT * FROM agent_agenda')).rows[0];assert.match(task.next_step,/amateur game/);
+  assert.equal(revisions,1);assert.equal(reviews,2);assert.equal(calls,8);
+  assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,8);
+  const op=await s.operation('workspace-v1-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,false);
+ }finally{await db.close();}
+});
+
+test('transient critique failure gets one durable recovery without discarding existing intentions',async()=>{
+ const {s,db}=await fixture();let reviews=0;
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>{if(schema===critiqueSchema){reviews++;if(reviews===1)throw Error('temporary provider failure');return {costMicrodollars:1,value:critique()};}return {costMicrodollars:1,value:p.startsWith('Arbitrate')?broadcast():candidate()};}};
+ try{for(let i=0;i<5;i++)await workspaceStep(s,provider,now);assert.equal((await s.pool.query('SELECT * FROM agent_agenda')).rows.length,0);assert.equal((await workspaceStep(s,provider,now)).status,'creative_reviewed');assert.equal((await workspaceStep(s,provider,now)).status,'workspace_decided');assert.equal(reviews,2);}finally{await db.close();}
+});
+
+test('recent structured aesthetic failure survives more than twelve later records',async()=>{
+ const {s,db}=await fixture();try{
+  await s.transaction(async c=>{await s.append(c,'media_review',{action:'media_review',assetId:'test-art',text:'A synthetic work.',summary:'Published with unresolved visual weakness.',visualLanguageResult:'not_supported',referenceComparison:'Coherent photographic lighting instead of mixed sources.',nextExperiment:'Change spatial relationships before adding texture.'});for(let i=0;i<20;i++)await s.append(c,'draft_text',{text:'Later record '+i});});
+  const evidence=await workspaceEvidence(s,0),review=evidence.find(e=>e.kind==='media_review');assert.ok(review);assert.equal(review.criticism.visualLanguageResult,'not_supported');assert.match(review.criticism.referenceComparison,/Coherent photographic/);assert.match(review.criticism.nextExperiment,/spatial relationships/);
+ }finally{await db.close();}
 });
 test('bounded attention and source provenance are enforced; no consciousness score is fabricated',()=>{
  const snapshot={studio,state:{goals:[],predictions:[]},evidence:[{id:'1'}],tasks:[]};
@@ -54,8 +97,8 @@ test('live memory-link regression: model contract permits only actual evidence I
  const candidates=modules.map(id=>({...candidate(),id}));
  const schema=broadcastContract(candidates,snapshot);
  assert.deepEqual(schema.properties.note.properties.links.items.enum,['7','room:example']);
- assert.equal(schema.properties.note.properties.links.maxItems,3);
- assert.ok(schema.properties.note.properties.claim.description.includes('400'));
+ assert.equal(schema.properties.note.properties.claim.maxLength,1500);
+ assert.equal(schema.properties.goalChanges.maxItems,0);
  assert.throws(()=>validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:['invented-memory']}},candidates,snapshot),/INVALID/);
  assert.equal(validateBroadcast({...broadcast(),note:{claim:'A hypothesis',evidence:['7'],links:[]}},candidates,snapshot).note.evidence[0],'7');
 });
@@ -66,6 +109,6 @@ test('memory sampling and broadcast ablations change available evidence, not mer
   const memory=moduleContext('recall',snapshot),exploration=moduleContext('exploration',snapshot);
   assert.ok(memory.evidence.some(e=>e.kind==='workspace_note'));assert.ok(exploration.evidence.some(e=>e.kind==='headline'));assert.ok(!memory.evidence.some(e=>e.kind==='headline'));
   const withoutMemory=moduleContext('recall',{...snapshot,evidence:[]});assert.equal(withoutMemory.evidence.length,0);
-  const withoutBroadcast=moduleContext('exploration',{...snapshot,state:{...state,broadcast:null}});assert.equal(withoutBroadcast.previousBroadcast,null);assert.ok(exploration.previousBroadcast);
+  const withoutBroadcast=moduleContext('exploration',{...snapshot,state:{...state,broadcast:null}});assert.equal(withoutBroadcast.previousBroadcast,null);assert.equal(exploration.previousBroadcast,null);assert.deepEqual(exploration.goals,[]);assert.deepEqual(exploration.studio,{projects:[]});assert.deepEqual(exploration.tasks,[]);
  }finally{await db.close();}
 });

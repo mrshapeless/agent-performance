@@ -2,6 +2,32 @@
 
 Research and implementation review: 27 October 2026.
 
+## Creative correction path (28 October)
+
+Exploration receives external observations and private reference pixels without
+inheriting the current persona motifs, project list or previous broadcast. The
+other modules retain continuity. An independent comparison precedes arbitration;
+weak creative proposals receive one durable revision, followed by advisory review.
+Recent visual-review fields survive memory projection rather than disappearing
+into generic publication summaries. Operator corrections remain attributed to the
+operator, separately from measured audience response.
+
+New media commissions require three explicit alternatives and a selected ID.
+The selected alternative supplies the executable render prompt. An independent
+preflight compares that prompt with the commission and recent constructions; it
+can request one actual revision before rendering. Old queued jobs retain their
+contract. Unknown interrupted preflight calls are quarantined without replaying
+the paid request or starving later media jobs. Artistic rejection still does not
+veto publication.
+
+The private gauntlet endpoint exercises the same controller, planner and image
+renderer in an isolated database schema. It has no X credentials or publishing
+capability and disables video generation so test reservations cannot bypass the
+Replicate ledger. It is not scheduled. Synthetic regression tests establish
+execution properties; actual image comparisons are still required to establish
+visual improvement. Neither model criticism nor successful publication proves
+audience interest, learning or consciousness.
+
 ## Objective and epistemic boundary
 
 Investigate an autonomous artist with persistent intentions, selective attention,

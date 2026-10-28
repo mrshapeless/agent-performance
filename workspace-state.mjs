@@ -1,5 +1,9 @@
 // Persistent, evidence-linked state. No private inputs or model scratchpads are public.
 const allowed=['x_post','media_review','media_failed','record_note','dialogue','work_published','workspace_outcome','workspace_note','draft_text'];
+export function reviewEvidence(p){
+ const keys=['decision','visualLanguageResult','referenceComparison','observedResult','noveltyEvidence','viewerHook','nextExperiment','craftResult','craftEvidence','hypothesisResult'];
+ return Object.fromEntries(keys.filter(k=>typeof p[k]==='string').map(k=>[k,p[k].slice(0,1600)]));
+}
 export async function workspaceState(store){
  const broadcast=await store.latest('workspace_broadcast');
  const goals=(await store.pool.query("SELECT id,status,objective,why,success,evidence,version FROM agent_goals ORDER BY updated DESC LIMIT 16")).rows;
@@ -8,11 +12,12 @@ export async function workspaceState(store){
 }
 export async function workspaceEvidence(store,epoch){
  const rows=(await store.pool.query("SELECT seq,kind,payload FROM agent_events WHERE kind=ANY($1::text[]) ORDER BY seq DESC LIMIT 160",[allowed])).rows;
- const project=r=>{const p=JSON.parse(r.payload);return {id:String(r.seq),kind:r.kind,text:String(p.text??p.alt??'').slice(0,1800),summary:String(p.summary??'').slice(0,1200),assetId:p.assetId??null,source:r.kind==='record_note'?'operator':r.kind==='media_review'?'model_review_not_audience':r.kind==='workspace_note'?'agent_hypothesis':'recorded_event'};};
+ const project=r=>{const p=JSON.parse(r.payload);return {id:String(r.seq),kind:r.kind,text:String(p.text??p.alt??'').slice(0,1800),summary:String(p.summary??'').slice(0,1200),assetId:p.assetId??null,...(r.kind==='media_review'?{criticism:reviewEvidence(p)}:{}),source:r.kind==='record_note'?'operator':r.kind==='media_review'?'model_review_not_audience':r.kind==='workspace_note'?'agent_hypothesis':'recorded_event'};};
  const recent=rows.slice(0,12),older=rows.slice(12),offset=older.length?epoch%older.length:0;
  const sampled=[...older.slice(offset),...older.slice(0,offset)].slice(0,8);
  const notes=rows.filter(r=>r.kind==='record_note'||r.kind==='workspace_note'||r.kind==='workspace_outcome').slice(0,8);
- const evidence=[...new Map([...recent,...sampled,...notes].map(r=>[String(r.seq),project(r)])).values()];
+ const reviews=rows.filter(r=>r.kind==='media_review').slice(0,6);
+ const evidence=[...new Map([...recent,...sampled,...notes,...reviews].map(r=>[String(r.seq),project(r)])).values()];
  const studied=await store.latest('workspace_note');
  for(const e of studied?.retrieved??[])if(!evidence.some(x=>x.id===e.id))evidence.push({id:e.id,kind:e.kind,text:e.text,summary:e.summary,source:e.source,assetId:e.assetId});
  const room=(await store.pool.query("SELECT id,role,text FROM agent_room WHERE hidden=false ORDER BY seq DESC LIMIT 6")).rows;

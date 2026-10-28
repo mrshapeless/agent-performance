@@ -9,8 +9,32 @@ import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
+test('new visual plans require selected distinct mechanisms while saved legacy jobs remain valid',()=>{
+ assert.equal(validateMediaPlan(plan,env).medium,'image');
+ const strict={requireAlternatives:true};
+ assert.throws(()=>validateMediaPlan(plan,env,strict),/INVALID_CREATIVE_ALTERNATIVES/);
+ const alternatives=['cut-and-paste','screen capture','stop motion'].map((s,i)=>({id:String(i),concept:'An encounter',visualMechanism:s,composition:'Asymmetric',viewerExperience:'Encounter '+i,renderPrompt:'Original executable '+s}));
+ const valid={...plan,alternatives,selectedId:'1',diversityComparison:'Different construction from the last coherent photograph.'};
+ assert.equal(validateMediaPlan(valid,env,strict).selectedId,'1');assert.equal(validateMediaPlan(valid,env,strict).prompt,'Original executable screen capture');
+ assert.throws(()=>validateMediaPlan({...valid,selectedId:'missing'},env,strict),/INVALID_CREATIVE_ALTERNATIVES/);
+ assert.throws(()=>validateMediaPlan({...valid,alternatives:alternatives.map(a=>({...a,visualMechanism:'same studio photograph'}))},env,strict),/DUPLICATE_CREATIVE_ALTERNATIVES/);
+ assert.equal(validateMediaPlan({action:'wait',medium:'text'},env,strict).medium,'text');
+});
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const store=new PostgresStore({query:c.query,connect:async()=>c});await store.begin('birth','birth',()=>({maximum:1}));await store.complete('birth',1,{name:'test'});return {store,db};}
 async function seed(s,p=plan){await s.begin('x-plan-1','step',()=>({maximum:1}));await s.complete('x-plan-1',1,p);await enqueueMedia(s,'x-plan-1',p);}
+test('unknown preflight is quarantined without repeating its call or starving later media',async()=>{
+ const {store:s,db}=await fixture();
+ try{
+  await seed(s,{...plan,selectionVersion:'creative-v2'});
+  await s.begin('media-1-preflight-review','step',()=>({maximum:123}));
+  await enqueueMedia(s,'x-plan-2',plan);
+  const result=await mediaStep(s,{generate:()=>assert.fail('unknown call must not repeat')},env,services);
+  assert.equal(result.status,'media_failed');
+  assert.equal((await s.operation('media-1-preflight-review')).status,'complete');
+  assert.equal((await s.pool.query("SELECT amount FROM agent_operations WHERE id='media-1-preflight-review'")).rows[0].amount,123);
+  assert.equal((await mediaStep(s,reviewer(),env,services)).status,'image_created');
+ }finally{await db.close()}
+});
 const services={imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixture'),mime:'image/jpeg',costMicrodollars:40000}),load:async a=>({...a,bytes:Buffer.from(a.bytes??'fixture')}),videoQuote:()=>4000000,startVideo:async()=>({id:'pred1'}),videoStatus:async()=>({status:'succeeded',output:'https://replicate.delivery/movie.mp4'}),archiveVideo:async()=>({mime:'video/mp4',url:'https://test.public.blob.vercel-storage.com/movie.mp4'})};
 function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.'}}}};}
 test('style-rejected image is uploaded and published exactly once; replies stay disabled',async()=>{

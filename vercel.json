@@ -64,6 +64,10 @@
     },
     "api/atelier-worker.mjs": {
       "maxDuration": 120
+    },
+    "api/gauntlet.mjs": {
+      "maxDuration": 120,
+      "includeFiles": "{private/**,schema.sql}"
     }
   },
   "crons": [

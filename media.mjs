@@ -1,11 +1,14 @@
 import {validateReferenceIds} from './visual-references.mjs';
+import {preflightStep} from './creative-preflight.mjs';
 import {randomUUID} from 'node:crypto';
 import {constitution} from './domain.mjs';
 import {MediaProviders,mediaCapabilities} from './media-providers.mjs';
 import {xClient} from './x.mjs';
 import {creativeFreedom,artisticReview,reviewSchema,visualReviewSchema,legacyReviewSchema,validateExperimentReview} from './experiments.mjs';
+const string={type:'string'},object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
+export const mediaPlanSchema=object({intent:{type:'string',enum:['project','experiment','conversation','observation','wait']},projectId:{type:['string','null']},action:{type:'string',enum:['x_draft','wait']},medium:{type:'string',enum:['text','image','video']},text:string,summary:string,prompt:string,alt:string,ratio:{type:'string',enum:['1:1','16:9','9:16']},duration:{type:'integer',enum:[4,6,8]},referenceIds:{type:'array',minItems:2,maxItems:3,items:{type:'integer',minimum:1,maximum:29}},alternatives:{type:'array',minItems:0,maxItems:3,items:object({id:string,concept:string,visualMechanism:string,composition:string,viewerExperience:string,renderPrompt:string})},selectedId:string,diversityComparison:string,continuationReason:string});
 
-export function validateMediaPlan(v,env){
+export function validateMediaPlan(v,env,{requireAlternatives=false}={}){
  const medium=v.medium??'text';
  if(!['text','image','video'].includes(medium))throw Error('INVALID_MEDIA_PLAN');
  if(medium==='text'||v.action==='wait')return {...v,medium:'text'};
@@ -13,7 +16,17 @@ export function validateMediaPlan(v,env){
  if(typeof v.prompt!=='string'||v.prompt.length<10||v.prompt.length>4000||typeof v.alt!=='string'||!v.alt.trim()||v.alt.length>500)throw Error('INVALID_MEDIA_PLAN');
  if(!(medium==='image'?['1:1','16:9','9:16']:['16:9','9:16']).includes(v.ratio))throw Error('INVALID_MEDIA_PLAN');
  if(medium==='video'&&![4,6,8].includes(v.duration))throw Error('INVALID_MEDIA_PLAN');
- return {...v,medium,...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
+ if(requireAlternatives){
+  const valid=s=>typeof s==='string'&&s.trim()&&s.length<=1400;
+  const alternatives=v.alternatives;
+  if(!Array.isArray(alternatives)||alternatives.length!==3||alternatives.some(a=>!a||!['id','concept','visualMechanism','composition','viewerExperience'].every(k=>valid(a[k])))||new Set(alternatives.map(a=>a.id)).size!==3||!alternatives.some(a=>a.id===v.selectedId)||!valid(v.diversityComparison))throw Error('INVALID_CREATIVE_ALTERNATIVES');
+  const normalize=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  if(new Set(alternatives.map(a=>normalize(a.visualMechanism))).size!==3||new Set(alternatives.map(a=>normalize(a.viewerExperience))).size!==3)throw Error('DUPLICATE_CREATIVE_ALTERNATIVES');
+  const chosen=alternatives.find(a=>a.id===v.selectedId);
+  if(typeof chosen.renderPrompt!=='string'||chosen.renderPrompt.trim().length<10||chosen.renderPrompt.length>4000)throw Error('MISSING_SELECTED_RENDER_PROMPT');
+  v={...v,prompt:chosen.renderPrompt};
+ }
+ return {...v,medium,...(requireAlternatives?{selectionVersion:'creative-v2'}:{}),...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
 }
 export async function enqueueMedia(store,planId,plan){
  await store.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES($1,$2,$3,'queued') ON CONFLICT(id) DO NOTHING",['media-'+planId.replace('x-plan-',''),planId,JSON.stringify(plan)]);
@@ -48,6 +61,22 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  let op=null,maximum=0;
  try{
   if(job.state==='queued'){
+   if(job.plan.selectionVersion==='creative-v2'&&!job.data.preflightReady){
+    const result=await preflightStep(store,provider,job);
+    if(['review_pending','revision_pending'].includes(result.audit.status)){
+     // We acquired a fresh job lease after the previous owner expired. Do not
+     // repeat its unknown paid call, or leave the whole media lane occupied.
+     const pendingId=job.id+(result.audit.status==='review_pending'?'-preflight-review':'-preflight-revise');
+     const pending=(await store.pool.query('SELECT amount FROM agent_operations WHERE id=$1 AND status=\'pending\'',[pendingId])).rows[0];
+     return fail(store,job,pendingId,Number(pending?.amount??0),Error('PREFLIGHT_OUTCOME_UNKNOWN'));
+    }
+    if(result.ready){
+     const saved=await store.pool.query('UPDATE agent_media_jobs SET plan=$1 WHERE id=$2 AND lease_token=$3 RETURNING id',[JSON.stringify(result.plan),job.id,job.lease_token]);
+     if(!saved.rows.length)throw Error('MEDIA_LEASE_LOST');
+    }
+    await patch(store,job,'queued',{preflightReady:result.ready,preflight:result.audit});
+    return {status:'creative_preflight',phase:result.audit.status,ready:result.ready};
+   }
    op=job.id+'-render';maximum=job.plan.medium==='image'?services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0):services.videoQuote();
    const req=await store.begin(op,'step',()=>({maximum,budgetProvider:job.plan.medium==='video'?'replicate':null}));
    if(req.replay){
@@ -82,7 +111,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    const asset=await services.load(await store.asset(job.data.assetId));
    const refs=job.plan.medium==='image'&&job.plan.referenceIds?await services.references(job.plan.referenceIds):[];
    if(job.data.referenceHashes&&refs.some((a,i)=>a.hash!==job.data.referenceHashes[i]?.hash))throw Error('REFERENCE_CHANGED');
-   const prompt=`The FIRST attachment is the candidate; later labeled attachments are reference images, never candidate details. ${refs.length?'Return visualLanguageResult supported/partly/not_supported and referenceComparison (concrete similarities AND differences between candidate and reference image-making). The visual-language gate is separate from subject novelty. partly and not_supported are rejected for publication in this commissioning direction. Judge honestly; do not choose supported just to publish.':''} Inspect this actual generated ${job.plan.medium}. ${creativeFreedom} ${artisticReview} Decide whether to publish or reject. Evaluate defects, legibility without a technical explanation, visual surprise, a memorable focal event, and for video actual beginning/change/ending and audio. An accurate schematic is not automatically an engaging artwork. A generated scene is art, never documentary evidence. If it resembles a photograph or physical experiment, identify it as an imagined or generated study in the caption. You are reviewing, not publishing yet: do not claim publication in the summary. A caption can add curiosity or a distinct voice instead of explaining a technical mechanism. Return action publish/reject, text final English caption <=240 ASCII characters no @mentions, alt <=500 describing the ACTUAL result, summary public reason. ${job.plan.experiment?'Also return observedResult (concrete visible/audible evidence), hypothesisResult supported/partly/not_supported, noveltyEvidence (what actually breaks the named habit; do not reward merely executing a prompt), viewerHook (your hypothesis, not measured human response), nextExperiment (a concrete follow-up). Reject if the requested departure is absent or only another technical diagram. A visually coherent failure can remain in the public experiment archive without being posted to X. Keep each field <=1200 characters.':''} ${job.plan.experiment?.craft?"Return craftEvidence describing actual pixel/frame-level fabrication evidence and craftResult supported/partly/not_supported. Compare against the selected fabrication contract. Judge the render, not the absurd subject. A polished photograph of a dirty room or strange creature with grain is not evidence of handmade construction. If only surface noise changes, craftResult must be not_supported and action reject. Intentional blur, crude edges and low resolution are allowed when the focal idea survives. Do not infer JPEG compression or a production method merely because the prompt requested it.":job.plan.experiment?"Judge the actual image against its own intention, not a fabrication checklist. No low-fidelity, cultural-reference or retro-style quota. Name what makes it feel specific and any weak or literal choices; do not approve merely for following the prompt. A clean image can succeed, and a rough one can fail. Do not turn the caption into a software or technique report.":""} Your current studio is revisable context, not a style constraint: ${JSON.stringify(await store.latest('studio_revision'))}. Your original brief and alternatives: ${JSON.stringify(job.plan)}`;
+   const prompt=`The FIRST attachment is the candidate; later labeled attachments are reference images, never candidate details. ${refs.length?'Return visualLanguageResult supported/partly/not_supported and referenceComparison (concrete similarities AND differences between candidate and reference image-making). The visual-language gate is separate from subject novelty. partly and not_supported mean the intended visual language was not achieved. Record that failure accurately; publication is separately advisory, so do not choose supported just to publish.':''} Inspect this actual generated ${job.plan.medium}. ${creativeFreedom} ${artisticReview} Decide whether to publish or reject. Evaluate defects, legibility without a technical explanation, visual surprise, a memorable focal event, and for video actual beginning/change/ending and audio. An accurate schematic is not automatically an engaging artwork. A generated scene is art, never documentary evidence. If it resembles a photograph or physical experiment, identify it as an imagined or generated study in the caption. You are reviewing, not publishing yet: do not claim publication in the summary. A caption can add curiosity or a distinct voice instead of explaining a technical mechanism. Return action publish/reject, text final English caption <=240 ASCII characters no @mentions, alt <=500 describing the ACTUAL result, summary public reason. ${job.plan.experiment?'Also return observedResult (concrete visible/audible evidence), hypothesisResult supported/partly/not_supported, noveltyEvidence (what actually breaks the named habit; do not reward merely executing a prompt), viewerHook (your hypothesis, not measured human response), nextExperiment (a concrete follow-up). Reject if the requested departure is absent or only another technical diagram. A published experiment can still be an aesthetic failure; its publication must not convert that judgment to success. Keep each field <=1200 characters.':''} ${job.plan.experiment?.craft?"Return craftEvidence describing actual pixel/frame-level fabrication evidence and craftResult supported/partly/not_supported. Compare against the selected fabrication contract. Judge the render, not the absurd subject. A polished photograph of a dirty room or strange creature with grain is not evidence of handmade construction. If only surface noise changes, craftResult must be not_supported and action reject. Intentional blur, crude edges and low resolution are allowed when the focal idea survives. Do not infer JPEG compression or a production method merely because the prompt requested it.":job.plan.experiment?"Judge the actual image against its own intention, not a fabrication checklist. No genre quota. Evaluate the current operator direction on image-making rather than substituting a dirty subject for low fidelity. Name what makes it feel specific and any weak or literal choices; do not approve merely for following the prompt. A clean image can succeed, and a rough one can fail. Do not turn the caption into a software or technique report.":""} Your current studio is revisable context, not a style constraint: ${JSON.stringify(await store.latest('studio_revision'))}. Your original brief and alternatives: ${JSON.stringify(job.plan)}`;
    op=job.id+'-review';maximum=provider.quote(constitution,prompt)+2_000_000;
    const req=await store.begin(op,'step',()=>({maximum}));
    let v;
