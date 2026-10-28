@@ -106,6 +106,10 @@
   ],
   "rewrites": [
     {
+      "source": "/soft-days",
+      "destination": "/small-interruptions.html"
+    },
+    {
       "source": "/collections",
       "destination": "/collections.html"
     },

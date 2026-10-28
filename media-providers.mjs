@@ -5,6 +5,7 @@ import {composeCollage} from './collage.mjs';
 
 export const VIDEO_MODEL='google/veo-3.1-fast';
 export const CHARACTER_MODEL='google/nano-banana';
+export const CHARACTER_STYLE_REFERENCE='https://alidade.art/series/afterimage-03.jpg';
 export const CHARACTER_ASSET='broadcast-avatar-v1';
 export const MAX_VIDEO_BYTES=14_000_000;
 export function mediaCapabilities(env){return {image:!!env.GEMINI_API_KEY,character:!!env.REPLICATE_API_TOKEN,video:!!(env.REPLICATE_API_TOKEN&&env.BLOB_READ_WRITE_TOKEN)};}
@@ -34,8 +35,8 @@ export class MediaProviders {
   const bytes=Buffer.from(reference?.bytes??[]);
   if(!['image/png','image/jpeg','image/webp'].includes(reference?.mime)||!bytes.length||bytes.length>5_000_000)throw Error('CHARACTER_REFERENCE_MISSING');
   return this.replicate('POST','models/'+CHARACTER_MODEL+'/predictions',{input:{
-   image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64')],
-   prompt:renderDirection+' The input is Alidade, the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, white blunt bob and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Create the following new authored scene: '+plan.prompt,
+   image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64'),CHARACTER_STYLE_REFERENCE],
+   prompt:renderDirection+' The first input defines Alidade identity. The second input is the approved OUT OF FRAME visual treatment: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, white blunt bob and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Create the following new authored scene: '+plan.prompt,
    aspect_ratio:plan.ratio,output_format:'png'}});
  }
  async archiveCharacter(output){

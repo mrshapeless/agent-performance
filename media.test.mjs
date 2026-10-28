@@ -30,7 +30,7 @@ test('character provider transmits only approved portrait to the identity-preser
  let body;
  const provider=new MediaProviders(env,async(url,options)=>{assert.match(url,/google\/nano-banana/);body=JSON.parse(options.body);return Response.json({id:'one'});});
  await provider.startCharacter(plan,{mime:'image/png',bytes:Buffer.from('face')});
- assert.deepEqual(body.input.image_input,['data:image/png;base64,ZmFjZQ==']);assert.equal(body.input.allow_fallback_model,undefined);assert.equal(body.input.aspect_ratio,'1:1');
+ assert.deepEqual(body.input.image_input,['data:image/png;base64,ZmFjZQ==','https://alidade.art/series/afterimage-03.jpg']);assert.equal(body.input.allow_fallback_model,undefined);assert.equal(body.input.aspect_ratio,'1:1');
  await assert.rejects(provider.startCharacter(plan,null),/REFERENCE_MISSING/);
  assert.throws(()=>validateMediaPlan({...plan,renderer:'character'},{GEMINI_API_KEY:'yes'}),/CHARACTER_NOT_CONFIGURED/);
  assert.equal(validateMediaPlan({...plan,medium:'video',ratio:'16:9',duration:6,renderer:'character'},env).renderer,'character');

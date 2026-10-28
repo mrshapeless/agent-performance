@@ -10,5 +10,11 @@
   "public/films/portrait-night-bus.mp4": "f53563ad577ae524fcb4839bf78e2a19feae8e830df7e6e855e8ee9e9066ee0a",
   "public/series/portrait-night-bus.jpg": "2635d3b5828a9fe2f572773e52401ff58bc220bb6440c58e8353bf3a4865d115",
   "public/films/portrait-off-air.mp4": "b4ece7ecb42fb208e1d2423bb1889be0e6f3fa46bd6a4ca75a3a4deb77e90ae9",
-  "public/series/portrait-off-air.jpg": "99a658e02cf23f0b804ffa9f9ea620d1778432c04d79b8cf9204c2e724104882"
+  "public/series/portrait-off-air.jpg": "99a658e02cf23f0b804ffa9f9ea620d1778432c04d79b8cf9204c2e724104882",
+  "public/films/soft-days-01.mp4": "d238d9b2bcd211e6203200836a01b93dbadbd14b9898cd84b91443ef9a46e415",
+  "public/series/soft-days-01.jpg": "7ab416ab4d1f94c92e4b0f30680787cda831be3ffc0277e574b746bab9d18dc4",
+  "public/films/soft-days-02.mp4": "1723c744022636f9f3b2c219df27cb4766b757c14ac1dff9e67c53429657e532",
+  "public/series/soft-days-02.jpg": "9eacf24e92b987344bd511f0e2b6757970d09ced92859123e4e042fc9701ef15",
+  "public/films/soft-days-03.mp4": "ff86fe7ae4fd0e322a4d5fa7981432965953a543810282583cca503c5f3555ee",
+  "public/series/soft-days-03.jpg": "6e90873105ca4b19a187c2123b72e3a09c09ecc04704ee223da64e8158fdab3d"
 }
