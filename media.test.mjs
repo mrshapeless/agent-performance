@@ -1,3 +1,4 @@
+import {stampCreativePlan} from './creative-revision.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
@@ -37,7 +38,7 @@ test('character provider transmits only portrait and disables automatic prompt p
 test('unknown character request is never repeated and another job can advance',async()=>{
  const {store:s,db}=await fixture();try{
  await seed(s,{...plan,renderer:'character'});await s.begin('media-1-render','step',()=>({maximum:100000,budgetProvider:'replicate'}));
- await enqueueMedia(s,'x-plan-2',plan);
+ await enqueueMedia(s,'x-plan-2',stampCreativePlan(plan));
  const svc={...services,characterQuote:()=>100000,startCharacter:()=>assert.fail('duplicate paid request')};
  assert.equal((await mediaStep(s,{},env,svc)).status,'media_failed');
  assert.equal((await mediaStep(s,{},env,svc)).status,'image_created');
@@ -55,13 +56,13 @@ test('new visual plans require selected distinct mechanisms while saved legacy j
  assert.equal(validateMediaPlan({action:'wait',medium:'text'},env,strict).medium,'text');
 });
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const store=new PostgresStore({query:c.query,connect:async()=>c});await store.begin('birth','birth',()=>({maximum:1}));await store.complete('birth',1,{name:'test'});return {store,db};}
-async function seed(s,p=plan){await s.begin('x-plan-1','step',()=>({maximum:1}));await s.complete('x-plan-1',1,p);await enqueueMedia(s,'x-plan-1',p);}
+async function seed(s,p=plan){p=stampCreativePlan(p);await s.begin('x-plan-1','step',()=>({maximum:1}));await s.complete('x-plan-1',1,p);await enqueueMedia(s,'x-plan-1',p);}
 test('unknown preflight is quarantined without repeating its call or starving later media',async()=>{
  const {store:s,db}=await fixture();
  try{
   await seed(s,{...plan,selectionVersion:'creative-v2'});
   await s.begin('media-1-preflight-review','step',()=>({maximum:123}));
-  await enqueueMedia(s,'x-plan-2',plan);
+  await enqueueMedia(s,'x-plan-2',stampCreativePlan(plan));
   const result=await mediaStep(s,{generate:()=>assert.fail('unknown call must not repeat')},env,services);
   assert.equal(result.status,'media_failed');
   assert.equal((await s.operation('media-1-preflight-review')).status,'complete');

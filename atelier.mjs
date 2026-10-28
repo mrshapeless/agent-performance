@@ -2,12 +2,16 @@ import {createHash} from 'node:crypto';
 import {constitution} from './domain.mjs';
 import {trustedMediaURL} from './media-providers.mjs';
 import {profileSchema,validateProfile,trainTaste,tasteBrief,similarity} from './taste.mjs';
+import {canonicalMediaReviews} from './workspace-state.mjs';
 export async function tasteData(query){
  const profiles=(await query('SELECT asset_id,observation,traits,created FROM agent_visual_profiles ORDER BY created DESC LIMIT 200')).rows;
  const feedback=(await query('SELECT asset_id,other_id,verdict FROM agent_taste_feedback ORDER BY updated DESC LIMIT 500')).rows;
  return {profiles,feedback};
 }
-export async function creativeMemory(query){const d=await tasteData(query);return tasteBrief(d.profiles,d.feedback);}
+export async function creativeMemory(query){
+ const d=await tasteData(query),reviews=await canonicalMediaReviews(query);
+ return {...tasteBrief(d.profiles,d.feedback),outcomes:[...reviews.values()].slice(0,12).map(r=>({assetId:r.assetId,source:r.source,criticism:r.criticism,summary:r.summary})),outcomeUse:'Each asset contributes one latest model assessment, with an independent visual audit taking precedence over artist self-approval. This is not audience feedback. A published or self-approved work is not a demonstrated success; missing audience evidence remains unknown.'};
+}
 export async function atelierStep(store,provider,load=loadAsset){
  const row=(await store.pool.query(`SELECT a.id,a.mime,a.bytes,a.url FROM agent_assets a
  JOIN agent_media_jobs j ON j.data->>'assetId'=a.id

@@ -4,6 +4,22 @@ export function reviewEvidence(p){
  const keys=['decision','visualLanguageResult','referenceComparison','observedResult','noveltyEvidence','viewerHook','nextExperiment','craftResult','craftEvidence','hypothesisResult'];
  return Object.fromEntries(keys.filter(k=>typeof p[k]==='string').map(k=>[k,p[k].slice(0,1600)]));
 }
+const payloadOf=r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload;
+// One artwork is one observation, not votes from successive model calls.
+export async function canonicalMediaReviews(query,eventRows){
+ const rows=eventRows??(await query("SELECT seq,kind,payload FROM agent_events WHERE kind='media_review' ORDER BY seq DESC LIMIT 160")).rows;
+ const jobs=(await query("SELECT id,data FROM agent_media_jobs WHERE data ? 'styleAudit' ORDER BY updated DESC LIMIT 160")).rows;
+ const audits=new Map();for(const j of jobs)if(j.data.assetId&&!audits.has(j.data.assetId))audits.set(j.data.assetId,j.data.styleAudit);
+ const selected=new Map();
+ for(const r of rows.filter(r=>r.kind==='media_review').sort((a,b)=>Number(b.seq)-Number(a.seq))){
+  const p=payloadOf(r),key=p.assetId??'event:'+r.seq,old=selected.get(key);
+  const independent=p.evidenceProvenance==='independent_visual_audit'||p.reviewer==='independent_visual_audit'||p.source==='independent_visual_audit';
+  if(old&&(!independent||old.independent))continue;
+  const audit=audits.get(p.assetId),criticism=reviewEvidence(audit??p);
+  selected.set(key,{seq:r.seq,assetId:p.assetId??null,independent:!!audit||independent,criticism,source:audit||independent?'independent_model_review_not_audience':p.evidenceProvenance==='artist_review'?'artist_self_review_not_audience':'unverified_model_review_not_audience',summary:`Model review: ${criticism.decision??'unrecorded decision'}; visual alignment ${criticism.visualLanguageResult??'unknown'}. This is not operator feedback or audience evidence. Publication and artist self-approval are not audience approval.`});
+ }
+ return selected;
+}
 export async function workspaceState(store){
  const broadcast=await store.latest('workspace_broadcast');
  const goals=(await store.pool.query("SELECT id,status,objective,why,success,evidence,version FROM agent_goals ORDER BY updated DESC LIMIT 16")).rows;
@@ -11,15 +27,17 @@ export async function workspaceState(store){
  return {broadcast,goals,predictions};
 }
 export async function workspaceEvidence(store,epoch){
- const rows=(await store.pool.query("SELECT seq,kind,payload FROM agent_events WHERE kind=ANY($1::text[]) ORDER BY seq DESC LIMIT 160",[allowed])).rows;
- const project=r=>{const p=JSON.parse(r.payload);return {id:String(r.seq),kind:r.kind,text:String(p.text??p.alt??'').slice(0,1800),summary:String(p.summary??'').slice(0,1200),assetId:p.assetId??null,...(r.kind==='media_review'?{criticism:reviewEvidence(p)}:{}),source:r.kind==='record_note'?'operator':r.kind==='media_review'?'model_review_not_audience':r.kind==='workspace_note'?'agent_hypothesis':'recorded_event'};};
+ const raw=(await store.pool.query("SELECT seq,kind,payload FROM agent_events WHERE kind=ANY($1::text[]) ORDER BY seq DESC LIMIT 160",[allowed])).rows;
+ const canonical=await canonicalMediaReviews(store.pool.query.bind(store.pool),raw);
+ const rows=raw.filter(r=>r.kind!=='media_review'||String(canonical.get(payloadOf(r).assetId??'event:'+r.seq)?.seq)===String(r.seq));
+ const project=r=>{const p=payloadOf(r),review=canonical.get(p.assetId??'event:'+r.seq);return {id:String(r.seq),kind:r.kind,text:String(p.text??p.alt??'').slice(0,1800),summary:r.kind==='media_review'?review.summary:r.kind==='x_post'?'Published work; distribution is not evidence of artistic success or audience approval.':String(p.summary??'').slice(0,1200),assetId:p.assetId??null,...(review&&['media_review','x_post'].includes(r.kind)?{criticism:review.criticism}:{}),source:r.kind==='record_note'?'operator':r.kind==='media_review'?review.source:r.kind==='workspace_note'?'agent_hypothesis':'recorded_event'};};
  const recent=rows.slice(0,12),older=rows.slice(12),offset=older.length?epoch%older.length:0;
  const sampled=[...older.slice(offset),...older.slice(0,offset)].slice(0,8);
  const notes=rows.filter(r=>r.kind==='record_note'||r.kind==='workspace_note'||r.kind==='workspace_outcome').slice(0,8);
  const reviews=rows.filter(r=>r.kind==='media_review').slice(0,6);
  const evidence=[...new Map([...recent,...sampled,...notes,...reviews].map(r=>[String(r.seq),project(r)])).values()];
  const studied=await store.latest('workspace_note');
- for(const e of studied?.retrieved??[])if(!evidence.some(x=>x.id===e.id))evidence.push({id:e.id,kind:e.kind,text:e.text,summary:e.summary,source:e.source,assetId:e.assetId});
+ for(const e of studied?.retrieved??[])if(e.kind!=='media_review'&&!evidence.some(x=>x.id===e.id))evidence.push({id:e.id,kind:e.kind,text:e.text,summary:e.kind==='x_post'?'Published work; audience response unknown.':e.summary,source:e.source,assetId:e.assetId});
  const room=(await store.pool.query("SELECT id,role,text FROM agent_room WHERE hidden=false ORDER BY seq DESC LIMIT 6")).rows;
  evidence.push(...room.map(r=>({id:'room:'+r.id,kind:'conversation',text:r.text.slice(0,1400),summary:'Public room utterance; not verified fact',source:r.role==='agent'?'agent_utterance':'visitor'})));
  const obs=await store.latest('observation');
@@ -33,12 +51,12 @@ export async function reconcilePredictions(store,now=new Date()){
   let count=0;
   for(const p of pending){
    let outcome=null,evidence=[],status='pending';
-   const jobs=(await c.query("SELECT state,data FROM agent_media_jobs WHERE plan->>'agendaId'=$1",[p.task_id])).rows;
+   const jobs=(await c.query("SELECT state,data FROM agent_media_jobs WHERE plan->>'agendaId'=$1 ORDER BY updated DESC,id DESC",[p.task_id])).rows;
    const posts=(await c.query("SELECT seq FROM agent_events WHERE kind='x_post' AND payload::jsonb->>'agendaId'=$1",[p.task_id])).rows;
    if(p.metric==='publication'&&posts.length){outcome=1;evidence=posts.map(x=>String(x.seq));}
    if(p.metric==='visual_alignment'){
     const reviewed=jobs.find(j=>['supported','partly','not_supported'].includes(j.data.styleAudit?.visualLanguageResult));
-    if(reviewed){outcome=reviewed.data.styleAudit.visualLanguageResult==='supported'?1:0;evidence=['model_visual_review:'+p.task_id];}
+    if(reviewed){outcome=reviewed.data.styleAudit.visualLanguageResult==='supported'&&reviewed.data.styleAudit.decision!=='reject'?1:0;evidence=['model_visual_review:'+p.task_id];}
    }
    if(p.metric==='draft_saved'){
     const task=(await c.query("SELECT artifact FROM agent_agenda WHERE id=$1",[p.task_id])).rows[0];

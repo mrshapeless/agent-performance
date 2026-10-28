@@ -1,3 +1,4 @@
+import {CREATIVE_REVISION} from './creative-revision.mjs';
 import {createHash} from 'node:crypto';
 
 // Caller holds the migration transaction/advisory lock. Files are private build inputs.
@@ -14,7 +15,7 @@ export async function importApprovedMedia(client,store,batch,readAsset,now=new D
   if(!Buffer.isBuffer(bytes)||bytes.length>3500000||bytes.length<12||bytes.toString('ascii',4,8)!=='ftyp'||createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw Error('INVALID_IMPORTED_VIDEO');
   const availableAt=new Date(now.getTime()+item.delayMinutes*60000).toISOString();
   const summary='This completed synthetic portrait clip and caption were commissioned and approved for X by the project owner. This is an editorial import, not autonomous creation or audience feedback.';
-  const plan={action:'x_draft',medium:'video',text:item.text,alt:item.alt,summary,ratio:'9:16',duration:5,intent:'editorial',provenance:'owner-approved-import',availableAt};
+  const plan={creativeRevision:CREATIVE_REVISION,action:'x_draft',medium:'video',text:item.text,alt:item.alt,summary,ratio:'9:16',duration:5,intent:'editorial',provenance:'owner-approved-import',availableAt};
   await client.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',[assetId,'video/mp4',bytes]);
   await client.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date,0,'complete',$2)",[planId,JSON.stringify(plan)]);
   await client.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data,available_at) VALUES($1,$2,$3,'approved',$4,$5)",[id,planId,JSON.stringify(plan),JSON.stringify({assetId,review:{decision:'publish',text:item.text,alt:item.alt,summary},importDigest:item.sha256}),availableAt]);

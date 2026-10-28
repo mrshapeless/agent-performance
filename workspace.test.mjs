@@ -3,13 +3,38 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from './workspace.mjs';
+import {CREATIVE_REVISION} from './creative-revision.mjs';
+import {workspaceStep,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from './workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from './workspace-state.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 import {scopedSQL} from './instance.mjs';
+import {creativeMemory} from './atelier.mjs';
 const now=new Date('2026-10-27T12:00:00Z');
 const studio={projects:[{id:'old-theme',status:'active'}]};
+test('one asset keeps independent rejection over later artist praise and publication',async()=>{
+ const {s,db}=await fixture();try{
+  await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data) VALUES('audit-work','audit-work','{}','published',$1)",[JSON.stringify({assetId:'synthetic-work',styleAudit:{decision:'reject',visualLanguageResult:'partly',referenceComparison:'Coherent commercial rendering; no mixed source construction.'}})]);
+  await s.transaction(async c=>{
+   await s.append(c,'media_review',{assetId:'synthetic-work',decision:'reject',visualLanguageResult:'partly',reviewer:'independent_visual_audit'});
+   await s.append(c,'media_review',{assetId:'synthetic-work',decision:'publish',visualLanguageResult:'supported',summary:'A wonderful audience success',nextExperiment:'Repeat the same subject'});
+   await s.append(c,'x_post',{assetId:'synthetic-work',text:'Synthetic caption',summary:'A wonderful audience success'});
+  });
+  const evidence=await workspaceEvidence(s,0),reviews=evidence.filter(e=>e.kind==='media_review');
+  assert.equal(reviews.length,1);assert.equal(reviews[0].criticism.decision,'reject');assert.equal(reviews[0].criticism.nextExperiment,undefined);
+  assert.doesNotMatch(JSON.stringify(evidence),/wonderful audience success|Repeat the same subject/);
+  const memory=await creativeMemory(s.pool.query.bind(s.pool));assert.equal(memory.outcomes.length,1);assert.equal(memory.outcomes[0].criticism.decision,'reject');assert.equal(memory.operatorJudgments,0);
+  await s.begin('check-evidence-context','step',(_identity,recent,context)=>{
+   for(const history of [recent,context.projectHistory]){
+    assert.equal(history.filter(e=>e.kind==='media_review').length,1);
+    assert.equal(history.find(e=>e.kind==='media_review').payload.decision,'reject');
+    assert.equal(history.find(e=>e.kind==='x_post').payload.text,'Synthetic caption');
+    assert.doesNotMatch(JSON.stringify(history),/wonderful audience success|Repeat the same subject/);
+   }
+   return {maximum:0};
+  });await s.complete('check-evidence-context',0,{action:'wait'});
+ }finally{await db.close();}
+});
 const candidate=(action='commission')=>({action,goalId:'new-question',projectId:'',objective:'Explore belonging through a visual joke.',why:'A new question unrelated to the old theme.',success:'A legible first experiment.',proposal:action==='write'?'A real written fragment.':'Create an original visual joke about belonging, without an inherited technical subject.',novelty:'Different cultural association and construction.',uncertainty:'Audience response is unknown.',evidence:[],prediction:{metric:action==='write'?'draft_saved':action==='commission'?'publication':'none',probability:.6},queries:[]});
 const broadcast=()=>({selectedId:'exploration',attention:['exploration','self_monitor'],summary:'Choose a new question rather than repeat an inherited project.',selection:modules.map(id=>({id,reason:id==='exploration'?'Selected for its unanswered question.':'Kept as a competing possibility.'})),selfModel:{desire:'Explore belonging.',preferences:['Playful incongruity'],uncertainties:['Whether it communicates'],change:'A new interest, not a new invented biography.'},evidence:[],goalChanges:[],sources:['Colossal'],note:{claim:'A new goal can be attempted without continuing old projects.',evidence:[],links:[]}});
 const critique=()=>({assessments:modules.map(id=>({id,visibleHook:'A recognizable joke.',imageLanguage:'Uneven sources with visible seams.',nearestRepeat:'None evidenced.',materiallyRepeated:false,legibleHook:true,revision:'No revision needed.'}))});
@@ -61,7 +86,7 @@ test('material repetition forces an actual durable revision before commission; f
  const {s,db}=await fixture();let revisions=0,reviews=0,calls=0;
  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
   calls++;
-  if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:true,legibleHook:false,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
+  if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:reviews===1,legibleHook:false,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
   if(p.startsWith('Revise this')){revisions++;assert.deepEqual(schema.properties.projectId.enum,['']);assert.equal(schema.properties.evidence.maxItems,0);assert.ok(!schema.properties.action.enum.includes('develop'));return {costMicrodollars:1,value:{...candidate(),proposal:'An interrupted amateur game screenshot whose score becomes a swarm of faces.'}};}
   return {costMicrodollars:1,value:p.startsWith('Arbitrate')?broadcast():candidate()};
  }};
@@ -75,7 +100,7 @@ test('material repetition forces an actual durable revision before commission; f
   const task=(await s.pool.query('SELECT * FROM agent_agenda')).rows[0];assert.match(task.next_step,/amateur game/);
   assert.equal(revisions,1);assert.equal(reviews,2);assert.equal(calls,8);
   assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,8);
-  const op=await s.operation('workspace-v1-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,false);
+  const op=await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,false);
  }finally{await db.close();}
 });
 
@@ -115,6 +140,13 @@ test('bounded attention and source provenance are enforced; no consciousness sco
 test('a prediction without observed result expires to unknown, never negative audience evidence',async()=>{
  const {s,db}=await fixture();try{await s.pool.query("INSERT INTO agent_predictions(id,goal_id,task_id,metric,probability,deadline) VALUES('p','g','t','publication',.8,$1)",[now.toISOString()]);await reconcilePredictions(s,now);const p=(await workspaceState(s)).predictions[0];assert.equal(p.status,'unknown');assert.equal(p.outcome,null);}finally{await db.close();}
 });
+test('independent rejection cannot resolve a visual prediction as success even if alignment label conflicts',async()=>{
+ const {s,db}=await fixture();try{
+  await s.pool.query("INSERT INTO agent_predictions(id,goal_id,task_id,metric,probability,deadline) VALUES('p','g','t','visual_alignment',.8,$1)",[now.toISOString()]);
+  await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data) VALUES('conflict','conflict',$1,'published',$2)",[JSON.stringify({agendaId:'t'}),JSON.stringify({styleAudit:{decision:'reject',visualLanguageResult:'supported'}})]);
+  await reconcilePredictions(s,now);const p=(await workspaceState(s)).predictions[0];assert.equal(p.status,'observed');assert.equal(p.outcome,0);
+ }finally{await db.close();}
+});
 test('live memory-link regression: model contract permits only actual evidence IDs and bounded notes',()=>{
  const snapshot={studio,state:{goals:[],predictions:[]},evidence:[{id:'7'},{id:'room:example'}],tasks:[]};
  const candidates=modules.map(id=>({...candidate(),id}));
@@ -132,6 +164,14 @@ test('memory sampling and broadcast ablations change available evidence, not mer
   const memory=moduleContext('recall',snapshot),exploration=moduleContext('exploration',snapshot);
   assert.ok(memory.evidence.some(e=>e.kind==='workspace_note'));assert.ok(!exploration.evidence.some(e=>e.kind==='headline'));assert.ok(moduleContext('perception',snapshot).evidence.some(e=>e.kind==='headline'));assert.ok(!memory.evidence.some(e=>e.kind==='headline'));
   const withoutMemory=moduleContext('recall',{...snapshot,evidence:[]});assert.equal(withoutMemory.evidence.length,0);
-  const withoutBroadcast=moduleContext('exploration',{...snapshot,state:{...state,broadcast:null}});assert.equal(withoutBroadcast.previousBroadcast,null);assert.equal(exploration.previousBroadcast,null);assert.deepEqual(exploration.goals,[]);assert.deepEqual(exploration.studio,{projects:[]});assert.deepEqual(exploration.tasks,[]);
+  const withoutBroadcast=moduleContext('exploration',{...snapshot,state:{...state,broadcast:null}});assert.equal(withoutBroadcast.previousBroadcast,null);assert.equal(exploration.previousBroadcast,null);assert.deepEqual(exploration.goals,[]);assert.deepEqual(exploration.studio,{persona:snapshot.studio.persona,projects:[]});assert.deepEqual(exploration.tasks,[]);
  }finally{await db.close();}
+});
+
+test('new commissions exclude repeated mechanisms and explicit direction conflicts, not model taste alone',()=>{
+ const cs=modules.map(id=>({...candidate(),id})),v=critique();
+ v.assessments[0].materiallyRepeated=true;v.assessments[1].operatorDirectionConflict=true;v.assessments[2].visualLanguageAligned=false;
+ assert.deepEqual(selectableCandidates(cs,v).map(c=>c.id),['exploration','self_monitor']);
+ const schema=broadcastContract(cs,{evidence:[],state:{goals:[]}},selectableCandidates(cs,v));assert.deepEqual(schema.properties.selectedId.enum,['exploration','self_monitor']);
+ assert.equal(schema.properties.selection.items.properties.id.enum.length,4);
 });

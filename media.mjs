@@ -1,3 +1,4 @@
+import {CREATIVE_REVISION,isCurrentCreativePlan,reconcileCreativeRevision} from './creative-revision.mjs';
 import {validateReferenceIds} from './visual-references.mjs';
 import {preflightStep} from './creative-preflight.mjs';
 import {collageLayoutStep,collageSourceStep,validateCollage} from './collage.mjs';
@@ -42,10 +43,11 @@ export function validateMediaPlan(v,env,{requireAlternatives=false}={}){
  return {...v,medium,renderer,...(requireAlternatives?{selectionVersion:'creative-v2'}:{}),...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
 }
 export async function enqueueMedia(store,planId,plan){
+ if(!isCurrentCreativePlan(plan))throw Error('CREATIVE_PLAN_STALE');
  await store.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES($1,$2,$3,'queued') ON CONFLICT(id) DO NOTHING",['media-'+planId.replace('x-plan-',''),planId,JSON.stringify(plan)]);
  return (await store.pool.query('SELECT * FROM agent_media_jobs WHERE plan_id=$1',[planId])).rows[0];
 }
-export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND available_at<=now() AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data ? 'styleAudit') ORDER BY created LIMIT 1")).rows[0]??null;}
+export async function readyMedia(store){return (await store.pool.query("SELECT * FROM agent_media_jobs WHERE state='ready' AND plan->>'creativeRevision'=$1 AND available_at<=now() AND (NOT(plan ? 'referenceIds') OR plan->>'medium'<>'image' OR data ? 'styleAudit') ORDER BY created LIMIT 1",[CREATIVE_REVISION])).rows[0]??null;}
 export async function finishMedia(store,planId){await store.pool.query("UPDATE agent_media_jobs SET state='published',updated=now() WHERE plan_id=$1 AND state='ready'",[planId]);}
 async function patch(store,job,state,data={}){
  const result=await store.pool.query("UPDATE agent_media_jobs SET state=$1,data=data || $2::jsonb,lease_until=NULL,lease_token=NULL,updated=now() WHERE id=$3 AND lease_token=$4 RETURNING id",[state,JSON.stringify(data),job.id,job.lease_token]);
@@ -60,17 +62,27 @@ async function fail(store,job,operation,maximum,error){
 // Each invocation advances one durable phase. Lease prevents overlapping cron deliveries.
 // Paid requests are reserved once; an unknown outcome is never regenerated automatically.
 export async function mediaStep(store,provider,env,services=new MediaProviders(env),xFactory=xClient){
+ await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
   // Recover the pre-finalize-response image uploader once, using the saved asset.
   // A new upload operation is charged; paid image generation is never repeated.
   await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
-  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE available_at<=now() AND (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE")).rows[0];
+  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE available_at<=now() AND (plan->>'creativeRevision'=$1 OR state='processing' OR (state='queued' AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id=agent_media_jobs.id || '-render' AND o.status='complete' AND o.result ? 'predictionId'))) AND (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE",[CREATIVE_REVISION])).rows[0];
   if(!row)return null;
   await c.query("UPDATE agent_media_jobs SET lease_token=$1,lease_until=now()+interval '3 minutes' WHERE id=$2",[token,row.id]);
   return {...row,lease_token:token};
  });
  if(!job)return {status:'no_media_jobs'};
+ if(!isCurrentCreativePlan(job.plan)&&job.state!=='processing'){
+  // Recover a paid provider acceptance without running old preflight or layout.
+  const render=await store.operation(job.id+'-render');
+  if(job.state==='queued'&&render?.status==='complete'&&render.result?.predictionId){
+   await patch(store,job,'processing',{predictionId:render.result.predictionId,...(render.result.identityAssetId?{identityAssetId:render.result.identityAssetId}:{})});
+   return {status:'recovered_prediction'};
+  }
+  await patch(store,job,job.state);return {status:'creative_revision_deferred'};
+ }
  let op=null,maximum=0;
  try{
   if(job.state==='queued'){
@@ -157,7 +169,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    else{
     const answer=await provider.generate(constitution,prompt,asset,refs.length?visualReviewSchema:job.plan.experiment?(job.plan.experiment.craft?legacyReviewSchema:reviewSchema):null,[...refs,...(identityRef?[identityRef]:[])]);v=job.plan.experiment||refs.length?validateExperimentReview(answer.value,job.plan.experiment?.craft,refs.length>0):answer.value;
     if(!['publish','reject'].includes(v?.action)||typeof v.text!=='string'||!v.text.trim()||v.text.length>240||!/^[\x20-\x7e\r\n]+$/.test(v.text)||v.text.includes('@')||typeof v.alt!=='string'||!v.alt.trim()||v.alt.length>500||typeof v.summary!=='string'||!v.summary.trim()||v.summary.length>4000)throw Error('INVALID_MEDIA_REVIEW');
-    v={...v,projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,decision:v.action,action:'media_review',assetId:job.data.assetId,mime:asset.mime};
+    v={...v,evidenceProvenance:'artist_review',projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,decision:v.action,action:'media_review',assetId:job.data.assetId,mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,v);
    }
    await patch(store,job,'approved',{review:v,publicationPolicy:'style-advisory-v1'});return {status:'media_approved'};
@@ -176,7 +188,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    else{
     const answer=await provider.generate(auditSystem,auditPrompt,asset,schema,refs);audit=answer.value;
     if(!['publish','reject'].includes(audit?.action)||!['supported','partly','not_supported'].includes(audit.visualLanguageResult)||!['summary','referenceComparison'].every(k=>typeof audit[k]==='string'&&audit[k].trim()&&audit[k].length<=1200))throw Error('INVALID_VISUAL_AUDIT');
-    audit={...audit,decision:audit.action==='publish'&&audit.visualLanguageResult==='supported'?'publish':'reject',action:'media_review',text:job.data.review.text,alt:job.data.review.alt,assetId:job.data.assetId,experimentId:job.plan_id,intent:'experiment',mime:asset.mime};
+    audit={...audit,evidenceProvenance:'independent_visual_audit',decision:audit.action==='publish'&&audit.visualLanguageResult==='supported'?'publish':'reject',action:'media_review',text:job.data.review.text,alt:job.data.review.alt,assetId:job.data.assetId,experimentId:job.plan_id,intent:'experiment',mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,audit);
    }
    await patch(store,job,job.state,{styleAudit:audit,artistReview:job.data.review,review:{...job.data.review,...audit},publicationPolicy:'style-advisory-v1'});

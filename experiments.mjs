@@ -1,3 +1,4 @@
+import {stampCreativePlan} from './creative-revision.mjs';
 import {audienceDirection} from './audience-direction.mjs';
 import {privateReferences} from './private-references.mjs';
 import {validateReferenceIds,loadReferences} from './visual-references.mjs';
@@ -49,7 +50,7 @@ export async function planExperiment(store,provider,env,id,requiredMedium=null,r
  });
  if(req.replay)return {status:req.status,replay:true};
  let cost=req.maximum;
- try{const refs=await referenceLoader(planningReferenceIds);const answer=await provider.generate(constitution,req.prompt,null,experimentSchema,refs);cost=answer.costMicrodollars;const plan=validateExperiment(answer.value,env,history,requiredMedium,studio);plan.experiment.influence={...referenceInfluence};plan.experiment.planningReferenceIds=planningReferenceIds;await store.complete(id,cost,plan);return {status:'experiment_planned'};}
+ try{const refs=await referenceLoader(planningReferenceIds);const answer=await provider.generate(constitution,req.prompt,null,experimentSchema,refs);cost=answer.costMicrodollars;const plan=validateExperiment(answer.value,env,history,requiredMedium,studio);plan.experiment.influence={...referenceInfluence};plan.experiment.planningReferenceIds=planningReferenceIds;await store.complete(id,cost,stampCreativePlan(plan));return {status:'experiment_planned'};}
  catch(error){const code=/^(INVALID_EXPERIMENT|DUPLICATE_EXPERIMENT_ALTERNATIVES|EXPERIMENT_MEDIUM_MISMATCH|EXPERIMENT_PROJECT_NOT_ACTIVE|REPEATED_EXPERIMENT_PROMPT|REPEATED_EXPERIMENT_STYLE|INVALID_VISUAL_REFERENCES)$/.test(error.message)?error.message:'EXPERIMENT_PROVIDER_FAILURE';await store.complete(id,cost,{action:'wait',text:'Exploratory planning stopped before generation.',summary:code+'. No automatic paid retry in this slot.'});return {status:'experiment_plan_failed'};}
 }
 export const legacyReviewSchema=obj({action:{type:'string',enum:['publish','reject']},text,alt:text,summary:text,observedResult:text,hypothesisResult:{type:'string',enum:['supported','partly','not_supported']},noveltyEvidence:text,craftEvidence:text,craftResult:{type:'string',enum:['supported','partly','not_supported']},viewerHook:text,nextExperiment:text});

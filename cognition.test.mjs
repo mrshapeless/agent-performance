@@ -1,3 +1,4 @@
+import {reconcileCreativeRevision} from './creative-revision.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
@@ -10,7 +11,7 @@ import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 const studio={projects:[{id:'forgotten-objects',status:'active',nextStep:'Study a forgotten object.'}]};
 const choice=()=>({action:'write',taskId:'first-chapter',projectId:'forgotten-objects',objective:'Explore an abandoned chair.',nextStep:'Revise the ending before commissioning an illustration.',text:'The chair kept a seat for someone who had stopped arriving.',summary:'Start a story from a remembered object.',evidence:[],lesson:{id:'',claim:'',conditions:'',evidence:[],counterevidence:[],status:'hypothesis'}});
-async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test artist'});await s.transaction(c=>s.append(c,'studio_revision',studio));return {s,db};}
+async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test artist'});await s.transaction(c=>s.append(c,'studio_revision',studio));await reconcileCreativeRevision(s);return {s,db};}
 test('archive reaches old evidence, separates editorial interpretation and excludes private sources',async()=>{
  const {s,db}=await fixture();try{
  await s.transaction(async c=>{await s.append(c,'record_note',{text:'The amber chair was an editorial suggestion.',prompt:'PRIVATE_PROMPT'});await s.append(c,'private_memory',{text:'amber PRIVATE_SECRET'});for(let i=0;i<80;i++)await s.append(c,'draft_text',{text:'Unrelated item '+i});});

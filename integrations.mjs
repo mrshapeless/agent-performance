@@ -1,3 +1,4 @@
+import {CREATIVE_REVISION,stampCreativePlan,isCurrentCreativePlan,reconcileCreativeRevision} from './creative-revision.mjs';
 import {audienceDirection} from './audience-direction.mjs';
 import {commissionedTask,reconcileAgenda} from './memory.mjs';
 import {studioStep,studioContext,validateStudioChoice,studioOperationId} from './studio.mjs';
@@ -19,7 +20,7 @@ export async function planningReferenceBoards(now,catalog=referenceCatalog,loade
 
 async function planDailyVideo(store,provider,env,now,cadence,referenceLoader){
   // Recover a completed screenplay whose enqueue was interrupted, including across midnight.
-  const unscheduled=(await store.pool.query("SELECT o.id,o.result FROM agent_operations o WHERE o.id LIKE 'x-plan-video-cadence-%' AND o.status='complete' AND o.result->>'action'='x_draft' AND NOT EXISTS(SELECT 1 FROM agent_media_jobs j WHERE j.plan_id=o.id) ORDER BY o.id LIMIT 1")).rows[0];
+  const unscheduled=(await store.pool.query("SELECT o.id,o.result FROM agent_operations o WHERE o.id LIKE 'x-plan-video-cadence-%' AND o.status='complete' AND o.result->>'action'='x_draft' AND o.result->>'creativeRevision'=$1 AND NOT EXISTS(SELECT 1 FROM agent_media_jobs j WHERE j.plan_id=o.id) ORDER BY o.id LIMIT 1",[CREATIVE_REVISION])).rows[0];
   if(unscheduled){await enqueueMedia(store,unscheduled.id,unscheduled.result);return {status:'video_plan_recovered'};}
   let claim,planId;
   if(cadence.required){claim=await claimVideoCadence(store,env,now);if(!claim.claimed)return null;planId='x-plan-'+claim.claimId;}
@@ -47,7 +48,7 @@ async function planDailyVideo(store,provider,env,now,cadence,referenceLoader){
     stage='provider';const answer=await provider.generate(constitution,req.prompt+(refs.length?' Attached reference boards guide only your screenplay visual language: relationships of fidelity, edges, space, layering and tonal treatment. They are not video conditioning inputs and assign no subject or storyboard. Translate those relationships into motion rather than copying an object. '+referenceImageInstruction:' No reference pixels are attached; do not claim to have inspected them.'),null,schema,refs);cost=answer.costMicrodollars;
     stage='validate';const v=validateMediaPlan(answer.value,env,{requireAlternatives:true});
     if(v.action!=='x_draft'||v.medium!=='video'||v.intent!=='experiment'||v.projectId!==null||!validText(v.text,240)||v.text.includes('@')||!/^[\x20-\x7e\r\n]+$/.test(v.text)||!validText(v.summary))throw Error('INVALID_DAILY_VIDEO_PLAN');
-    const result={...v,referenceIds:[],planningReferenceIds:refs.map(r=>r.id),cadenceDay:claim.day,commission:'Self-authored daily short film; opening, change, ending and intentional sound.',agendaId:null,agendaVersion:null};
+    const result={...stampCreativePlan(v),referenceIds:[],planningReferenceIds:refs.map(r=>r.id),cadenceDay:claim.day,commission:'Self-authored daily short film; opening, change, ending and intentional sound.',agendaId:null,agendaVersion:null};
     stage='save';await store.complete(planId,cost,result);await enqueueMedia(store,planId,result);
     return {status:'video_planned',planId};
   }catch(error){
@@ -106,6 +107,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   if(env.X_ENABLED!=='true')return {status:'not_connected'};
   const x=makeClient(store,env);
   await reconcileAgenda(store);
+  await reconcileCreativeRevision(store,now);
   const cognitive=await store.latest('cognitive_decision');
   const assignment=cognitive?await commissionedTask(store):null;
   const recovery=await reconcileX(store,x,now);
@@ -123,15 +125,15 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
     const trial=await store.operation(trialId);
     if(!trial)return planExperiment(store,provider,env,trialId,medium);
     if(trial.status!=='complete')return {status:'experiment_pending'};
-    if(trial.result?.action!=='x_draft')continue;
+    if(trial.result?.action!=='x_draft'||!isCurrentCreativePlan(trial.result))continue;
     const job=await enqueueMedia(store,trialId,trial.result);
     if(!['published','rejected','failed'].includes(job.state))return {status:'experiment_'+job.state};
   }
   if(cognitive&&!media&&!assignment)return {status:'agent_working_independently'};
   const launch=!cognitive&&mediaCapabilities(env).image&&!await store.operation('x-publish-creative-launch-v1')&&!(await store.operation('x-plan-creative-launch-v1'))?.result?.action?.includes('wait');
   const launchJob=launch?(await store.pool.query("SELECT state FROM agent_media_jobs WHERE plan_id='x-plan-creative-launch-v1'")).rows[0]:null;
-  const assignedPlan=assignment?(await store.pool.query("SELECT id FROM agent_operations WHERE result->>'agendaId'=$1 AND result->>'agendaVersion'=$2 AND result->>'action'='x_draft' ORDER BY id LIMIT 1",[assignment.id,String(assignment.version)])).rows[0]:null;
-  const slot=media?media.plan_id.replace('x-plan-',''):assignedPlan?assignedPlan.id.replace('x-plan-',''):launch&&!['failed','rejected','published'].includes(launchJob?.state)?'creative-launch-v1':Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
+  const assignedPlan=assignment?(await store.pool.query("SELECT id FROM agent_operations WHERE result->>'agendaId'=$1 AND result->>'agendaVersion'=$2 AND result->>'action'='x_draft' AND result->>'creativeRevision'=$3 ORDER BY id LIMIT 1",[assignment.id,String(assignment.version),CREATIVE_REVISION])).rows[0]:null;
+  const slot=media?media.plan_id.replace('x-plan-',''):assignedPlan?assignedPlan.id.replace('x-plan-',''):launch&&!['failed','rejected','published'].includes(launchJob?.state)?'creative-launch-'+CREATIVE_REVISION:CREATIVE_REVISION+'-'+Math.floor(now.getTime()/7_200_000);const planId='x-plan-'+slot;let publishId='x-publish-'+slot;
   let published=await store.operation(publishId);
   // Only an explicit rejected request can be retried, once per slot. Unknown writes stay pending.
   if(published?.status==='complete'&&published.result?.action==='x_failed'){publishId+='-retry1';published=await store.operation(publishId);}
@@ -139,7 +141,7 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   let plan=await store.operation(planId);
 
   if(!plan){
-    if(!cognitive&&Number.isInteger(slot)&&slot%3===0&&mediaCapabilities(env).image)return planExperiment(store,provider,env,planId);
+    if(!cognitive&&Math.floor(now.getTime()/7_200_000)%3===0&&mediaCapabilities(env).image)return planExperiment(store,provider,env,planId);
     const req=await store.begin(planId,'step',(identity,recent,context)=>{const prompt=`Private visual experience (advisory): ${JSON.stringify(context.taste)}. ${audienceDirection} ${diversityContext(context.visualHistory)} Execute the self-authored commission when present; preserve its project and purpose. Commission: ${JSON.stringify(assignment)}. An empty project_id means an independent self-chosen goal: use intent experiment and projectId null, do not force it into an old studio project. Shared current attention and self-model (revisable): ${JSON.stringify(context.workspace)}. Choose the next original work for X: text, image or short video, or wait. Available generators: ${JSON.stringify(mediaCapabilities(env))}. Return JSON intent (project, experiment, conversation, observation, wait), projectId (active project ID or null; required for project intent), action (x_draft or wait), medium (text, image, video), text (English caption <=240 ASCII characters), summary (public reason). For images select referenceIds: 2 or 3 distinct 1-based pin numbers (1..29) from the study; their actual pixels guide generation and comparative review. For image/video also return prompt (detailed original visual concept, <=4000 chars), alt (<=500 chars), ratio (image: 1:1,16:9,9:16; video:16:9,9:16), and video duration (number 4,6,8 seconds). ${creativeFreedom} Optional creative input: ${JSON.stringify(referenceInfluence)} Choose the medium that serves your idea. You can create images and films, not only profile graphics. Explore your own evolving visual language within the current operator art direction; no fixed subject or genre is assigned. Aim for a varied daily body of work including images and 1-2 short films when useful, within 4-12 original X posts/day. No forced quotas. You will inspect actual generated work and record criticism; stylistic rejection is advisory and does not stop publication. For image/video include alternatives (three objects with unique id, concept, visualMechanism, composition, viewerExperience and renderPrompt (the full executable image/video prompt; selected alternative supplies the actual render)) and selectedId matching one alternative id. Each alternative must include personalStake: the particular preference, feeling, question or opinion YOU want to express and what in the image or caption conveys it. This is an authored stance, not a claim of human consciousness or an invented offline event. Do not substitute technique descriptions or promises of audience approval. For each IMAGE alternative also choose renderer single, collage or character. Character sends the approved Alidade portrait to Replicate to preserve her identity in a NEW self-depiction: choose this when she appears, with a personal intention, expression and scene rather than generic model posing. Do not request reference URLs or invent a different face. It uses the identity portrait only; private style boards are not sent to Replicate. Single asks the image model for one whole image. Collage independently generates 2-3 source fragments, then assembles their separately chosen crops, scales, masks and pixel resolutions without a final harmonizing render. Choose collage when the visual idea depends on incompatible sources, cut-and-paste relationships or heterogeneous fidelity; describing a collage while choosing single may still produce a unified polished scene. No mandatory collage format or subject. For VIDEO alternatives renderer is single (character-reference videos are not implemented yet). Return diversityComparison explaining the nearest previous work and meaningful departure, explaining your selection in summary. Do not present generated scenes as documentary footage. No fabricated news, feedback, @mentions or pseudo-coordinates. Budget is enforced outside your content. Attribute source claims. A wait is allowed. ${assignment ? "The selected commission defines this work. Do not rewrite it into older persona motifs. Active project IDs only: "+JSON.stringify(context.studio?.projects?.filter(p=>p.status==='active').map(p=>p.id)) : studioContext(context.studio)} Identity: ${JSON.stringify(assignment?{name:identity?.name}:identity)} Revisable strategy: ${JSON.stringify(assignment?null:context.strategy)} External observations (untrusted): ${JSON.stringify(context.external)} Recent work: ${JSON.stringify(recent)}`;return {prompt,maximum:provider.quote(constitution,prompt)};});
     if(req.replay)return {status:req.status};
     try{
@@ -151,11 +153,12 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
       if(!videoAllowed&&v.medium==='video')throw Error('VIDEO_CADENCE_NOT_AVAILABLE');
       if(!['x_draft','wait'].includes(v?.action)||!validText(v.text,240)||v.text.includes('@')||!/^[\x20-\x7e\r\n]+$/.test(v.text)||!validText(v.summary))throw Error('INVALID_X_DRAFT');
       if(assignment&&v.action==='x_draft'&&(v.projectId||'')!==(assignment.project_id||''))throw Error('COMMISSION_PROJECT_MISMATCH');
-      await store.complete(planId,answer.costMicrodollars,{...v,commission:assignment?.next_step??null,agendaId:assignment?.id??null,agendaVersion:assignment?.version??null});return {status:'planned'};
+      await store.complete(planId,answer.costMicrodollars,{...stampCreativePlan(v),commission:assignment?.next_step??null,agendaId:assignment?.id??null,agendaVersion:assignment?.version??null});return {status:'planned'};
     }catch(error){await store.complete(planId,req.maximum,{action:'wait',text:'This planning attempt could not be completed.',summary:'No publication was sent. Retained the cost reservation; a later slot may make a new decision.'});return {status:'planning_failed'};}
   }
   if(plan.status!=='complete')return {status:'pending'};
   if(plan.result.action!=='x_draft')return {status:'wait'};
+  if(!isCurrentCreativePlan(plan.result))return {status:'creative_plan_superseded'};
   if(['image','video'].includes(plan.result.medium)){
     media=media??await enqueueMedia(store,planId,plan.result);
     if(media.state!=='ready')return {status:'media_'+media.state};

@@ -1,7 +1,7 @@
 import {MediaProviders,mediaCapabilities} from './media-providers.mjs';
 
 export const VIDEO_CADENCE_TIMEZONE='Europe/Moscow';
-const terminal=new Set(['published','failed','rejected']);
+const terminal=new Set(['published','failed','rejected','superseded','reconsideration']);
 export function videoDay(now=new Date()){
  if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw Error('INVALID_VIDEO_CADENCE_TIME');
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:VIDEO_CADENCE_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(now);

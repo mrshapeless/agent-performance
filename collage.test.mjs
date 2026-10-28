@@ -1,3 +1,4 @@
+import {CREATIVE_REVISION} from './creative-revision.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
@@ -10,7 +11,7 @@ import {preflightStep,preflightSchema} from './creative-preflight.mjs';
 const box={x:0,y:0,width:1,height:1};
 const layout=()=>({background:'#ffffff',layers:[{id:'red',prompt:'A red synthetic source field.',crop:{...box},place:{...box},mask:[],resolution:64,quality:100,kernel:'nearest'},{id:'blue',prompt:'A blue synthetic source field.',crop:{...box},place:{x:.25,y:.25,width:.5,height:.5},mask:[{x:0,y:0},{x:1,y:0},{x:0,y:1}],resolution:128,quality:100,kernel:'nearest'}]});
 const env={GEMINI_API_KEY:'synthetic',X_ENABLED:'false'};
-const plan=()=>({action:'x_draft',medium:'image',renderer:'collage',text:'A synthetic collision.',summary:'Testing separate pixels.',prompt:'The two source fields collide.',alt:'A blue shape on red.',ratio:'1:1',referenceIds:[1,2],intent:'experiment',projectId:null});
+const plan=()=>({creativeRevision:CREATIVE_REVISION,action:'x_draft',medium:'image',renderer:'collage',text:'A synthetic collision.',summary:'Testing separate pixels.',prompt:'The two source fields collide.',alt:'A blue shape on red.',ratio:'1:1',referenceIds:[1,2],intent:'experiment',projectId:null});
 async function color(background){return {bytes:await sharp({create:{width:64,height:64,channels:3,background}}).png().toBuffer(),mime:'image/png',costMicrodollars:2};}
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});return {s,db};}
 

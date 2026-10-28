@@ -1,3 +1,4 @@
+import {reconcileCreativeRevision} from './creative-revision.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
@@ -48,6 +49,7 @@ test('durable claim is once per daily slot, never a charge, and no pending lane 
 
 async function socialFixture(){
  const f=await fixture(),s=f.s;
+ await reconcileCreativeRevision(s);
  await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic artist'});
  await s.transaction(async c=>{await s.append(c,'studio_revision',{projects:[],interests:[]});await s.append(c,'cognitive_decision',{choice:'commission',taskId:'original-image'});});
  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('original-image','','commissioned','An independent image','Create an image with overlapping signs.')");

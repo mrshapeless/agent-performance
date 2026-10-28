@@ -1,10 +1,21 @@
 import {creativeMemory} from './atelier.mjs';
-import {publicWorkspace} from './workspace-state.mjs';
+import {publicWorkspace,canonicalMediaReviews} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
 import { createHash } from 'node:crypto';
 
 // One artist. This transaction lock serializes state changes across all instances.
 const LOCK = 730201;
+function planningHistory(rows,reviews){
+ return rows.flatMap(e=>{
+  const p=typeof e.payload==='string'?JSON.parse(e.payload):e.payload,review=reviews.get(p.assetId??'event:'+e.seq);
+  if(e.kind==='media_review'){
+   if(!review||String(review.seq)!==String(e.seq))return [];
+   return [{seq:String(e.seq),kind:e.kind,payload:{assetId:p.assetId,text:p.text,alt:p.alt,...review.criticism,source:review.source,summary:review.summary}}];
+  }
+  if(e.kind==='x_post')return [{seq:String(e.seq),kind:e.kind,payload:{action:p.action,assetId:p.assetId,agendaId:p.agendaId,projectId:p.projectId,text:p.text,alt:p.alt,postId:p.postId,mime:p.mime,url:p.url,source:'publication_record_not_audience',summary:'Published work; distribution does not establish artistic success or audience approval.',...(review?{criticism:review.criticism,criticismSource:review.source}:{})}}];
+  return [{seq:String(e.seq),kind:e.kind,payload:p}];
+ });
+}
 export class PostgresStore {
   constructor(pool) { this.pool = pool; }
   async transaction(fn) {
@@ -42,15 +53,15 @@ export class PostgresStore {
       if (kind === 'auto') kind = identity ? 'step' : 'birth';
       if (kind === 'birth' && identity) throw Error('ALREADY_BORN');
       if (kind === 'step' && !identity) throw Error('NOT_BORN');
-      const recent = (await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','x_reply','dialogue','record_note','appearance_brief','art_image','art_video','media_review') ORDER BY seq DESC LIMIT 12"))
-        .rows.reverse().map(e => ({ seq: String(e.seq), kind: e.kind, payload: JSON.parse(e.payload) }));
+      const reviews=await canonicalMediaReviews(client.query.bind(client));
+      const recent = planningHistory((await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('draft_text','wait','reflect','x_post','x_reply','dialogue','record_note','appearance_brief','art_image','art_video','media_review') ORDER BY seq DESC LIMIT 12")).rows.reverse(),reviews);
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
       const observations=(await client.query("SELECT payload FROM agent_events WHERE kind='observation' ORDER BY seq DESC LIMIT 1")).rows[0];
       const external=observations?JSON.parse(observations.payload):null;
       const studioRow=(await client.query("SELECT payload FROM agent_events WHERE kind='studio_revision' ORDER BY seq DESC LIMIT 1")).rows[0];
       const studio=studioRow?JSON.parse(studioRow.payload):null;
-      const projectHistory=(await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse().map(r=>({seq:String(r.seq),kind:r.kind,payload:JSON.parse(r.payload)}));
+      const projectHistory=planningHistory((await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse(),reviews);
       const visualHistory=(await client.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state='published' ORDER BY updated DESC LIMIT 8")).rows.map(r=>({id:r.id,medium:r.plan.medium,caption:r.data.review?.text??r.plan.text,description:r.data.review?.alt??r.plan.alt,construction:r.plan.prompt,decision:r.data.styleAudit?.decision??r.data.review?.decision}));
       const workspaceRow=(await client.query("SELECT payload FROM agent_events WHERE kind='workspace_broadcast' ORDER BY seq DESC LIMIT 1")).rows[0];
       const workspace=workspaceRow?JSON.parse(workspaceRow.payload):null;
@@ -135,9 +146,3 @@ export class PostgresStore {
     });
   }
 }
-
-
-
-
-
-
