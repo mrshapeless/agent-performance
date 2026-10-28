@@ -1,3 +1,4 @@
+import {qualityTrial} from './quality-trial.mjs';
 import {CREATIVE_REVISION} from './creative-revision.mjs';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -49,7 +50,7 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
   const url=new URL(request.url);let action,body;
   if(request.method==='POST'){
    try{const raw=await request.text();if(Buffer.byteLength(raw,'utf8')>4000)throw Error();body=JSON.parse(raw);action=body.action;if(action!=='feedback'&&raw.length>256)throw Error();}catch{return json({error:'INVALID_INPUT'},400);}
-   if(!['init','step','plan','render','advance','feedback'].includes(action))return json({error:'INVALID_ACTION'},400);
+   if(!['init','step','plan','render','advance','feedback','quality-start','quality-step'].includes(action))return json({error:'INVALID_ACTION'},400);
    if(body.renderer!==undefined&&(action!=='plan'||body.renderer!=='collage'))return json({error:'INVALID_RENDERER_TEST'},400);
    if(action==='feedback'&&(!/^[a-zA-Z0-9_-]{1,100}$/.test(body.assetId??'')||!['pass','fail'].includes(body.verdict)||!['observation','nextExperiment'].every(k=>typeof body[k]==='string'&&body[k].trim().length>0&&body[k].length<=1200)))return json({error:'INVALID_FEEDBACK'},400);
   }
@@ -60,6 +61,10 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    // pair session-level lock/unlock calls across separate transactions.
    await guard.query('BEGIN');
    if(!(await guard.query('SELECT pg_try_advisory_xact_lock($1) AS locked',[lock])).rows[0].locked)return json({status:'busy'},409);
+   if(action?.startsWith('quality-')||url.searchParams.has('quality')){
+    const production=new PostgresStore(scopedPool(pool));
+    return json(await qualityTrial(production,createProvider(),env,createServices(env),action??'status',body?.medium??url.searchParams.get('quality')));
+   }
    if(action==='init')return json(await initialize(pool,now()));
    if(!(await pool.query('SELECT 1 FROM information_schema.schemata WHERE schema_name=$1',[GAUNTLET_SCHEMA])).rows.length)return json({status:'not_initialized'},409);
    const state=(await pool.query('SELECT * FROM gauntlet_v1.run_state WHERE id=1')).rows[0];
@@ -91,7 +96,7 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    const job=(await store.pool.query('SELECT * FROM agent_media_jobs WHERE plan_id=$1',[planId])).rows[0];
    const broadcast=await store.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(slotTime.getTime()/3600000)+'-broadcast');
    const decision=await store.latest('cognitive_decision');
-   const mediaFinished=['rejected','failed'].includes(job?.state)||(job?.state==='approved'&&(!job.plan.referenceIds||!!job.data.styleAudit));
+   const mediaFinished=['rejected','failed','reconsideration'].includes(job?.state)||(job?.state==='approved'&&!!job.data.styleAudit);
    const finished=(broadcast?.result?.action==='workspace_broadcast'&&decision?.choice!=='commission')||currentPlan?.status==='complete'&&(currentPlan.result?.action==='wait'||currentPlan.result?.medium==='text'||mediaFinished);
    if(request.method==='GET'){
     const assetId=url.searchParams.get('asset');
@@ -122,8 +127,8 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    if(!job)return json({status:'no_media_job'});
    await store.pool.query("UPDATE agent_media_jobs SET state='gauntlet_complete' WHERE plan_id<>$1 AND state='approved' AND data ? 'styleAudit'",[planId]);
    // Call only phases that cannot upload or publish. Image audit is separately bounded.
-   const auditOnly=job.state==='approved'&&job.plan.medium==='image'&&job.plan.referenceIds&&!job.data.styleAudit;
-   if(!['queued','processing','rendered'].includes(job.state)&&!auditOnly)return json({status:'review_complete',state:job.state});
+   const auditOnly=job.state==='approved'&&!job.data.styleAudit;
+   if(!['queued','processing','rendered','revising'].includes(job.state)&&!auditOnly)return json({status:'review_complete',state:job.state});
    return json(await mediaStep(store,testProvider(),{...testEnv,X_ENABLED:'false'},createServices(testEnv),noPublishingClient));
   }catch(error){const code=/^[A-Z0-9_]{2,60}$/.test(error.code??'')?error.code:'INTERNAL';console.error('gauntlet_failed',code);return json({error:/^[A-Z_]+$/.test(error.message)?error.message:'GAUNTLET_FAILED',code},500);}
   finally{if(guard){await guard.query('ROLLBACK').catch(()=>{});guard.release();}await pool.end();}

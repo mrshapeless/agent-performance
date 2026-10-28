@@ -9,65 +9,67 @@
   "functions": {
     "api/agent.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/tick.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/setup.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/social.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/asset.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/observe.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/audience.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/inbox.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/media.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/manual-replies.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/room.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/works.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/project.mjs": {
       "maxDuration": 120,
-      "includeFiles": "private/**"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/atelier.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/atelier-worker.mjs": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg}"
     },
     "api/gauntlet.mjs": {
       "maxDuration": 120,
-      "includeFiles": "{private/**,schema.sql}"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg,schema.sql}"
     }
   },
   "crons": [

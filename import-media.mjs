@@ -18,7 +18,7 @@ export async function importApprovedMedia(client,store,batch,readAsset,now=new D
   const plan={creativeRevision:CREATIVE_REVISION,action:'x_draft',medium:'video',text:item.text,alt:item.alt,summary,ratio:'9:16',duration:5,intent:'editorial',provenance:'owner-approved-import',availableAt};
   await client.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',[assetId,'video/mp4',bytes]);
   await client.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date,0,'complete',$2)",[planId,JSON.stringify(plan)]);
-  await client.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data,available_at) VALUES($1,$2,$3,'approved',$4,$5)",[id,planId,JSON.stringify(plan),JSON.stringify({assetId,review:{decision:'publish',text:item.text,alt:item.alt,summary},importDigest:item.sha256}),availableAt]);
+  await client.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data,available_at) VALUES($1,$2,$3,'rendered',$4,$5)",[id,planId,JSON.stringify(plan),JSON.stringify({assetId,review:{decision:'publish',text:item.text,alt:item.alt,summary},importDigest:item.sha256}),availableAt]);
   await store.append(client,'art_video',{assetId,mime:'video/mp4',text:item.alt,alt:item.alt,summary:'Owner-approved clip queued for X, available from '+availableAt+'. '+summary});
   imported.push({id,availableAt});
  }

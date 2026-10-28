@@ -40,11 +40,12 @@ test('projects cannot disappear silently, cite invented evidence or claim comple
  assert.throws(()=>validateStudioChoice({action:'x_draft',intent:'project'},old),/PROJECT_REQUIRED/);
 });
 
-test('invalid paid revision preserves prior state, settles actual cost and never retries in same window',async()=>{
+test('invalid paid revision preserves prior state and has at most one settled contract repair',async()=>{
  const {s,db}=await fixture();let calls=0;const good={quote:()=>100,generate:async()=>({costMicrodollars:30,value:snapshot()})};
  try{await studioStep(s,good,new Date('2026-10-22T00:00:00Z'));const bad={quote:()=>100,generate:async()=>{calls++;return {costMicrodollars:40,value:{voice:'incomplete'}}}};
  await studioStep(s,bad,new Date('2026-10-22T06:00:00Z'));await studioStep(s,bad,new Date('2026-10-22T06:30:00Z'));
- assert.equal(calls,1);assert.equal((await s.latest('studio_revision')).voice,'Curious and spare');assert.equal((await s.status()).unresolved,0);assert.equal((await s.status()).todayMicrodollars,71);
+ await studioStep(s,bad,new Date('2026-10-22T06:45:00Z'));
+ assert.equal(calls,2);assert.equal((await s.latest('studio_revision')).voice,'Curious and spare');assert.equal((await s.status()).unresolved,0);assert.equal((await s.status()).todayMicrodollars,111);
  }finally{await db.close()}
 });
 

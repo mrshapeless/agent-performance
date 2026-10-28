@@ -1,4 +1,5 @@
 import {renderDirection} from './audience-direction.mjs';
+import {visualDirection} from './visual-contract.mjs';
 import {loadReferences,referenceImageInstruction} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
 import {composeCollage} from './collage.mjs';
@@ -36,7 +37,7 @@ export class MediaProviders {
   if(!['image/png','image/jpeg','image/webp'].includes(reference?.mime)||!bytes.length||bytes.length>5_000_000)throw Error('CHARACTER_REFERENCE_MISSING');
   return this.replicate('POST','models/'+CHARACTER_MODEL+'/predictions',{input:{
    image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64'),CHARACTER_STYLE_REFERENCE],
-   prompt:renderDirection+' The first input defines Alidade identity. The second input is the approved OUT OF FRAME visual treatment: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, white blunt bob and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Keep the complete approved face clearly visible in an opening frame. No hands, fabric, hair or props covering facial landmarks. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt,
+   prompt:visualDirection+' '+renderDirection+' The first input defines Alidade identity. The second input is the approved OUT OF FRAME visual treatment: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, center-parted white blunt bob with exposed forehead, NO fringe or bangs, and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Keep the complete approved face clearly visible in an opening frame. No hands, fabric, hair or props covering facial landmarks. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt,
    aspect_ratio:plan.ratio,output_format:'png'}});
  }
  async archiveCharacter(output){
@@ -64,7 +65,7 @@ export class MediaProviders {
   if((firstFrame||plan.renderer==='character')&&(!['image/png','image/jpeg','image/webp'].includes(firstFrame?.mime)||!bytes.length||bytes.length>5_000_000))throw Error('VIDEO_FIRST_FRAME_MISSING');
   // Replicate google/veo-3.1-fast schema: `image` is the starting frame URI.
   // Send only the generated opening frame, never private style boards.
-  return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:renderDirection+' SCREENPLAY: '+plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true,...(firstFrame?{image:'data:'+firstFrame.mime+';base64,'+bytes.toString('base64')}:{})}});
+  return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:renderDirection+' '+visualDirection+' SCREENPLAY: '+plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true,...(firstFrame?{image:'data:'+firstFrame.mime+';base64,'+bytes.toString('base64')}:{})}});
  }
  videoStatus(id){if(!/^[a-zA-Z0-9_-]+$/.test(id))throw Error('INVALID_PREDICTION');return this.replicate('GET','predictions/'+id);}
  async archiveVideo(id,output){

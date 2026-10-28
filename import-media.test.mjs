@@ -20,7 +20,7 @@ test('import preserves bytes, is idempotent and keeps future jobs out of upload 
   assert.equal((await store.operation('x-plan-test-commission-1')).result.provenance,'owner-approved-import');
   assert.equal((await mediaStep(store,{}, {X_ENABLED:'true'}, {},()=>assert.fail('future job must not upload'))).status,'no_media_jobs');
   await c.query("UPDATE agent_media_jobs SET state='ready'");assert.equal(await readyMedia(store),null);
-  await c.query("UPDATE agent_media_jobs SET available_at=now()-interval '1 minute'");assert.equal((await readyMedia(store)).id,'media-test-commission-1');
+  await c.query("UPDATE agent_media_jobs SET available_at=now()-interval '1 minute'");assert.equal(await readyMedia(store),null); // Imported clips still need current visual inspection.
   await assert.rejects(importApprovedMedia(c,store,{...batch,id:'bad',items:[{...batch.items[0],sha256:'0'.repeat(64)}]},async()=>bytes),/INVALID_IMPORTED_VIDEO/);
  }finally{await db.close()}
 });

@@ -8,8 +8,49 @@ import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia} from './media.mjs';
 import {socialStep} from './integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
+const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
+test('diagnostic jobs cannot be selected by cron or published even with forged ready state',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s,{...plan,qualityTrial:'qualification'});
+  assert.equal((await mediaStep(s,reviewer(),env,services,()=>assert.fail('no X'))).status,'no_media_jobs');
+  assert.equal((await mediaStep(s,reviewer(),env,services,()=>assert.fail('no X'),'media-1')).status,'image_created');
+  const approved={...quality,decision:'publish',text:'Test',alt:'Test'};
+  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify({publicationPolicy:'out-of-frame-v1',review:approved,styleAudit:approved})]);
+  assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
+});
+test('video with malformed focal details is held even when author says publish and style matches',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s,{...plan,medium:'video',duration:6,ratio:'16:9'});
+  await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
+  const critic=reviewer(),generate=critic.generate;
+  critic.generate=async(...args)=>{const r=await generate(...args);r.value.integrityResult='not_supported';r.value.integrityEvidence='The focal banknote and fingertips melt together at the ending.';return r;};
+  assert.equal((await mediaStep(s,critic,env,services,()=>assert.fail('no upload'))).status,'media_revision_required');assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
+});
+test('independent identity rejection overrides the artist approval before upload',async()=>{
+ const {store:s,db}=await fixture();try{
+  await s.pool.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',['broadcast-avatar-v1','image/png',Buffer.from('approved-face')]);
+  await seed(s,{...plan,renderer:'character',medium:'video',duration:6,ratio:'16:9'});
+  const approved={...quality,decision:'publish',identityResult:'supported',text:'A scene',alt:'Alidade',summary:'Author approval'};
+  await s.pool.query("UPDATE agent_media_jobs SET state='approved',data=$1",[JSON.stringify({assetId:'candidate',review:approved,artistReview:approved,publicationPolicy:'out-of-frame-v1'})]);
+  const p={quote:()=>1,generate:async(_s,p,_a,schema,refs)=>{assert.ok(schema.required.includes('identityResult'));assert.match(p,/White hair and brown skin alone/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');return {costMicrodollars:1,value:{...quality,action:'publish',summary:'The face changes at the smile.',identityResult:'not_supported',identityEvidence:'The final frontal face loses the long jaw and synthetic eye geometry.'}};}};
+  assert.equal((await mediaStep(s,p,env,{...services,load:async()=>({bytes:Buffer.from('video'),mime:'video/mp4'})},()=>assert.fail('no upload'))).status,'media_revision_required');
+  assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
+});
+test('missing quality evidence fails closed and an uncertain revision call is never repeated',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s);await mediaStep(s,reviewer(),env,services);
+  const critic=reviewer(),generate=critic.generate;critic.generate=async(...args)=>{const r=await generate(...args);delete r.value.integrityEvidence;return r;};
+  assert.equal((await mediaStep(s,critic,env,services)).status,'media_revision_required');
+  await s.begin('media-1-revise','step',()=>({maximum:100}));
+  assert.equal((await mediaStep(s,{quote:()=>1,generate:()=>assert.fail('duplicate revision')},env,services)).status,'media_failed');
+  assert.equal((await mediaStep(s,critic,env,services)).status,'no_media_jobs');
+ }finally{await db.close()}
+});
 test('character renderer uses approved portrait, durable Replicate prediction and identity-aware review',async()=>{
  const {store:s,db}=await fixture();let starts=0,reviews=0;
  try{
@@ -19,7 +60,7 @@ test('character renderer uses approved portrait, durable Replicate prediction an
  assert.equal((await mediaStep(s,{},env,svc)).status,'character_started');
  assert.equal((await s.status()).replicateBudget.reservedMicrodollars,100000);
  assert.equal((await mediaStep(s,{},env,svc)).status,'character_archived');
- const provider={quote:()=>1,generate:async(_sys,prompt,asset,_schema,refs)=>{reviews++;assert.match(prompt,/approved identity portrait/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');assert.equal(asset.bytes.toString(),'new-self-portrait');return {costMicrodollars:1,value:{action:'publish',text:'I changed my mind.',alt:'A fictional self-portrait',summary:'The expression changes while the face remains recognizable.',identityResult:'supported',identityEvidence:'The jaw, eyes and nose match the approved identity.'}};}};
+ const provider={quote:()=>1,generate:async(_sys,prompt,asset,_schema,refs)=>{reviews++;assert.match(prompt,/approved identity portrait/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');assert.equal(asset.bytes.toString(),'new-self-portrait');return {costMicrodollars:1,value:{...quality,action:'publish',text:'I changed my mind.',alt:'A fictional self-portrait',summary:'The expression changes while the face remains recognizable.',identityResult:'supported',identityEvidence:'The jaw, eyes and nose match the approved identity.'}};}};
  assert.equal((await mediaStep(s,provider,env,svc)).status,'media_approved');
  assert.equal(starts,1);assert.equal(reviews,1);
  assert.equal((await s.operation('media-1-archive')).result.identityAssetId,'broadcast-avatar-v1');
@@ -70,15 +111,32 @@ test('unknown preflight is quarantined without repeating its call or starving la
   assert.equal((await mediaStep(s,reviewer(),env,services)).status,'image_created');
  }finally{await db.close()}
 });
-const services={imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixture'),mime:'image/jpeg',costMicrodollars:40000}),load:async a=>({...a,bytes:Buffer.from(a.bytes??'fixture')}),videoQuote:()=>4000000,startVideo:async()=>({id:'pred1'}),videoStatus:async()=>({status:'succeeded',output:'https://replicate.delivery/movie.mp4'}),archiveVideo:async()=>({mime:'video/mp4',url:'https://test.public.blob.vercel-storage.com/movie.mp4'})};
-function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.',identityResult:'supported',identityEvidence:'Beginning, middle and ending preserve the jaw, eyes and mouth.'}}}};}
-test('style-rejected image is uploaded and published exactly once; replies stay disabled',async()=>{
- const {store:s,db}=await fixture();let generations=0,posts=0;const service={...services,image:async()=>{generations++;return services.image()}};
- const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>({id:'777'}),mediaStatus:async()=>assert.fail('synchronous image must not poll STATUS'),post:async(text,reply,media)=>{posts++;assert.equal(reply,null);assert.equal(media,'777');assert.equal(text,'An ink shoreline, imagined.');return {id:'999',url:'https://x.com/i/web/status/999'}}};
- try{await seed(s);for(let i=0;i<6;i++)await mediaStep(s,reviewer('reject'),env,service,()=>x);assert.equal(generations,1);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');const now=new Date(7200000);await socialStep(s,reviewer(),env,now,()=>x);await socialStep(s,reviewer(),env,now,()=>x);assert.equal(posts,1);assert.equal((await s.latest('x_post')).assetId,'media-1-render');assert.equal((await s.status()).unresolved,0);assert.equal((await s.publicJournal()).some(e=>e.kind==='media_review'),true);}finally{await db.close()}
+const services={references:async()=>[{id:1,mime:'image/jpeg',bytes:Buffer.from('current-style')},{id:2,mime:'image/jpeg',bytes:Buffer.from('current-style-two')}],imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixture'),mime:'image/jpeg',costMicrodollars:40000}),load:async a=>({...a,bytes:Buffer.from(a.bytes??'fixture')}),videoQuote:()=>4000000,startVideo:async()=>({id:'pred1'}),videoStatus:async()=>({status:'succeeded',output:'https://replicate.delivery/movie.mp4'}),archiveVideo:async()=>({mime:'video/mp4',url:'https://test.public.blob.vercel-storage.com/movie.mp4'})};
+function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{...quality,action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.',identityResult:'supported',identityEvidence:'Beginning, middle and ending preserve the jaw, eyes and mouth.'}}}};}
+test('style rejection cannot upload or publish; correction is bounded and idempotent',async()=>{
+ const {store:s,db}=await fixture();let generations=0;
+ try{
+  await seed(s);const svc={...services,image:async()=>{generations++;return services.image()}};
+  const x=()=>assert.fail('rejected media must never reach X');
+  await mediaStep(s,reviewer('reject'),env,svc,x);
+  assert.equal((await mediaStep(s,reviewer('reject'),env,svc,x)).status,'media_revision_required');
+  assert.equal(await readyMedia(s),null);
+  const revision={quote:()=>1,generate:async()=>({costMicrodollars:1,value:{prompt:'Different diffuse available light with soft optics and a clear expressive action.',alt:'A revised scene'}})};
+  assert.equal((await mediaStep(s,revision,env,svc,x)).status,'media_revision_queued');
+  assert.equal((await s.pool.query('SELECT count(*) AS n FROM agent_media_jobs')).rows[0].n,2);
+  await mediaStep(s,reviewer('reject'),env,svc,x);
+  assert.equal((await mediaStep(s,reviewer('reject'),env,svc,x)).status,'media_rejected');
+  assert.equal((await mediaStep(s,reviewer(),env,svc,x)).status,'no_media_jobs');
+  assert.equal(generations,2);assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
 });
-test('style rejection remains recorded and eligible; unknown generation is not charged twice',async()=>{
- const {store:s,db}=await fixture();try{await seed(s);await mediaStep(s,reviewer('reject'),env,services);await mediaStep(s,reviewer('reject'),env,services);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'approved');assert.equal((await s.latest('media_review')).decision,'reject');}finally{await db.close()}
+test('only independently approved media can upload and publish once',async()=>{
+ const {store:s,db}=await fixture();let posts=0;
+ const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>({id:'777'}),post:async(_text,reply)=>{posts++;assert.equal(reply,null);return {id:'999',url:'https://x.com/i/web/status/999'}}};
+ try{await seed(s);for(let i=0;i<6;i++)await mediaStep(s,reviewer(),env,services,()=>x);assert.ok(await readyMedia(s));const now=new Date(7200000);await socialStep(s,reviewer(),env,now,()=>x);await socialStep(s,reviewer(),env,now,()=>x);assert.equal(posts,1);}finally{await db.close()}
+});
+test('style rejection remains recorded and blocked; unknown generation is not charged twice',async()=>{
+ const {store:s,db}=await fixture();try{await seed(s);await mediaStep(s,reviewer('reject'),env,services);await mediaStep(s,reviewer('reject'),env,services);assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'revising');assert.equal((await s.latest('media_review')).decision,'reject');}finally{await db.close()}
  const second=await fixture();let calls=0;try{await seed(second.store);const broken={...services,image:async()=>{calls++;throw Error('TIMEOUT')}};await mediaStep(second.store,reviewer(),env,broken);await mediaStep(second.store,reviewer(),env,broken);assert.equal(calls,1);assert.equal((await second.store.status()).unresolved,0);assert.ok((await second.store.status()).todayMicrodollars>=500000);}finally{await second.db.close()}
 });
 test('video persists prediction across workers, archives durable URL, and reviews the actual video',async()=>{
@@ -104,7 +162,7 @@ test('legacy image status failure reuses saved artwork and async finalization wa
  const x={verify:async()=>({}),initMedia:async()=>{uploads++;return {id:'778'}},appendMedia:async()=>{},finalizeMedia:async()=>({id:'778',processing_info:{state:'pending'}}),mediaStatus:async()=>{statuses++;return {processing_info:{state:'succeeded'}}}};
  try{await seed(s);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
  await s.pool.query("UPDATE agent_media_jobs SET state='processing_x',data=data || $1::jsonb",[JSON.stringify({mediaId:'777',expiresAt:Date.now()+86400000,retries:2})]);
- for(let i=0;i<3;i++)await mediaStep(s,reviewer(),env,{...services,image:async()=>assert.fail('must reuse saved image')},()=>x);
+ for(let i=0;i<4;i++)await mediaStep(s,reviewer(),env,{...services,image:async()=>assert.fail('must reuse saved image')},()=>x);
  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'processing_x');
  await mediaStep(s,reviewer(),env,services,()=>x);
  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');assert.equal(uploads,1);assert.equal(statuses,1);
@@ -118,17 +176,17 @@ test('X finalization rejects missing data, embedded errors and wrong media IDs',
  }
 });
 
-test('independent visual audit retains rejection but releases a ready image under advisory policy',async()=>{
+test('independent visual audit blocks a ready image despite author approval',async()=>{
  const {store:s,db}=await fixture();let calls=0;
  try{
   await seed(s,{...plan,referenceIds:[2,10]});
   await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify({assetId:'candidate',review:{decision:'publish',text:'A strange scene',alt:'Glossy character',summary:'Artist likes it'},expiresAt:Date.now()+86400000})]);
   assert.equal(await readyMedia(s),null);
-  const provider={quote:()=>1,generate:async(system,prompt,asset,schema,refs)=>{calls++;assert.doesNotMatch(prompt,/Artist likes it|original moving shoreline/);assert.equal(refs.length,2);assert.ok(asset.bytes.length);return {costMicrodollars:2,value:{action:'publish',visualLanguageResult:'partly',referenceComparison:'Sharp advertising finish remains unlike reference edges',summary:'Reject despite amusing scene'}}}};
+  const provider={quote:()=>1,generate:async(system,prompt,asset,schema,refs)=>{calls++;assert.doesNotMatch(prompt,/Artist likes it|original moving shoreline/);assert.equal(refs.length,2);assert.ok(asset.bytes.length);return {costMicrodollars:2,value:{...quality,action:'publish',visualLanguageResult:'partly',referenceComparison:'Sharp advertising finish remains unlike reference edges',summary:'Reject despite amusing scene'}}}};
   const service={...services,load:async()=>({bytes:Buffer.from('candidate'),mime:'image/jpeg'}),references:async()=>[{bytes:Buffer.from('one'),mime:'image/jpeg'},{bytes:Buffer.from('two'),mime:'image/jpeg'}]};
-  assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'visual_audit_recorded');
-  assert.equal(calls,1);assert.ok(await readyMedia(s));assert.equal((await readyMedia(s)).data.styleAudit.decision,'reject');
-  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'ready');
+  assert.equal((await mediaStep(s,provider,env,service,()=>assert.fail('must not upload'))).status,'media_revision_required');
+  assert.equal(calls,1);assert.equal(await readyMedia(s),null);
+  assert.equal((await s.pool.query('SELECT state FROM agent_media_jobs')).rows[0].state,'revising');
  }finally{await db.close()}
 });
 
@@ -160,7 +218,7 @@ test('character film persists one identity frame and one video across worker res
  try{
   await s.pool.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',['broadcast-avatar-v1','image/png',Buffer.from('approved-face')]);
   await seed(s,{...plan,renderer:'character',medium:'video',duration:6,ratio:'9:16',referenceIds:[25,26]});
-  const svc={...services,characterQuote:()=>100000,startCharacter:async(p,ref)=>{frames++;assert.equal(p.medium,'image');assert.match(p.prompt,/ONLY the opening frame/);assert.equal(Buffer.from(ref.bytes).toString(),'approved-face');return {id:'frame1'};},archiveCharacter:async()=>{frameArchives++;return {mime:'image/jpeg',bytes:Buffer.from('opening-frame')};},startVideo:async(p,frame)=>{clips++;assert.equal(p.medium,'video');assert.equal(Buffer.from(frame.bytes).toString(),'opening-frame');return {id:'clip1'};},references:()=>assert.fail('private boards must not reach character-video generation')};
+  const svc={...services,characterQuote:()=>100000,startCharacter:async(p,ref)=>{frames++;assert.equal(p.medium,'image');assert.match(p.prompt,/ONLY the opening frame/);assert.equal(Buffer.from(ref.bytes).toString(),'approved-face');return {id:'frame1'};},archiveCharacter:async()=>{frameArchives++;return {mime:'image/jpeg',bytes:Buffer.from('opening-frame')};},startVideo:async(p,frame)=>{clips++;assert.equal(p.medium,'video');assert.equal(Buffer.from(frame.bytes).toString(),'opening-frame');return {id:'clip1'};},references:services.references};
   const step=()=>mediaStep(new PostgresStore(s.pool),reviewer(),env,svc);
   assert.equal((await step()).status,'character_frame_started');
   await s.pool.query("UPDATE agent_media_jobs SET state='queued',data='{}' WHERE id='media-1'");
@@ -217,9 +275,9 @@ for(const identityResult of ['not_supported','uncertain',undefined])test(`charac
   await seed(s,{...plan,renderer:'character'});
   const svc={...services,startCharacter:async()=>({id:'self'}),characterQuote:()=>1,archiveCharacter:async()=>({mime:'image/jpeg',bytes:Buffer.from('wrong-face')})};
   await mediaStep(s,{},env,svc);await mediaStep(s,{},env,svc);
-  const p={quote:()=>1,generate:async(_s,prompt,_a,schema)=>{calls++;assert.ok(schema.required.includes('identityResult'));assert.match(prompt,/beginning, middle and ending/);return {costMicrodollars:1,value:{action:'publish',text:'A good-looking scene.',alt:'A different face',summary:'Attractive lighting',identityResult,identityEvidence:'The jaw and mouth no longer match the approved character.'}}}};
-  assert.equal((await mediaStep(s,p,env,svc)).status,'character_identity_held');
-  assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'reconsideration');
-  assert.equal(await readyMedia(s),null);await mediaStep(s,p,env,svc);assert.equal(calls,1);
+  const p={quote:()=>1,generate:async(_s,prompt,_a,schema)=>{calls++;assert.ok(schema.required.includes('identityResult'));assert.match(prompt,/beginning, middle and ending/);return {costMicrodollars:1,value:{...quality,action:'publish',text:'A good-looking scene.',alt:'A different face',summary:'Attractive lighting',identityResult,identityEvidence:'The jaw and mouth no longer match the approved character.'}}}};
+  assert.equal((await mediaStep(s,p,env,svc)).status,'media_revision_required');
+  assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'revising');
+  assert.equal(await readyMedia(s),null);assert.equal(calls,1);
  }finally{await db.close()}
 });

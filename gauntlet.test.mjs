@@ -18,7 +18,7 @@ function mockProvider(){return {quote:()=>1,generate:async(_system,p,_media,sche
  else if(schema?.properties?.repeatedMechanism)value={repeatedMechanism:false,lostCommission:false,polishedAgainstRemit:false,legibleHook:true,reason:'Distinct mechanism',revision:'No revision required'};
  else if(p.startsWith('Private visual experience'))value={action:'x_draft',intent:'experiment',projectId:null,medium:'image',text:'A synthetic joke.',summary:'An experiment',prompt:'Discard this generic fallback.',alt:'A collage',ratio:'1:1',referenceIds:[1,2],selectedId:'a',diversityComparison:'New construction',alternatives:['a','b','c'].map(id=>({id,renderer:schema.properties.alternatives.items.properties.renderer?.enum?.[0]??'single',concept:'Idea '+id,visualMechanism:'Mechanism '+id,composition:'Composition '+id,viewerExperience:'Experience '+id,renderPrompt:'The selected collage construction '+id}))};
  else if(schema?.properties?.action?.enum?.includes('commission'))value=candidate;
- else value={action:'publish',text:'A synthetic joke.',alt:'A collage',summary:'Interesting but imperfect',visualLanguageResult:'partly',referenceComparison:'Different spatial relationships'};
+ else value={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat light match current reference.',integrityResult:'supported',integrityEvidence:'Focal details remain coherent throughout the image.',action:'publish',text:'A synthetic joke.',alt:'A collage',summary:'Interesting but imperfect',visualLanguageResult:'supported',referenceComparison:'Different spatial relationships'};
  return {costMicrodollars:1,value};
  }};}
 

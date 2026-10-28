@@ -39,7 +39,7 @@ test('durable collage executes one paid call per step, resumes sources, emits on
  const {s,db}=await fixture();let imageCalls=0,modelCalls=0;
  const sources=[await color('#ff0000'),await color('#0000ff')];
  const services={imageQuote:()=>10,references:async()=>[],image:async()=>sources[imageCalls++],collage:composeCollage,load:async a=>a};
- const provider={quote:()=>10,generate:async(_s,_p,_m,schema)=>{modelCalls++;if(schema===collageSchema)return {value:layout(),costMicrodollars:2};if(schema===preflightSchema)return {value:{repeatedMechanism:false,lostCommission:false,polishedAgainstRemit:false,legibleHook:true,reason:'Actual separate sources.',revision:'None required.'},costMicrodollars:2};return {value:{action:'publish',text:'Synthetic collision.',alt:'Blue on red.',summary:'Actual pixel experiment.'},costMicrodollars:2};}};
+ const provider={quote:()=>10,generate:async(_s,_p,_m,schema)=>{modelCalls++;if(schema===collageSchema)return {value:layout(),costMicrodollars:2};if(schema===preflightSchema)return {value:{repeatedMechanism:false,lostCommission:false,polishedAgainstRemit:false,legibleHook:true,reason:'Actual separate sources.',revision:'None required.'},costMicrodollars:2};return {value:{visualLanguageResult:'supported',referenceComparison:'Soft capture and flat light match current reference.',integrityResult:'supported',integrityEvidence:'Focal details remain coherent throughout the image.',action:'publish',text:'Synthetic collision.',alt:'Blue on red.',summary:'Actual pixel experiment.'},costMicrodollars:2};}};
  const step=()=>mediaStep(new PostgresStore(s.pool),provider,env,services,()=>{throw Error('X must not run');});
  try{
   await enqueueMedia(s,'x-plan-collage-test',{...plan(),selectionVersion:'creative-v2'});

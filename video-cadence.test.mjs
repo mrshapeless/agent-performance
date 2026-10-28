@@ -12,6 +12,13 @@ const env={REPLICATE_API_TOKEN:'synthetic',BLOB_READ_WRITE_TOKEN:'synthetic'},no
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};return {db,s:new PostgresStore({query:c.query,connect:async()=>c})};}
 async function job(s,id,state,{created=now,updated=now,assetId=id}={}){await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data,created,updated) VALUES($1,$2,'{\"medium\":\"video\"}',$3,$4,$5,$6)",[id,'plan-'+id,state,JSON.stringify({assetId}),created.toISOString(),updated.toISOString()]);}
 async function post(s,id,assetId,when=now){await s.pool.query("INSERT INTO agent_events(kind,payload,created,previous,digest) VALUES('x_post',$1,$2,'','synthetic')",[JSON.stringify({postId:id,assetId,mime:'video/mp4'}),when.toISOString()]);}
+test('private qualification clips do not occupy the daily publishing slot but their spend counts',async()=>{
+ const {s,db}=await fixture();try{
+  await job(s,'trial','approved');await s.pool.query("UPDATE agent_media_jobs SET plan=plan||'{\"qualityTrial\":\"test\"}'::jsonb");
+  await s.pool.query("INSERT INTO agent_operations(id,kind,day,amount,status,budget_provider) VALUES('trial-render','step','2026-10-28',4000000,'complete','replicate')");
+  const state=await videoCadence(s,env,now);assert.equal(state.required,true);assert.equal(state.active.length,0);assert.equal(state.reservedMicrodollars,4000000);
+ }finally{await db.close()}
+});
 test('Moscow day rolls over at 21:00 UTC, including month/year boundaries',()=>{
  assert.deepEqual(videoDay(new Date('2026-12-31T21:00:00Z')),{day:'2027-01-01',start:'2026-12-31T21:00:00.000Z',end:'2027-01-01T21:00:00.000Z'});
  assert.equal(videoDay(new Date('2026-10-27T20:59:59Z')).day,'2026-10-27');assert.equal(videoDay(new Date('2026-10-27T21:00:00Z')).day,'2026-10-28');
@@ -70,7 +77,7 @@ test('social cadence writes a separate screenplay, preserves image commission, q
   assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'creative_preflight');assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'creative_preflight');assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'video_started');assert.equal(starts,1);assert.equal(posts,0);
   const paid=(await s.pool.query("SELECT * FROM agent_operations WHERE budget_provider='replicate'")).rows;assert.equal(paid.length,1);assert.equal(Number(paid[0].amount),4_000_000);
   // Publishing becomes possible only after the existing media worker confirms upload readiness.
-  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=data||$1::jsonb",[JSON.stringify({mediaId:'synthetic-media',assetId:'synthetic-art',expiresAt:now.getTime()+3600000,review:{text:'A completed synthetic film.',summary:'Reviewed film',alt:'Moving signs'}})]);
+  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=data||$1::jsonb",[JSON.stringify({mediaId:'synthetic-media',assetId:'synthetic-art',expiresAt:now.getTime()+3600000,publicationPolicy:'out-of-frame-v1',styleAudit:{decision:'publish',visualLanguageResult:'supported',integrityResult:'supported'},review:{decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',text:'A completed synthetic film.',summary:'Reviewed film',alt:'Moving signs'}})]);
   assert.equal((await socialStep(s,provider,enabled,now,()=>x)).status,'published');assert.equal(posts,1);assert.equal(starts,1);assert.equal(calls,2);
   task=(await s.pool.query("SELECT * FROM agent_agenda WHERE id='original-image'")).rows[0];assert.equal(task.status,'commissioned');
  }finally{await db.close();}
