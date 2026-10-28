@@ -75,7 +75,7 @@ test('X verifies token owner before any write and returns only real post URL',as
 });
 test('image request uses agent prompt, non-stored interaction and parses only model image output',async()=>{
  const image=new AppearanceImage({GEMINI_API_KEY:'test'},async(url,opts)=>{
-  const body=JSON.parse(opts.body);assert.equal(body.input,'agent authored');assert.equal(body.store,false);assert.equal(body.response_format.image_size,'1K');
+  const body=JSON.parse(opts.body);assert.match(body.input,/RENDER DIRECTION: lo-fi retro girl/);assert.ok(body.input.endsWith('SCENE: agent authored'));assert.equal(body.store,false);assert.equal(body.response_format.image_size,'1K');
   return Response.json({status:'completed',steps:[{type:'model_output',content:[{type:'image',mime_type:'image/png',data:Buffer.from('fixture').toString('base64')}]}],usage:{total_input_tokens:10,total_output_tokens:1120,total_thought_tokens:20}});
  });const r=await image.generate('agent authored');assert.equal(r.bytes.toString(),'fixture');assert.equal(r.costMicrodollars,34215);
 });

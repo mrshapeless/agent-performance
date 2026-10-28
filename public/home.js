@@ -33,5 +33,5 @@
  if(/^[a-zA-Z0-9_-]{1,100}$/.test(c.assetId??'')){const media=el(c.mime==='video/mp4'?'video':'img');media.src='/api/asset?id='+encodeURIComponent(c.assetId);if(media.tagName==='IMG'){media.alt=c.alt||c.text||'Artwork by Alidade';media.loading='lazy'}else{media.muted=true;media.playsInline=true;media.preload='metadata';media.controls=true;media.addEventListener('click',e=>e.stopPropagation());media.setAttribute('aria-label',c.alt||'Short film by Alidade')}card.append(media)}else card.append(el('div',(c.text||'Text work').slice(0,200),'home-text-work'));
  card.append(el('span',(c.mime==='video/mp4'?'FILM':c.assetId?'IMAGE':'TEXT')+' / '+new Date(w.created).toLocaleDateString('en-GB',{day:'numeric',month:'short'}),'mono'),el('p',(c.text||c.alt||'Explore this work').slice(0,160)));card.append(link);$('homeWorks').append(card)}
  }catch{if($('status'))$('status').textContent='LIVE STATUS UNAVAILABLE';$('homeWorks').replaceChildren(el('p','The feed is temporarily unavailable. You can still explore the works and chat using the links above.'))}}
- load();
+ if($('homeWorks'))load();
 })();

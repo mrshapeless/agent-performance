@@ -182,7 +182,7 @@ test('character video request sends only generated opening frame through documen
  const film={...plan,medium:'video',renderer:'character',duration:6,ratio:'9:16',referenceIds:[25,26],privateBoard:'never-transmit'};
  assert.throws(()=>p.startVideo(film),/VIDEO_FIRST_FRAME_MISSING/);assert.equal(calls,0);
  await p.startVideo(film,{mime:'image/jpeg',bytes:Buffer.from('opening')});
- assert.equal(body.input.image,'data:image/jpeg;base64,b3BlbmluZw==');assert.equal(body.input.duration,6);assert.equal(body.input.aspect_ratio,'9:16');assert.equal(body.input.generate_audio,true);
+ assert.match(body.input.prompt,/RENDER DIRECTION: lo-fi retro girl/);assert.ok(body.input.prompt.endsWith(film.prompt));assert.equal(body.input.image,'data:image/jpeg;base64,b3BlbmluZw==');assert.equal(body.input.duration,6);assert.equal(body.input.aspect_ratio,'9:16');assert.equal(body.input.generate_audio,true);
  assert.doesNotMatch(JSON.stringify(body),/never-transmit|referenceIds|image_input|reference_images/);
 });
 
