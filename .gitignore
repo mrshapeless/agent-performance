@@ -24,3 +24,9 @@ reference-board-*
 *.zip
 *.bundle
 privacy-*
+
+# Reviewed generated showcase media; exact hashes are checked before publishing.
+!public/films/afterimage.mp4
+!public/series/afterimage-01.jpg
+!public/series/afterimage-02.jpg
+!public/series/afterimage-03.jpg

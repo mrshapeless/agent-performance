@@ -33,7 +33,7 @@ test('character provider transmits only approved portrait to the identity-preser
  assert.deepEqual(body.input.image_input,['data:image/png;base64,ZmFjZQ==']);assert.equal(body.input.allow_fallback_model,undefined);assert.equal(body.input.aspect_ratio,'1:1');
  await assert.rejects(provider.startCharacter(plan,null),/REFERENCE_MISSING/);
  assert.throws(()=>validateMediaPlan({...plan,renderer:'character'},{GEMINI_API_KEY:'yes'}),/CHARACTER_NOT_CONFIGURED/);
- assert.throws(()=>validateMediaPlan({...plan,medium:'video',ratio:'16:9',duration:6,renderer:'character'},env),/INVALID_MEDIA_RENDERER/);
+ assert.equal(validateMediaPlan({...plan,medium:'video',ratio:'16:9',duration:6,renderer:'character'},env).renderer,'character');
 });
 test('unknown character request is never repeated and another job can advance',async()=>{
  const {store:s,db}=await fixture();try{
@@ -151,5 +151,62 @@ test('Replicate-only cap preserves legacy video reservations and never blocks Ge
  await s.begin('media-new-day','step',()=>({maximum:4_000_000,budgetProvider:'replicate'}));
  assert.equal((await s.status()).replicateBudget.reservedMicrodollars,4_000_000);
  await assert.rejects(s.begin('media-overlap','step',()=>({maximum:1,budgetProvider:'replicate'})),/UNRESOLVED/);
+ }finally{await db.close()}
+});
+
+
+test('character film persists one identity frame and one video across worker restarts and crash recovery',async()=>{
+ const {store:s,db}=await fixture();let frames=0,clips=0,frameArchives=0;
+ try{
+  await s.pool.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',['broadcast-avatar-v1','image/png',Buffer.from('approved-face')]);
+  await seed(s,{...plan,renderer:'character',medium:'video',duration:6,ratio:'9:16',referenceIds:[25,26]});
+  const svc={...services,characterQuote:()=>100000,startCharacter:async(p,ref)=>{frames++;assert.equal(p.medium,'image');assert.match(p.prompt,/ONLY the opening frame/);assert.equal(Buffer.from(ref.bytes).toString(),'approved-face');return {id:'frame1'};},archiveCharacter:async()=>{frameArchives++;return {mime:'image/jpeg',bytes:Buffer.from('opening-frame')};},startVideo:async(p,frame)=>{clips++;assert.equal(p.medium,'video');assert.equal(Buffer.from(frame.bytes).toString(),'opening-frame');return {id:'clip1'};},references:()=>assert.fail('private boards must not reach character-video generation')};
+  const step=()=>mediaStep(new PostgresStore(s.pool),reviewer(),env,svc);
+  assert.equal((await step()).status,'character_frame_started');
+  await s.pool.query("UPDATE agent_media_jobs SET state='queued',data='{}' WHERE id='media-1'");
+  assert.equal((await step()).status,'character_frame_recovered');assert.equal((await step()).status,'character_frame_archived');
+  await s.pool.query("UPDATE agent_media_jobs SET state='processing',data=data || $1::jsonb WHERE id='media-1'",[JSON.stringify({phase:'character_first_frame'})]);
+  assert.equal((await step()).status,'character_frame_archived');assert.equal(frameArchives,1);
+  assert.equal((await step()).status,'video_started');
+  await s.pool.query("UPDATE agent_media_jobs SET state='queued' WHERE id='media-1'");
+  assert.equal((await step()).status,'recovered_prediction');assert.equal((await step()).status,'video_archived');
+  assert.equal((await step()).status,'media_approved');assert.equal(frames,1);assert.equal(clips,1);
+  assert.equal((await s.status()).replicateBudget.reservedMicrodollars,4100000);
+  const finished=(await s.operation('media-1-archive')).result;assert.equal(finished.action,'art_video');assert.equal(finished.identityAssetId,'broadcast-avatar-v1');assert.equal(finished.firstFrameAssetId,'media-1-first-frame-archive');
+  assert.equal((await s.asset('media-1-first-frame-archive')).mime,'image/jpeg');assert.equal((await s.asset('media-1-archive')).mime,'video/mp4');
+ }finally{await db.close()}
+});
+
+test('character video request sends only generated opening frame through documented image field',async()=>{
+ let calls=0,body;const p=new MediaProviders(env,async(_url,o)=>{calls++;body=JSON.parse(o.body);return Response.json({id:'film'});});
+ const film={...plan,medium:'video',renderer:'character',duration:6,ratio:'9:16',referenceIds:[25,26],privateBoard:'never-transmit'};
+ assert.throws(()=>p.startVideo(film),/VIDEO_FIRST_FRAME_MISSING/);assert.equal(calls,0);
+ await p.startVideo(film,{mime:'image/jpeg',bytes:Buffer.from('opening')});
+ assert.equal(body.input.image,'data:image/jpeg;base64,b3BlbmluZw==');assert.equal(body.input.duration,6);assert.equal(body.input.aspect_ratio,'9:16');assert.equal(body.input.generate_audio,true);
+ assert.doesNotMatch(JSON.stringify(body),/never-transmit|referenceIds|image_input|reference_images/);
+});
+
+test('unknown first-frame or video acceptance is retained and never repeated',async()=>{
+ for(const phase of ['frame','video']){
+  const {store:s,db}=await fixture();try{
+   await seed(s,{...plan,medium:'video',renderer:'character',duration:4,ratio:'16:9'});
+   if(phase==='video')await s.pool.query("UPDATE agent_media_jobs SET data=$1 WHERE id='media-1'",[JSON.stringify({firstFrameAssetId:'existing'})]);
+   const id=phase==='frame'?'media-1-first-frame-render':'media-1-render';await s.begin(id,'step',()=>({maximum:phase==='frame'?100000:4000000,budgetProvider:'replicate'}));
+   const svc={...services,characterQuote:()=>100000,startCharacter:()=>assert.fail('duplicate frame'),startVideo:()=>assert.fail('duplicate video')};
+   assert.equal((await mediaStep(s,{},env,svc)).status,'media_failed');assert.equal((await mediaStep(s,{},env,svc)).status,'no_media_jobs');
+   assert.equal((await s.pool.query('SELECT amount FROM agent_operations WHERE id=$1',[id])).rows[0].amount,phase==='frame'?100000:4000000);
+  }finally{await db.close()}
+ }
+});
+
+test('editorial revision archives an accepted character opening frame but never starts its obsolete film',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s,{...plan,medium:'video',renderer:'character',duration:4,ratio:'16:9'});
+  await s.pool.query("UPDATE agent_media_jobs SET plan=plan - 'creativeRevision',state='processing',data=$1 WHERE id='media-1'",[JSON.stringify({phase:'character_first_frame',predictionId:'accepted-frame',identityAssetId:'broadcast-avatar-v1'})]);
+  const svc={...services,archiveCharacter:async()=>({mime:'image/jpeg',bytes:Buffer.from('preserved-frame')}),startVideo:()=>assert.fail('obsolete film must not spend')};
+  assert.equal((await mediaStep(s,{},env,svc)).status,'character_frame_archived');
+  assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'reconsideration');
+  assert.equal((await s.asset('media-1-first-frame-archive')).mime,'image/jpeg');
+  assert.equal((await mediaStep(s,{},env,svc)).status,'no_media_jobs');
  }finally{await db.close()}
 });

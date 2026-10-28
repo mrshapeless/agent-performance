@@ -57,7 +57,13 @@ export class MediaProviders {
   const r=await this.fetcher('https://api.replicate.com/v1/'+path,{method,headers:{Authorization:'Bearer '+this.env.REPLICATE_API_TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(25000)});
   if(!r.ok)throw Error('REPLICATE_HTTP_'+r.status);return r.json();
  }
- startVideo(plan){return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true}});}
+ startVideo(plan,firstFrame=null){
+  const bytes=Buffer.from(firstFrame?.bytes??[]);
+  if((firstFrame||plan.renderer==='character')&&(!['image/png','image/jpeg','image/webp'].includes(firstFrame?.mime)||!bytes.length||bytes.length>5_000_000))throw Error('VIDEO_FIRST_FRAME_MISSING');
+  // Replicate google/veo-3.1-fast schema: `image` is the starting frame URI.
+  // Send only the generated opening frame, never private style boards.
+  return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true,...(firstFrame?{image:'data:'+firstFrame.mime+';base64,'+bytes.toString('base64')}:{})}});
+ }
  videoStatus(id){if(!/^[a-zA-Z0-9_-]+$/.test(id))throw Error('INVALID_PREDICTION');return this.replicate('GET','predictions/'+id);}
  async archiveVideo(id,output){
   const url=Array.isArray(output)?output[0]:output;

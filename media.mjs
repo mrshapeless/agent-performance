@@ -13,6 +13,7 @@ mediaPlanSchema.properties.text={type:'string',maxLength:240,pattern:'^[\\x20-\\
 for(const [key,maxLength] of [['prompt',4000],['alt',500],['summary',1200],['diversityComparison',1400],['continuationReason',700]])mediaPlanSchema.properties[key]={type:'string',maxLength};
 for(const key of Object.keys(mediaPlanSchema.properties.alternatives.items.properties))mediaPlanSchema.properties.alternatives.items.properties[key]={type:'string',maxLength:key==='renderPrompt'?2000:key==='id'?80:600};
 mediaPlanSchema.properties.alternatives.items.properties.renderer={type:'string',enum:['single','collage','character']};
+mediaPlanSchema.properties.alternatives.items.required.push('renderer');
 mediaPlanSchema.properties.renderer={type:'string',enum:['single','collage','character']};
 mediaPlanSchema.properties.alternatives.items.properties.personalStake={type:'string',maxLength:600};
 mediaPlanSchema.properties.alternatives.items.required.push('personalStake');
@@ -37,7 +38,7 @@ export function validateMediaPlan(v,env,{requireAlternatives=false}={}){
   v={...v,prompt:chosen.renderPrompt,renderer:chosen.renderer??'single',...(chosen.personalStake?{personalStake:chosen.personalStake}:{})};
  }
  const renderer=v.renderer??'single';
- if(!['single','collage','character'].includes(renderer)||(renderer!=='single'&&medium!=='image'))throw Error('INVALID_MEDIA_RENDERER');
+ if(!['single','collage','character'].includes(renderer)||(renderer==='collage'&&medium!=='image'))throw Error('INVALID_MEDIA_RENDERER');
  if(renderer==='character'&&!mediaCapabilities(env).character)throw Error('CHARACTER_NOT_CONFIGURED');
  if(renderer==='collage'&&v.collage)v={...v,collage:validateCollage(v.collage)};
  return {...v,medium,renderer,...(requireAlternatives?{selectionVersion:'creative-v2'}:{}),...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
@@ -68,7 +69,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   // Recover the pre-finalize-response image uploader once, using the saved asset.
   // A new upload operation is charged; paid image generation is never repeated.
   await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
-  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE available_at<=now() AND (plan->>'creativeRevision'=$1 OR state='processing' OR (state='queued' AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id=agent_media_jobs.id || '-render' AND o.status='complete' AND o.result ? 'predictionId'))) AND (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE",[CREATIVE_REVISION])).rows[0];
+  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE available_at<=now() AND (plan->>'creativeRevision'=$1 OR state='processing' OR (state='queued' AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id IN (agent_media_jobs.id || '-render',agent_media_jobs.id || '-first-frame-render') AND o.status='complete' AND o.result ? 'predictionId') AND NOT EXISTS(SELECT 1 FROM agent_operations pending WHERE pending.status='pending' AND pending.id LIKE agent_media_jobs.id || '-%'))) AND (state IN ('queued','processing','rendered','approved','uploading','processing_x') OR (state='ready' AND plan ? 'referenceIds' AND plan->>'medium'='image' AND NOT(data ? 'styleAudit'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE",[CREATIVE_REVISION])).rows[0];
   if(!row)return null;
   await c.query("UPDATE agent_media_jobs SET lease_token=$1,lease_until=now()+interval '3 minutes' WHERE id=$2",[token,row.id]);
   return {...row,lease_token:token};
@@ -76,9 +77,9 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  if(!job)return {status:'no_media_jobs'};
  if(!isCurrentCreativePlan(job.plan)&&job.state!=='processing'){
   // Recover a paid provider acceptance without running old preflight or layout.
-  const render=await store.operation(job.id+'-render');
+  const videoRender=await store.operation(job.id+'-render'),render=videoRender??await store.operation(job.id+'-first-frame-render');
   if(job.state==='queued'&&render?.status==='complete'&&render.result?.predictionId){
-   await patch(store,job,'processing',{predictionId:render.result.predictionId,...(render.result.identityAssetId?{identityAssetId:render.result.identityAssetId}:{})});
+   await patch(store,job,'processing',{predictionId:render.result.predictionId,...(!videoRender?{phase:'character_first_frame'}:{}),...(render.result.identityAssetId?{identityAssetId:render.result.identityAssetId}:{})});
    return {status:'recovered_prediction'};
   }
   await patch(store,job,job.state);return {status:'creative_revision_deferred'};
@@ -117,14 +118,28 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     await store.complete(op,0,{action:'art_image',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,assetId:op,mime:asset.mime,renderer:'collage',manifestHash:result.manifestHash},asset);
     await patch(store,job,'rendered',{assetId:op,renderer:'collage',sourceAssetIds:result.sources.map(s=>s.assetId)});return {status:'collage_composed'};
    }
-   op=job.id+'-render';maximum=job.plan.renderer==='character'?services.characterQuote():job.plan.medium==='image'?services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0):services.videoQuote();
+   if(job.plan.renderer==='character'&&job.plan.medium==='video'&&!job.data.firstFrameAssetId){
+    op=job.id+'-first-frame-render';maximum=services.characterQuote();
+    const req=await store.begin(op,'step',()=>({maximum,budgetProvider:'replicate'}));
+    if(req.replay){
+     if(req.status==='complete'&&req.result?.predictionId){await patch(store,job,'processing',{phase:'character_first_frame',predictionId:req.result.predictionId,identityAssetId:req.result.identityAssetId});return {status:'character_frame_recovered'};}
+     throw Error('CHARACTER_FRAME_OUTCOME_UNKNOWN');
+    }
+    const reference=await store.asset(CHARACTER_ASSET);
+    const framePlan={...job.plan,medium:'image',prompt:'Create ONLY the opening frame of this short film, one image, not a storyboard or contact sheet. Preserve the intended image-making and the protagonist expression; later motion belongs to the video stage. Screenplay: '+job.plan.prompt};
+    const prediction=await services.startCharacter(framePlan,reference);
+    if(!/^[a-zA-Z0-9_-]+$/.test(prediction.id??''))throw Error('CHARACTER_FRAME_OUTCOME_UNKNOWN');
+    await store.complete(op,maximum,{action:'character_frame_internal',predictionId:prediction.id,identityAssetId:CHARACTER_ASSET,summary:'Opening-frame request accepted; no finished film or publication yet.'});
+    await patch(store,job,'processing',{phase:'character_first_frame',predictionId:prediction.id,identityAssetId:CHARACTER_ASSET});return {status:'character_frame_started'};
+   }
+   op=job.id+'-render';maximum=job.plan.medium==='video'?services.videoQuote():job.plan.renderer==='character'?services.characterQuote():services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0);
    const req=await store.begin(op,'step',()=>({maximum,budgetProvider:job.plan.medium==='video'||job.plan.renderer==='character'?'replicate':null}));
    if(req.replay){
     if(req.status==='complete'&&req.result?.assetId){await patch(store,job,'rendered',{assetId:req.result.assetId});return {status:'recovered_render'};}
     if(req.status==='complete'&&req.result?.predictionId){await patch(store,job,'processing',{predictionId:req.result.predictionId});return {status:'recovered_prediction'};}
     throw Error('MEDIA_GENERATION_OUTCOME_UNKNOWN');
    }
-   if(job.plan.renderer==='character'){
+   if(job.plan.renderer==='character'&&job.plan.medium==='image'){
     const reference=await store.asset(CHARACTER_ASSET);
     const prediction=await services.startCharacter(job.plan,reference);
     if(!/^[a-zA-Z0-9_-]+$/.test(prediction.id??''))throw Error('CHARACTER_OUTCOME_UNKNOWN');
@@ -137,10 +152,11 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     await store.complete(op,asset.costMicrodollars,{action:'art_image',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,assetId:op,mime:asset.mime},asset);
     await patch(store,job,'rendered',{assetId:op,referenceHashes:refs.map(a=>({id:a.id,hash:a.hash}))});return {status:'image_created'};
    }
-   const prediction=await services.startVideo(job.plan);
+   const firstFrame=job.plan.renderer==='character'?await store.asset(job.data.firstFrameAssetId):null;
+   const prediction=await services.startVideo(job.plan,firstFrame);
    if(!/^[a-zA-Z0-9_-]+$/.test(prediction.id??''))throw Error('VIDEO_OUTCOME_UNKNOWN');
-   await store.complete(op,maximum,{action:'media_started',text:job.plan.alt,summary:'Video generation accepted. Reservation is a conservative estimate; not yet a completed work.',predictionId:prediction.id});
-   await patch(store,job,'processing',{predictionId:prediction.id});return {status:'video_started'};
+   await store.complete(op,maximum,{action:'media_started',text:job.plan.alt,summary:'Video generation accepted. Reservation is a conservative estimate; not yet a completed work.',predictionId:prediction.id,...(firstFrame?{firstFrameAssetId:job.data.firstFrameAssetId,identityAssetId:job.data.identityAssetId}:{})});
+   await patch(store,job,'processing',{phase:'video',predictionId:prediction.id});return {status:'video_started'};
   }
   if(job.state==='processing'){
    const p=await services.videoStatus(job.data.predictionId);
@@ -149,10 +165,16 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     if(Date.now()-Date.parse(job.created)>3600000)throw Error('VIDEO_PROCESSING_TIMEOUT');
     await patch(store,job,'processing');return {status:'video_processing'};
    }
-   const character=job.plan.renderer==='character';
+   if(job.data.phase==='character_first_frame'){
+    op=job.id+'-first-frame-archive';const prior=await store.operation(op);
+    if(prior?.status==='pending')throw Error('CHARACTER_FRAME_ARCHIVE_UNKNOWN');
+    if(!prior){const asset=await services.archiveCharacter(p.output);const req=await store.begin(op,'step',()=>({maximum:0}));if(!req.replay)await store.complete(op,0,{action:'character_frame_internal',assetId:op,identityAssetId:job.data.identityAssetId,summary:'Opening frame archived for the film; not a separate published artwork.'},asset);}
+    await patch(store,job,isCurrentCreativePlan(job.plan)?'queued':'reconsideration',{firstFrameAssetId:op,phase:'character_frame_ready'});return {status:'character_frame_archived'};
+   }
+   const character=job.plan.renderer==='character'&&job.plan.medium==='image';
    const asset=character?await services.archiveCharacter(p.output):await services.archiveVideo(job.id,p.output);
    op=job.id+'-archive';const req=await store.begin(op,'step',()=>({maximum:0}));
-   if(!req.replay)await store.complete(op,0,{action:character?'art_image':'art_video',...(character?{renderer:'character',identityAssetId:job.data.identityAssetId}:{}),text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,assetId:op,mime:asset.mime},asset);
+   if(!req.replay)await store.complete(op,0,{action:character?'art_image':'art_video',...(job.plan.renderer==='character'?{renderer:'character',identityAssetId:job.data.identityAssetId,...(job.data.firstFrameAssetId?{firstFrameAssetId:job.data.firstFrameAssetId}:{})}:{}),text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,experimentId:job.plan.experiment?job.plan_id:null,assetId:op,mime:asset.mime},asset);
    await patch(store,job,'rendered',{assetId:op});return {status:character?'character_archived':'video_archived'};
   }
   if(job.state==='rendered'){
