@@ -110,7 +110,7 @@ test('claim-only crash resumes original ID once with reference pixels for planni
   const saved=await s.operation(id);assert.deepEqual(saved.result.referenceIds,[]);assert.deepEqual(saved.result.planningReferenceIds,[25,26]);assert.equal(await s.operation(id+'-repair1'),null);
   // Simulate repeated delivery before the media worker: no second daily request.
   const nextProvider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:{action:'wait',intent:'wait',projectId:null,medium:'text',text:'Wait for this separate task.',summary:'A deliberate pause.'}})};
-  await socialStep(s,nextProvider,enabled,now,()=>({}),load);assert.equal(generated,1);assert.equal(loaded,1);assert.equal((await s.pool.query('SELECT * FROM agent_media_jobs')).rows.length,1);
+  await socialStep(s,nextProvider,enabled,now,()=>({}),load);assert.equal(generated,1);assert.equal(loaded,2);assert.equal((await s.pool.query('SELECT * FROM agent_media_jobs')).rows.length,1);
  }finally{await db.close();}
 });
 test('unknown pending daily plan is never repeated or repaired',async()=>{

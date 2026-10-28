@@ -2,11 +2,68 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { XClient, signOAuth } from './x.mjs';
 import { AppearanceImage } from './appearance.mjs';
-import { setupAppearance } from './integrations.mjs';
+import { setupAppearance,socialStep } from './integrations.mjs';
+import {CREATIVE_REVISION,reconcileCreativeRevision} from './creative-revision.mjs';
+import {studioOperationId} from './studio.mjs';
 import { PostgresStore } from './postgres.mjs';
 import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 const env={X_API_KEY:'key',X_API_SECRET:'secret',X_ACCESS_TOKEN:'token',X_ACCESS_TOKEN_SECRET:'token-secret',X_EXPECTED_USERNAME:'artist'};
+
+async function plannerFixture(project=''){
+ const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));
+ const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
+ const s=new PostgresStore({query:c.query,connect:async()=>c}),now=new Date('2026-10-28T12:00:00Z');
+ await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic artist'});await reconcileCreativeRevision(s);
+ await s.transaction(async c=>{await s.append(c,'studio_revision',{projects:project?[{id:project,status:'active'}]:[]});await s.append(c,'cognitive_decision',{choice:'commission'});});
+ await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('fresh',$1,'commissioned','A fresh choice','Write a personal observation')",[project]);
+ const sid=await studioOperationId(s,now);await s.begin(sid,'step',()=>({maximum:0}));await s.complete(sid,0,{action:'studio_test_ready'});
+ const id='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/7200000);
+ const run=(provider,x=()=>({post:async()=>({id:'123',url:'https://x.com/i/status/123'})}))=>socialStep(s,provider,{X_ENABLED:'true',VIDEO_CADENCE_ENABLED:'false'},now,x,async()=>[]);
+ return {s,db,id,run};
+}
+const textPlan=()=>({action:'x_draft',medium:'text',intent:'experiment',projectId:null,text:'A personal observation.',summary:'A fresh choice.'});
+test('commission schema binds project and intent before the model call, without removing intentional waits',async()=>{
+ for(const project of ['','current-project']){
+  const {db,run}=await plannerFixture(project);try{
+   const provider={quote:()=>1,generate:async(_system,_prompt,_media,schema)=>{
+    assert.deepEqual(schema.properties.projectId,project?{type:'string',enum:[project]}:{type:'null'});
+    assert.deepEqual(schema.properties.intent.enum,[project?'project':'experiment','wait']);
+    return {costMicrodollars:1,value:{...textPlan(),projectId:project||null,intent:project?'project':'experiment'}};
+   }};
+   assert.equal((await run(provider)).status,'planned');
+  }finally{await db.close()}
+ }
+});
+test('failed social validation has safe diagnostics and one durable planner repair, then publishes exactly once',async()=>{
+ const {s,db,id,run}=await plannerFixture();try{
+ let calls=0,posts=0;const provider={quote:()=>10,generate:async()=>({costMicrodollars:3,value:++calls===1?{...textPlan(),intent:'project',projectId:'inactive'}:textPlan()})};
+ const first=await run(provider);assert.equal(first.failureCode,'PROJECT_NOT_ACTIVE');assert.equal(first.stage,'validate');assert.equal((await s.operation(id)).result.failureKind,'social_planning');
+ assert.equal((await run(provider)).status,'planned');assert.equal((await s.operation(id+'-repair1')).result.creativeRevision,CREATIVE_REVISION);
+ const x=()=>({post:async()=>{posts++;return {id:'123',url:'https://x.com/i/status/123'}}});
+ assert.equal((await run(provider,x)).status,'published');await run(provider,x);assert.equal(calls,2);assert.equal(posts,1);
+ }finally{await db.close()}
+});
+test('social repair recognizes only exact historical failure, records a safe provider code, and stops after one retry',async()=>{
+ const {s,db,id,run}=await plannerFixture();try{
+ await s.begin(id,'step',()=>({maximum:1}));await s.complete(id,1,{action:'wait',text:'This planning attempt could not be completed.',summary:'No publication was sent. Retained the cost reservation; a later slot may make a new decision.'});
+ let calls=0;const provider={quote:()=>1,generate:async()=>{calls++;throw Error('Gemini HTTP 402 private response should never be recorded');}};
+ const result=await run(provider);assert.equal(result.planId,id+'-repair1');assert.equal(result.failureCode,'GEMINI_HTTP_402');assert.equal(result.stage,'provider');
+ assert.doesNotMatch(JSON.stringify((await s.operation(id+'-repair1')).result),/private response/);
+ assert.equal((await run(provider)).status,'wait');assert.equal(calls,1);
+ }finally{await db.close()}
+});
+test('intentional waits, unknown planners and any downstream generation prevent planner repair',async()=>{
+ for(const mode of ['wait','pending','render']){
+  const {s,db,id,run}=await plannerFixture();try{
+   await s.begin(id,'step',()=>({maximum:0}));
+   if(mode!=='pending')await s.complete(id,0,mode==='wait'?{action:'wait',text:'I choose to pause.',summary:'Intentional rest.'}:{action:'wait',failureKind:'social_planning'});
+   if(mode==='render')await s.pool.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',CURRENT_DATE,10,'complete','{}')",['media-'+id.replace('x-plan-','')+'-render']);
+   const provider={quote:()=>{throw Error('REPAIR_NOT_ALLOWED');},generate:()=>{throw Error('REPAIR_NOT_ALLOWED');}};
+   assert.equal((await run(provider)).status,mode==='pending'?'pending':'wait');assert.equal(await s.operation(id+'-repair1'),null);
+  }finally{await db.close()}
+ }
+});
 test('X verifies token owner before any write and returns only real post URL',async()=>{
  let calls=[];const wrong=new XClient(env,async(url)=>{calls.push(url);return Response.json({data:{username:'other'}})});
  await assert.rejects(wrong.post('hello'),/ACCOUNT_MISMATCH/);assert.equal(calls.length,1);
