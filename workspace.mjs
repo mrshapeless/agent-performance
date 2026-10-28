@@ -49,7 +49,7 @@ export function broadcastContract(candidates,snapshot,eligible=candidates){
  p.selectedId={type:'string',enum:eligible.map(c=>c.id)};p.attention.items=candidatesEnum;
  p.selection.items.properties.id=candidatesEnum;p.selection.items.properties.reason={type:'string',maxLength:700};
  p.note.properties.links={...evidenceList,maxItems:3};p.note.properties.claim={type:'string',maxLength:1500,description:'Concise memory hypothesis, preferably at most 400 characters; not an essay.'};
- if(snapshot.state.goals.length)p.goalChanges.items.properties.id={type:'string',enum:snapshot.state.goals.map(g=>g.id)};
+ if(snapshot.state.goals.length)p.goalChanges.items={anyOf:snapshot.state.goals.map(g=>object({id:{type:'string',enum:[g.id]},status:{type:'string',enum:snapshot.state.predictions.some(p=>p.goal_id===g.id&&p.status==='observed'&&p.outcome===1)?['active','paused','completed','abandoned']:['active','paused','abandoned']},reason:{type:'string',maxLength:700}}))};
  else p.goalChanges.maxItems=0;
  return schema;
 }

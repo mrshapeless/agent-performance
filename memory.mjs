@@ -1,5 +1,6 @@
 // Retrieval indexes only evidence-bearing, approved event fields. Raw inbox,
 // credentials, generation prompts and operator reference inputs are not memory.
+import {canonicalMediaReviews,reviewEvidence} from './workspace-state.mjs';
 const kinds=['identity','record_note','draft_text','x_post','art_image','art_video','media_review','reflect','cognitive_decision','workspace_note','workspace_outcome','work_started','work_progress','work_published'];
 export async function recall(store,queries,limit=12,sourceIds=[]){
  const terms=[...new Set(queries.flatMap(q=>q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)??[]))].slice(0,24);
@@ -13,9 +14,24 @@ export async function recall(store,queries,limit=12,sourceIds=[]){
  (SELECT count(*) FROM unnest($2::text[]) term WHERE strpos(lower(body),term)>0) AS relevance
  FROM documents WHERE id=ANY($4::text[]) OR EXISTS(SELECT 1 FROM unnest($2::text[]) term WHERE strpos(lower(body),term)>0)
  ORDER BY (id=ANY($4::text[])) DESC,relevance DESC,created DESC LIMIT $3`,[kinds,terms,Math.min(40,Math.max(1,limit)),sourceIds.slice(0,20)]);
- return rows.map(r=>({id:r.id,kind:r.kind,created:r.created,source:r.kind==='record_note'?'editorial_record':r.kind==='public_conversation'?'public_conversation_not_verified_fact':r.kind==='reflect'||r.kind==='cognitive_decision'?'agent_interpretation':'recorded_event',text:String(r.p.text??r.p.alt??'').slice(0,5000),summary:String(r.p.summary??'').slice(0,1500),projectId:r.p.projectId??null,assetId:r.p.assetId??null}));
+ const reviews=await canonicalMediaReviews(store.pool.query.bind(store.pool)),seen=new Set();
+ return rows.flatMap(r=>{
+  const review=reviews.get(r.p.assetId??'event:'+r.seq),base={id:r.id,kind:r.kind,created:r.created,source:r.kind==='record_note'?'editorial_record':r.kind==='public_conversation'?'public_conversation_not_verified_fact':['reflect','cognitive_decision','workspace_note'].includes(r.kind)?'agent_interpretation':'recorded_event',text:String(r.p.text??r.p.alt??'').slice(0,5000),summary:String(r.p.summary??'').slice(0,1500),projectId:r.p.projectId??null,assetId:r.p.assetId??null};
+  if(r.kind==='media_review'){
+   const key=r.p.assetId??'event:'+r.seq;if(seen.has(key))return [];seen.add(key);
+   return [{...base,id:String(review?.seq??r.id),source:review?.source??'unverified_model_review_not_audience',criticism:review?.criticism??reviewEvidence(r.p),summary:review?.summary??'Historical model assessment with unverified reviewer provenance; not operator feedback or audience evidence.'}];
+  }
+  if(r.kind==='x_post')return [{...base,source:'publication_record_not_audience',summary:'Published work; distribution does not establish artistic success or audience approval.',...(review?{criticism:review.criticism,criticismSource:review.source}:{})}];
+  return [base];
+ });
 }
-export async function lessons(store){return (await store.pool.query("SELECT id,claim,conditions,evidence,counterevidence,status FROM agent_lessons ORDER BY updated DESC LIMIT 30")).rows;}
+export async function lessons(store){
+ const rows=(await store.pool.query("SELECT id,claim,conditions,evidence,counterevidence,status FROM agent_lessons ORDER BY updated DESC LIMIT 30")).rows;
+ // The writer is an agent, and citation count cannot verify what a claim says.
+ // Keep its original judgment and citations inspectable without laundering them
+ // into independently measured support in planning or the public runtime.
+ return rows.map(r=>({...r,recordedStatus:r.status,status:r.status==='retired'?'retired':'hypothesis',effectiveStatus:r.status==='retired'?'retired':'hypothesis',source:'agent_hypothesis',supportVerified:false,evidenceMeaning:'Recorded citations require inspection; agent self-assessment or publication does not establish audience preference or artistic success.'}));
+}
 export async function agenda(store){return (await store.pool.query("SELECT id,project_id,status,objective,next_step,artifact,version,updated FROM agent_agenda WHERE status IN ('active','commissioned') ORDER BY updated LIMIT 8")).rows;}
 export async function commissionedTask(store){return (await store.pool.query("SELECT a.* FROM agent_agenda a WHERE status='commissioned' AND (goal_id IS NULL OR EXISTS(SELECT 1 FROM agent_goals g WHERE g.id=a.goal_id AND g.status='active')) ORDER BY updated LIMIT 1")).rows[0]??null;}
 export async function reconcileAgenda(store){

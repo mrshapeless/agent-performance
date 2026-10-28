@@ -175,3 +175,25 @@ test('new commissions exclude repeated mechanisms and explicit direction conflic
  const schema=broadcastContract(cs,{evidence:[],state:{goals:[]}},selectableCandidates(cs,v));assert.deepEqual(schema.properties.selectedId.enum,['exploration','self_monitor']);
  assert.equal(schema.properties.selection.items.properties.id.enum.length,4);
 });
+
+test('arbitration cannot commission a repeated premise by ignoring its selection contract',async()=>{
+ const {s,db}=await fixture();
+ const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
+  if(schema===critiqueSchema){const v=critique();v.assessments[2].materiallyRepeated=true;return {costMicrodollars:1,value:v};}
+  if(p.startsWith('Arbitrate')){assert.ok(!schema.properties.selectedId.enum.includes('exploration'));return {costMicrodollars:1,value:broadcast()};}
+  return {costMicrodollars:1,value:candidate()};
+ }};
+ try{
+  let result;for(let i=0;i<8;i++)result=await workspaceStep(s,provider,now);
+  assert.equal(result.status,'workspace_decision_failed');
+  assert.equal((await s.pool.query('SELECT * FROM agent_agenda')).rows.length,0);
+  assert.equal((await workspaceStep(s,provider,now)).replay,true);
+ }finally{await db.close();}
+});
+
+test('goal completion contract matches the evidence validator before a paid arbitration',()=>{
+ const schema=broadcastContract(modules.map(id=>({...candidate(),id})),{evidence:[],state:{goals:[{id:'unverified'},{id:'observed'}],predictions:[{goal_id:'observed',status:'observed',outcome:1}]}});
+ const alternatives=schema.properties.goalChanges.items.anyOf;
+ assert.ok(!alternatives[0].properties.status.enum.includes('completed'));
+ assert.ok(alternatives[1].properties.status.enum.includes('completed'));
+});

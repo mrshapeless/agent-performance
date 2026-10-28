@@ -5,7 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
 import {cognitionStep,validateDecision} from './cognition.mjs';
-import {recall,agenda,reconcileAgenda} from './memory.mjs';
+import {recall,agenda,reconcileAgenda,lessons} from './memory.mjs';
 import {scopedSQL} from './instance.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
@@ -22,6 +22,20 @@ test('archive reaches old evidence, separates editorial interpretation and exclu
  assert.equal((await recall(s,['amber'],12,['room:room-test'])).some(r=>r.id==='room:room-test'),false);
  assert.match(scopedSQL('SELECT * FROM agent_agenda JOIN agent_lessons ON true'),/"generation_02"\.agent_lessons/);
  }finally{await db.close()}
+});
+test('recall and lessons do not promote self approval or publication to measured support',async()=>{
+ const {s,db}=await fixture();try{
+  await s.transaction(async c=>{
+   await s.append(c,'media_review',{assetId:'test-collage',text:'Synthetic violet collage',decision:'publish',visualLanguageResult:'supported',summary:'Violet audience triumph'});
+   await s.append(c,'media_review',{assetId:'test-collage',text:'Synthetic violet collage',decision:'reject',visualLanguageResult:'not_supported',evidenceProvenance:'independent_visual_audit',referenceComparison:'Coherent polished scene'});
+   await s.append(c,'x_post',{assetId:'test-collage',text:'Synthetic violet collage',summary:'Violet audience triumph'});
+  });
+  const found=await recall(s,['violet']);assert.equal(found.filter(e=>e.kind==='media_review').length,1);assert.equal(found.find(e=>e.kind==='media_review').criticism.decision,'reject');assert.doesNotMatch(JSON.stringify(found),/audience triumph/);
+  const ids=found.map(e=>e.id);
+  await s.pool.query("INSERT INTO agent_lessons(id,claim,conditions,evidence,counterevidence,status) VALUES('violet','Violet creates higher tension','Synthetic condition',$1,'[]','supported')",[JSON.stringify(ids)]);
+  const lesson=(await lessons(s))[0];assert.equal(lesson.status,'hypothesis');assert.equal(lesson.recordedStatus,'supported');assert.equal(lesson.supportVerified,false);assert.deepEqual(lesson.evidence,ids);
+  assert.equal((await s.pool.query("SELECT status FROM agent_lessons WHERE id='violet'")).rows[0].status,'supported');
+ }finally{await db.close();}
 });
 test('cognition checkpoints search, resumes after restart and writes once with atomic task state',async()=>{
  const {s,db}=await fixture();const now=new Date('2026-10-26T18:00:00Z');let calls=0;
