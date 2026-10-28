@@ -9,6 +9,40 @@ import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
+test('character renderer uses approved portrait, durable Replicate prediction and identity-aware review',async()=>{
+ const {store:s,db}=await fixture();let starts=0,reviews=0;
+ try{
+ await s.pool.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',['broadcast-avatar-v1','image/png',Buffer.from('approved-face')]);
+ await seed(s,{...plan,renderer:'character'});
+ const svc={...services,characterQuote:()=>100000,startCharacter:async(p,ref)=>{starts++;assert.equal(Buffer.from(ref.bytes).toString(),'approved-face');return {id:'self1'};},archiveCharacter:async()=>({mime:'image/jpeg',bytes:Buffer.from('new-self-portrait')})};
+ assert.equal((await mediaStep(s,{},env,svc)).status,'character_started');
+ assert.equal((await s.status()).replicateBudget.reservedMicrodollars,100000);
+ assert.equal((await mediaStep(s,{},env,svc)).status,'character_archived');
+ const provider={quote:()=>1,generate:async(_sys,prompt,asset,_schema,refs)=>{reviews++;assert.match(prompt,/approved identity portrait/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');assert.equal(asset.bytes.toString(),'new-self-portrait');return {costMicrodollars:1,value:{action:'publish',text:'I changed my mind.',alt:'A fictional self-portrait',summary:'The expression changes while the face remains recognizable.'}};}};
+ assert.equal((await mediaStep(s,provider,env,svc)).status,'media_approved');
+ assert.equal(starts,1);assert.equal(reviews,1);
+ assert.equal((await s.operation('media-1-archive')).result.identityAssetId,'broadcast-avatar-v1');
+ assert.equal((await s.operation('media-1-archive')).result.action,'art_image');
+ }finally{await db.close();}
+});
+test('character provider transmits only portrait and disables automatic prompt polishing',async()=>{
+ let body;
+ const provider=new MediaProviders(env,async(url,options)=>{assert.match(url,/flux-kontext-pro/);body=JSON.parse(options.body);return Response.json({id:'one'});});
+ await provider.startCharacter(plan,{mime:'image/png',bytes:Buffer.from('face')});
+ assert.equal(body.input.input_image,'data:image/png;base64,ZmFjZQ==');assert.equal(body.input.prompt_upsampling,false);assert.equal(body.input.aspect_ratio,'1:1');
+ await assert.rejects(provider.startCharacter(plan,null),/REFERENCE_MISSING/);
+ assert.throws(()=>validateMediaPlan({...plan,renderer:'character'},{GEMINI_API_KEY:'yes'}),/CHARACTER_NOT_CONFIGURED/);
+ assert.throws(()=>validateMediaPlan({...plan,medium:'video',ratio:'16:9',duration:6,renderer:'character'},env),/INVALID_MEDIA_RENDERER/);
+});
+test('unknown character request is never repeated and another job can advance',async()=>{
+ const {store:s,db}=await fixture();try{
+ await seed(s,{...plan,renderer:'character'});await s.begin('media-1-render','step',()=>({maximum:100000,budgetProvider:'replicate'}));
+ await enqueueMedia(s,'x-plan-2',plan);
+ const svc={...services,characterQuote:()=>100000,startCharacter:()=>assert.fail('duplicate paid request')};
+ assert.equal((await mediaStep(s,{},env,svc)).status,'media_failed');
+ assert.equal((await mediaStep(s,{},env,svc)).status,'image_created');
+ }finally{await db.close();}
+});
 test('new visual plans require selected distinct mechanisms while saved legacy jobs remain valid',()=>{
  assert.equal(validateMediaPlan(plan,env).medium,'image');
  const strict={requireAlternatives:true};

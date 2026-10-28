@@ -3,8 +3,10 @@ import {AppearanceImage} from './appearance.mjs';
 import {composeCollage} from './collage.mjs';
 
 export const VIDEO_MODEL='google/veo-3.1-fast';
+export const CHARACTER_MODEL='black-forest-labs/flux-kontext-pro';
+export const CHARACTER_ASSET='broadcast-avatar-v1';
 export const MAX_VIDEO_BYTES=14_000_000;
-export function mediaCapabilities(env){return {image:!!env.GEMINI_API_KEY,video:!!(env.REPLICATE_API_TOKEN&&env.BLOB_READ_WRITE_TOKEN)};}
+export function mediaCapabilities(env){return {image:!!env.GEMINI_API_KEY,character:!!env.REPLICATE_API_TOKEN,video:!!(env.REPLICATE_API_TOKEN&&env.BLOB_READ_WRITE_TOKEN)};}
 export function trustedMediaURL(value,blob=false){
  const u=new URL(value);const ok=blob?u.hostname.endsWith('.public.blob.vercel-storage.com'):(u.hostname==='replicate.delivery'||u.hostname.endsWith('.replicate.delivery'));
  if(u.protocol!=='https:'||u.username||u.password||u.port||!ok)throw Error('MEDIA_UNTRUSTED_URL');return u.href;
@@ -26,6 +28,30 @@ export class MediaProviders {
  collage(layout,sources,ratio){return composeCollage(layout,sources,ratio);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
+ characterQuote(){return 100_000;}
+ async startCharacter(plan,reference){
+  const bytes=Buffer.from(reference?.bytes??[]);
+  if(!['image/png','image/jpeg','image/webp'].includes(reference?.mime)||!bytes.length||bytes.length>5_000_000)throw Error('CHARACTER_REFERENCE_MISSING');
+  return this.replicate('POST','models/'+CHARACTER_MODEL+'/predictions',{input:{
+   input_image:'data:'+reference.mime+';base64,'+bytes.toString('base64'),
+   prompt:'The input is Alidade, the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, white blunt bob and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Create the following new authored scene: '+plan.prompt,
+   aspect_ratio:plan.ratio,output_format:'png',prompt_upsampling:false}});
+ }
+ async archiveCharacter(output){
+  const url=Array.isArray(output)?output[0]:output;
+  const r=await this.fetcher(trustedMediaURL(url),{redirect:'error',signal:AbortSignal.timeout(30000)});
+  if(!r.ok)throw Error('CHARACTER_DOWNLOAD_FAILED');
+  if(Number(r.headers.get('content-length'))>14_000_000)throw Error('CHARACTER_TOO_LARGE');
+  let size=0;const parts=[];
+  for await(const chunk of r.body){size+=chunk.length;if(size>14_000_000)throw Error('CHARACTER_TOO_LARGE');parts.push(Buffer.from(chunk));}
+  const sharp=(await import('sharp')).default;
+  const source=Buffer.concat(parts),meta=await sharp(source,{limitInputPixels:20_000_000}).metadata();
+  if(!['png','jpeg','webp'].includes(meta.format))throw Error('CHARACTER_INVALID_IMAGE');
+  // Transport bounds only, not a cosmetic lo-fi filter.
+  const bytes=await sharp(source).rotate().resize({width:1600,height:1600,fit:'inside',withoutEnlargement:true}).jpeg({quality:93}).toBuffer();
+  if(bytes.length>3_500_000)throw Error('CHARACTER_TOO_LARGE');
+  return {bytes,mime:'image/jpeg'};
+ }
  async replicate(method,path,body){
   if(!this.env.REPLICATE_API_TOKEN)throw Error('REPLICATE_NOT_CONFIGURED');
   const r=await this.fetcher('https://api.replicate.com/v1/'+path,{method,headers:{Authorization:'Bearer '+this.env.REPLICATE_API_TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(25000)});
