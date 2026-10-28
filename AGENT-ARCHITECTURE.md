@@ -151,7 +151,28 @@ nor its forecast outcome had been observed at this checkpoint. Subsequent evalua
 must test critic fixation and thematic freedom, not reward another fluent self-report.
 Automatic X replies remained disabled and the public journal was available.
 
-## Rollback
+## Moving-image cadence and visual evaluation
+
+The social worker makes one independent video commission per Moscow calendar day
+when video access and the Replicate allowance are available. A second video remains
+optional. Existing image commissions are preserved. A daily claim, screenplay,
+provider prediction, archived asset and publication each have durable identifiers.
+An interrupted claim can resume; an unknown or charged render is never blindly
+repeated. This is a scheduling target, not a guarantee that a provider succeeds.
+
+Visual exploration and comparison receive private reference pixels. Candidate
+evidence identifiers are constrained to each module's actual context. Criticism
+separates thumbnail legibility, viewer interest, repeated premises and whole-image
+visual language. A photograph of a distressed object is not evidence of lo-fi image
+construction. Glossy vernacular remains possible; coherent advertising polish is
+not excused merely by a nostalgic genre label.
+
+The isolated diagnostic harness cannot publish or call the video provider. It uses
+a transaction-scoped lock compatible with transaction pooling. Pending plans cannot
+advance the test cycle. Real generated outputs still require independent visual
+inspection; passing software tests does not establish artistic success.
+
+## Rollback switches
 
 `COGNITION_LEGACY=true` selects the prior cognitive worker. Added state is retained,
 not deleted. Original publication, media, room and manual-reply services retain their

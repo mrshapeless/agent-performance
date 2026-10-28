@@ -5,6 +5,8 @@ import {PGlite} from '@electric-sql/pglite';
 import {createGauntletHandler,noPublishingClient} from './gauntlet.mjs';
 import {PostgresStore} from './postgres.mjs';
 import {axes} from './taste.mjs';
+import {workspaceEvidence} from './workspace-state.mjs';
+import {scopedPool} from './instance.mjs';
 
 const secret='synthetic-test-secret-not-a-credential';
 const ids=['perception','recall','exploration','self_monitor'];
@@ -26,7 +28,7 @@ async function fixture(){
  const query=async(sql,args)=>{
   // PGlite is single-session: emulate only the session-lock interface, execute all
   // initialization, FK, phase, transaction and isolation SQL against PostgreSQL.
-  if(sql.includes('pg_try_advisory_lock'))return {rows:[{locked}]};
+  if(sql.includes('pg_try_advisory_xact_lock'))return {rows:[{locked}]};
   if(sql.includes('pg_advisory_unlock'))return {rows:[]};
   if(sql.startsWith('CREATE TABLE IF')){await db.exec(sql);return {rows:[]};}
   const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};
@@ -45,10 +47,10 @@ async function fixture(){
  await db.exec('SET search_path TO public');
  let renderedPrompt,renderCalls=0;
  const services={imageQuote:()=>1,references:async()=>[],image:async p=>{renderedPrompt=p;renderCalls++;return {mime:'image/png',bytes:Buffer.from('synthetic output'),costMicrodollars:1};},load:async a=>a};
- const handler=createGauntletHandler({env:{VERCEL_ENV:'production',AGENT_ENABLED:'true',GAUNTLET_SECRET:secret,GEMINI_API_KEY:'synthetic'},openPool:async()=>{opened++;return pool;},createProvider:mockProvider,createServices:()=>services,now:()=>new Date('2026-10-28T12:00:00Z')});
- const request=(action,auth=true,path='')=>handler(new Request('https://example.org/api/gauntlet'+path,{method:action?'POST':'GET',headers:auth?{authorization:'Bearer '+secret}:{},...(action?{body:JSON.stringify({action})}:{})}));
+ const handler=createGauntletHandler({env:{VERCEL_ENV:'production',AGENT_ENABLED:'true',GAUNTLET_SECRET:secret,GEMINI_API_KEY:'synthetic'},openPool:async()=>{opened++;let first=true;return {...pool,connect:async()=>{if(!first)return c;first=false;return {release(){},query:async(sql,args)=>["BEGIN","ROLLBACK"].includes(sql)?{rows:[]}:query(sql,args)};}};},createProvider:mockProvider,createServices:()=>services,now:()=>new Date('2026-10-28T12:00:00Z')});
+ const request=(action,auth=true,path='')=>handler(new Request('https://example.org/api/gauntlet'+path,{method:action?'POST':'GET',headers:auth?{authorization:'Bearer '+secret}:{},...(action?{body:JSON.stringify(typeof action==='string'?{action}:action)}:{})}));
  const call=async action=>{const r=await request(action);assert.equal(r.status,200,await r.clone().text());return r.json();};
- return {db,original,request,call,setLocked:v=>{locked=v;},get opened(){return opened;},get renderedPrompt(){return renderedPrompt;},get renderCalls(){return renderCalls;}};
+ return {db,original,request,call,pool,setLocked:v=>{locked=v;},get opened(){return opened;},get renderedPrompt(){return renderedPrompt;},get renderCalls(){return renderCalls;}};
 }
 
 test('private gauntlet seeds nonempty FK-linked experience, executes cognition through preflight and pixels, never publishes or mutates source',async()=>{
@@ -59,6 +61,11 @@ test('private gauntlet seeds nonempty FK-linked experience, executes cognition t
   for(const table of ['agent_oauth_tokens','agent_inbox','agent_room'])assert.equal((await f.db.query('SELECT count(*) FROM gauntlet_v1.'+table)).rows[0].count,0);
   assert.equal((await f.request('advance')).status,409);
   for(let i=0;i<6;i++)await f.call('step');
+  // A claimed planner with no result is unfinished, not an implicit text post.
+  const cycleState=await f.call(),pendingPlan='x-plan-'+Math.floor(new Date(cycleState.virtualSlot).getTime()/7200000);
+  await f.db.query("INSERT INTO gauntlet_v1.agent_operations(id,kind,status,amount,day) VALUES($1,'step','pending',1,'2026-10-28')",[pendingPlan]);
+  assert.equal((await f.call()).finished,false);assert.equal((await f.request('advance')).status,409);
+  await f.db.query('DELETE FROM gauntlet_v1.agent_operations WHERE id=$1',[pendingPlan]);
   assert.equal((await f.call('plan')).status,'planned');assert.equal((await f.call('plan')).status,'already_planned');
   assert.equal((await f.call('render')).status,'creative_preflight');assert.equal(f.renderCalls,0);
   assert.equal((await f.call('render')).status,'creative_preflight');assert.equal(f.renderCalls,0);
@@ -73,10 +80,32 @@ test('private gauntlet seeds nonempty FK-linked experience, executes cognition t
   assert.equal((await f.db.query("SELECT count(*) FROM gauntlet_v1.agent_operations WHERE id LIKE 'x-publish-%'")).rows[0].count,0);
   assert.deepEqual((await f.db.query('SELECT * FROM generation_02.agent_events ORDER BY seq')).rows,f.original);
   assert.equal((await f.call('advance')).status,'advanced');
+  for(let i=0;i<6;i++)await f.call('step');
+  assert.equal((await f.call('plan')).status,'planned');
+  for(let i=0;i<2;i++)assert.equal((await f.call('render')).status,'creative_preflight');
+  assert.equal((await f.call('render')).status,'image_created');assert.equal(f.renderCalls,2);
   f.setLocked(false);assert.equal((await f.request('step')).status,409);
  }finally{await f.db.close();}
 });
 
 test('publication client cannot post, upload, read timelines or fetch tokens',()=>{
  for(const method of ['post','upload','recentPosts','verify'])assert.throws(()=>noPublishingClient()[method](),/GAUNTLET_EXTERNAL_PUBLICATION_DISABLED/);
+});
+
+test('private independent feedback appends once, survives as future evidence, and never replaces original review',async()=>{
+ const f=await fixture();try{
+  const feedback={action:'feedback',assetId:'trial-art',verdict:'fail',observation:'The readable label offers no visual surprise.',nextExperiment:'Change the perceptible relationship rather than substituting a new object.'};
+  assert.equal((await f.request(feedback,false)).status,401);assert.equal(f.opened,0);
+  await f.call('init');
+  assert.equal((await f.request(feedback)).status,404);assert.equal((await f.request({...feedback,assetId:'seed-art'})).status,404);
+  await f.db.query("INSERT INTO gauntlet_v1.agent_assets(id,mime,bytes) VALUES('trial-art','image/png',$1)",[Buffer.from('synthetic trial')]);
+  await f.db.query("INSERT INTO gauntlet_v1.agent_media_jobs(id,plan_id,plan,state,data) VALUES('trial-job','trial-plan','{}','gauntlet_complete',$1)",[JSON.stringify({assetId:'trial-art',review:{summary:'Original self-assessment'}})]);
+  const first=await f.call(feedback),again=await f.call(feedback);assert.equal(first.status,'feedback_saved');assert.equal(first.replay,false);assert.equal(again.replay,true);assert.equal(first.feedbackKey,again.feedbackKey);
+  const rows=(await f.db.query("SELECT payload::jsonb AS payload FROM gauntlet_v1.agent_events WHERE payload::jsonb->>'feedbackKey'=$1",[first.feedbackKey])).rows;assert.equal(rows.length,1);assert.equal(rows[0].payload.source,'independent_test_critic');assert.equal(rows[0].payload.visualLanguageResult,'not_supported');
+  const evidence=await workspaceEvidence(new PostgresStore(scopedPool(f.pool,'gauntlet_v1')),1),entry=evidence.find(e=>e.assetId==='trial-art');assert.equal(entry.criticism.nextExperiment,feedback.nextExperiment);assert.match(entry.summary,/not operator feedback or audience evidence/);
+  assert.equal((await f.db.query("SELECT data->'review'->>'summary' AS summary FROM gauntlet_v1.agent_media_jobs WHERE id='trial-job'")).rows[0].summary,'Original self-assessment');
+  assert.deepEqual((await f.db.query('SELECT * FROM generation_02.agent_events ORDER BY seq')).rows,f.original);
+  assert.equal((await f.request({...feedback,observation:'x'.repeat(1201)})).status,400);assert.equal((await f.request({...feedback,verdict:'maybe'})).status,400);assert.equal((await f.request({...feedback,extra:'x'.repeat(4000)})).status,400);
+  await f.db.query("UPDATE gauntlet_v1.agent_media_jobs SET state='published' WHERE id='trial-job'");assert.equal((await f.request({...feedback,verdict:'pass'})).status,404);
+ }finally{await f.db.close();}
 });

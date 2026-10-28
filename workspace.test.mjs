@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,critiqueSchema,validateCritique} from './workspace.mjs';
+import {workspaceStep,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from './workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from './workspace-state.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
@@ -18,6 +18,18 @@ test('critique requires every candidate once and typed actionable observations',
  assert.equal(validateCritique(critique(),cs).assessments.length,4);
  assert.throws(()=>validateCritique({assessments:critique().assessments.slice(1)},cs));
  const bad=critique();bad.assessments[0].materiallyRepeated='false';assert.throws(()=>validateCritique(bad,cs));
+});
+test('candidate contract exposes only scoped evidence and active project IDs, preserving source validation',()=>{
+ const snapshot={studio:{projects:[...studio.projects,{id:'paused-theme',status:'paused'}]},state:{goals:[],predictions:[]},tasks:[],evidence:[{id:'post:1',kind:'x_post'},{id:'note:2',kind:'workspace_note'},{id:'news:0',kind:'headline'}]};
+ const perception=moduleContext('perception',snapshot),exploration=moduleContext('exploration',snapshot);
+ const p=candidateContract(perception),e=candidateContract(exploration);
+ assert.deepEqual(p.properties.evidence.items.enum,['post:1','news:0']);assert.deepEqual(p.properties.projectId.enum,['','old-theme']);
+ assert.deepEqual(e.properties.evidence.items.enum,['news:0']);assert.deepEqual(e.properties.projectId.enum,['']);assert.ok(!e.properties.action.enum.includes('develop'));
+ assert.equal(e.properties.goalId.pattern,candidateSchema.properties.goalId.pattern);
+ assert.equal(candidateSchema.properties.evidence.items.enum,undefined);assert.equal(candidateSchema.properties.projectId.enum,undefined);
+ const empty=candidateContract({studio:{projects:[]},evidence:[]});assert.equal(empty.properties.evidence.maxItems,0);assert.equal(empty.properties.evidence.items.enum,undefined);
+ assert.throws(()=>validateCandidate({...candidate(),evidence:['note:2']},{...snapshot,...perception}),/INVALID_WORKSPACE_OUTPUT_10/);
+ assert.throws(()=>validateCandidate({...candidate(),projectId:'old-theme'},{...snapshot,...exploration}),/INVALID_WORKSPACE_OUTPUT_8/);
 });
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test'});await s.transaction(c=>s.append(c,'studio_revision',studio));return {s,db};}
 test('workspace resumes across restarts, compares independent proposals, broadcasts and executes once outside old projects',async()=>{
@@ -50,7 +62,7 @@ test('material repetition forces an actual durable revision before commission; f
  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
   calls++;
   if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:true,legibleHook:false,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
-  if(p.startsWith('Revise this')){revisions++;return {costMicrodollars:1,value:{...candidate(),proposal:'An interrupted amateur game screenshot whose score becomes a swarm of faces.'}};}
+  if(p.startsWith('Revise this')){revisions++;assert.deepEqual(schema.properties.projectId.enum,['']);assert.equal(schema.properties.evidence.maxItems,0);assert.ok(!schema.properties.action.enum.includes('develop'));return {costMicrodollars:1,value:{...candidate(),proposal:'An interrupted amateur game screenshot whose score becomes a swarm of faces.'}};}
   return {costMicrodollars:1,value:p.startsWith('Arbitrate')?broadcast():candidate()};
  }};
  try{
@@ -64,6 +76,17 @@ test('material repetition forces an actual durable revision before commission; f
   assert.equal(revisions,1);assert.equal(reviews,2);assert.equal(calls,8);
   assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,8);
   const op=await s.operation('workspace-v1-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,false);
+ }finally{await db.close();}
+});
+
+test('initial module calls receive the same scoped citation contract used by runtime validation',async()=>{
+ const {s,db}=await fixture();const seen=[];
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>{seen.push(schema);return {costMicrodollars:1,value:candidate()};}};
+ try{
+  await s.transaction(async c=>{await s.append(c,'x_post',{text:'Synthetic published work.'});await s.append(c,'workspace_note',{text:'Older hypothesis.'});await s.append(c,'observation',{news:[{source:'Synthetic source',title:'New cultural material'}]});});
+  for(const name of modules)assert.equal((await workspaceStep(s,provider,now)).module,name);
+  assert.deepEqual(seen[2].properties.evidence.items.enum,['news:0']);assert.deepEqual(seen[2].properties.projectId.enum,['']);
+  assert.ok(!seen[1].properties.evidence.items.enum.includes('news:0'));assert.ok(seen[0].properties.evidence.items.enum.includes('news:0'));assert.deepEqual(seen[0].properties.projectId.enum,['','old-theme']);
  }finally{await db.close();}
 });
 

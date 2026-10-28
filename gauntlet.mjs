@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {authorized} from './cloud.mjs';
 import {ACTIVE_INSTANCE,scopedPool} from './instance.mjs';
 import {PostgresStore} from './postgres.mjs';
@@ -7,9 +8,10 @@ import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 import {mediaStep,enqueueMedia} from './media.mjs';
 import {MediaProviders} from './media-providers.mjs';
+import {videoCadence} from './video-cadence.mjs';
 
 export const GAUNTLET_SCHEMA='gauntlet_v1';
-const lock=730299;
+const lock=730300;
 const forbidden=()=>{throw Error('GAUNTLET_EXTERNAL_PUBLICATION_DISABLED');};
 export const noPublishingClient=()=>new Proxy({},{get:()=>forbidden});
 const headers={'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'};
@@ -43,19 +45,38 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
   if(!authorized(request.headers.get('authorization'),env.AGENT_ADMIN_SECRET)&&!authorized(request.headers.get('authorization'),env.GAUNTLET_SECRET))return json({error:'UNAUTHORIZED'},401);
   if(!['GET','POST'].includes(request.method))return json({error:'METHOD_NOT_ALLOWED'},405);
   if(env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true')return json({error:'EXECUTION_DISABLED'},409);
-  const url=new URL(request.url);let action;
-  if(request.method==='POST'){try{const raw=await request.text();if(raw.length>256)throw Error();action=JSON.parse(raw).action;}catch{return json({error:'INVALID_INPUT'},400);}if(!['init','step','plan','render','advance'].includes(action))return json({error:'INVALID_ACTION'},400);}
+  const url=new URL(request.url);let action,body;
+  if(request.method==='POST'){
+   try{const raw=await request.text();if(Buffer.byteLength(raw,'utf8')>4000)throw Error();body=JSON.parse(raw);action=body.action;if(action!=='feedback'&&raw.length>256)throw Error();}catch{return json({error:'INVALID_INPUT'},400);}
+   if(!['init','step','plan','render','advance','feedback'].includes(action))return json({error:'INVALID_ACTION'},400);
+   if(action==='feedback'&&(!/^[a-zA-Z0-9_-]{1,100}$/.test(body.assetId??'')||!['pass','fail'].includes(body.verdict)||!['observation','nextExperiment'].every(k=>typeof body[k]==='string'&&body[k].trim().length>0&&body[k].length<=1200)))return json({error:'INVALID_FEEDBACK'},400);
+  }
   const pool=await openPool();let guard;
   try{
    guard=await pool.connect();
-   if(!(await guard.query('SELECT pg_try_advisory_lock($1) AS locked',[lock])).rows[0].locked)return json({status:'busy'},409);
+   // Pin a backend while holding the lock: Neon transaction pooling cannot safely
+   // pair session-level lock/unlock calls across separate transactions.
+   await guard.query('BEGIN');
+   if(!(await guard.query('SELECT pg_try_advisory_xact_lock($1) AS locked',[lock])).rows[0].locked)return json({status:'busy'},409);
    if(action==='init')return json(await initialize(pool,now()));
    if(!(await pool.query('SELECT 1 FROM information_schema.schemata WHERE schema_name=$1',[GAUNTLET_SCHEMA])).rows.length)return json({status:'not_initialized'},409);
    const state=(await pool.query('SELECT * FROM gauntlet_v1.run_state WHERE id=1')).rows[0];
    const store=new PostgresStore(scopedPool(pool,GAUNTLET_SCHEMA));
+   if(action==='feedback'){
+    const input={assetId:body.assetId,verdict:body.verdict,observation:body.observation.trim(),nextExperiment:body.nextExperiment.trim()};
+    const feedbackKey=createHash('sha256').update(JSON.stringify(input)).digest('hex');
+    return await store.transaction(async c=>{
+     const owned=(await c.query("SELECT a.id FROM agent_assets a JOIN agent_media_jobs j ON j.data->>'assetId'=a.id WHERE a.id=$1 AND j.state<>'published' LIMIT 1",[input.assetId])).rows[0];
+     if(!owned)return json({error:'NOT_FOUND'},404);
+     const old=(await c.query("SELECT seq FROM agent_events WHERE kind='media_review' AND payload::jsonb->>'feedbackKey'=$1 LIMIT 1",[feedbackKey])).rows[0];
+     if(old)return json({status:'feedback_saved',feedbackKey,replay:true});
+     await store.append(c,'media_review',{action:'media_review',source:'independent_test_critic',reviewer:'independent_test_critic',feedbackKey,...input,text:input.observation,summary:'Independent diagnostic critic; not operator feedback or audience evidence.',decision:input.verdict==='pass'?'publish':'reject',visualLanguageResult:input.verdict==='pass'?'supported':'not_supported',referenceComparison:input.observation});
+     return json({status:'feedback_saved',feedbackKey,replay:false});
+    });
+   }
    // This diagnostic run tests still-image construction; never create an unaccounted
    // Replicate reservation in a separate ledger or upload a test movie to public Blob.
-   const testEnv={...env,REPLICATE_API_TOKEN:undefined,BLOB_READ_WRITE_TOKEN:undefined,X_REPLIES_ENABLED:'false'};
+   const testEnv={...env,REPLICATE_API_TOKEN:undefined,BLOB_READ_WRITE_TOKEN:undefined,VIDEO_CADENCE_ENABLED:'false',X_REPLIES_ENABLED:'false'};
    const testProvider=()=>{const p=createProvider();return {quote:p.quote.bind(p),generate:(system,prompt,...args)=>p.generate(system,prompt+' Diagnostic capability: only still images and text are available in this isolated run; no video generator.',...args)};};
    // Virtual slots isolate replay keys only. Actual event timestamps remain real.
    const slotTime=new Date(new Date(state.started).getTime()+state.cycle*7200000);
@@ -65,14 +86,18 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    const broadcast=await store.operation('workspace-v1-'+Math.floor(slotTime.getTime()/3600000)+'-broadcast');
    const decision=await store.latest('cognitive_decision');
    const mediaFinished=['rejected','failed'].includes(job?.state)||(job?.state==='approved'&&(!job.plan.referenceIds||!!job.data.styleAudit));
-   const finished=(broadcast?.result?.action==='workspace_broadcast'&&decision?.choice!=='commission')||!!currentPlan&&((currentPlan.result?.medium??'text')==='text'||mediaFinished);
+   const finished=(broadcast?.result?.action==='workspace_broadcast'&&decision?.choice!=='commission')||currentPlan?.status==='complete'&&(currentPlan.result?.action==='wait'||currentPlan.result?.medium==='text'||mediaFinished);
    if(request.method==='GET'){
     const assetId=url.searchParams.get('asset');
     if(assetId){if(!/^[a-zA-Z0-9_-]{1,100}$/.test(assetId))return json({error:'INVALID_ASSET'},400);const owned=(await store.pool.query("SELECT id FROM agent_media_jobs WHERE data->>'assetId'=$1 AND state<>'published'",[assetId])).rows[0];if(!owned)return json({error:'NOT_FOUND'},404);const a=await store.asset(assetId);if(!a)return json({error:'NOT_FOUND'},404);const loaded=a.bytes?a:await createServices(env).load(a);return new Response(loaded.bytes,{headers:{...headers,'Content-Type':loaded.mime}});}
-    return json({cycle:state.cycle,started:state.started,virtualSlot:slotTime,finished,publicationEnabled:false,operations:(await store.pool.query('SELECT id,status,result FROM agent_operations ORDER BY id')).rows,jobs:(await store.pool.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state<>'published' ORDER BY created")).rows});
+    const production=new PostgresStore(scopedPool(pool));
+    const productionVideo=await videoCadence(production,env,now());
+    productionVideo.plans=(await production.pool.query("SELECT id,status,result FROM agent_operations WHERE id LIKE 'x-plan-video-cadence-%' ORDER BY id DESC LIMIT 4")).rows;
+    return json({cycle:state.cycle,started:state.started,virtualSlot:slotTime,finished,publicationEnabled:false,productionVideo,operations:(await store.pool.query('SELECT id,status,result FROM agent_operations ORDER BY id')).rows,jobs:(await store.pool.query("SELECT id,state,plan,data FROM agent_media_jobs WHERE state<>'published' ORDER BY created")).rows});
    }
    if(action==='advance'){
     if(!finished)return json({error:'CYCLE_NOT_FINISHED'},409);
+    await store.pool.query("UPDATE agent_media_jobs SET state='gauntlet_complete' WHERE plan_id=$1 AND state='approved'",[planId]);
     await store.pool.query("UPDATE agent_agenda SET status='completed' WHERE status IN ('active','commissioned')");
     await pool.query('UPDATE gauntlet_v1.run_state SET cycle=cycle+1 WHERE id=1');return json({status:'advanced',cycle:state.cycle+1});
    }
@@ -87,11 +112,12 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
     return json(result);
    }
    if(!job)return json({status:'no_media_job'});
+   await store.pool.query("UPDATE agent_media_jobs SET state='gauntlet_complete' WHERE plan_id<>$1 AND state='approved' AND data ? 'styleAudit'",[planId]);
    // Call only phases that cannot upload or publish. Image audit is separately bounded.
    const auditOnly=job.state==='approved'&&job.plan.medium==='image'&&job.plan.referenceIds&&!job.data.styleAudit;
    if(!['queued','processing','rendered'].includes(job.state)&&!auditOnly)return json({status:'review_complete',state:job.state});
    return json(await mediaStep(store,testProvider(),{...testEnv,X_ENABLED:'false'},createServices(testEnv),noPublishingClient));
   }catch(error){const code=/^[A-Z0-9_]{2,60}$/.test(error.code??'')?error.code:'INTERNAL';console.error('gauntlet_failed',code);return json({error:/^[A-Z_]+$/.test(error.message)?error.message:'GAUNTLET_FAILED',code},500);}
-  finally{if(guard){await guard.query('SELECT pg_advisory_unlock($1)',[lock]).catch(()=>{});guard.release();}await pool.end();}
+  finally{if(guard){await guard.query('ROLLBACK').catch(()=>{});guard.release();}await pool.end();}
  };
 }
