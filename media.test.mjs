@@ -19,7 +19,7 @@ test('character renderer uses approved portrait, durable Replicate prediction an
  assert.equal((await mediaStep(s,{},env,svc)).status,'character_started');
  assert.equal((await s.status()).replicateBudget.reservedMicrodollars,100000);
  assert.equal((await mediaStep(s,{},env,svc)).status,'character_archived');
- const provider={quote:()=>1,generate:async(_sys,prompt,asset,_schema,refs)=>{reviews++;assert.match(prompt,/approved identity portrait/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');assert.equal(asset.bytes.toString(),'new-self-portrait');return {costMicrodollars:1,value:{action:'publish',text:'I changed my mind.',alt:'A fictional self-portrait',summary:'The expression changes while the face remains recognizable.'}};}};
+ const provider={quote:()=>1,generate:async(_sys,prompt,asset,_schema,refs)=>{reviews++;assert.match(prompt,/approved identity portrait/);assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'approved-face');assert.equal(asset.bytes.toString(),'new-self-portrait');return {costMicrodollars:1,value:{action:'publish',text:'I changed my mind.',alt:'A fictional self-portrait',summary:'The expression changes while the face remains recognizable.',identityResult:'supported',identityEvidence:'The jaw, eyes and nose match the approved identity.'}};}};
  assert.equal((await mediaStep(s,provider,env,svc)).status,'media_approved');
  assert.equal(starts,1);assert.equal(reviews,1);
  assert.equal((await s.operation('media-1-archive')).result.identityAssetId,'broadcast-avatar-v1');
@@ -71,7 +71,7 @@ test('unknown preflight is quarantined without repeating its call or starving la
  }finally{await db.close()}
 });
 const services={imageQuote:()=>500000,image:async()=>({bytes:Buffer.from('fixture'),mime:'image/jpeg',costMicrodollars:40000}),load:async a=>({...a,bytes:Buffer.from(a.bytes??'fixture')}),videoQuote:()=>4000000,startVideo:async()=>({id:'pred1'}),videoStatus:async()=>({status:'succeeded',output:'https://replicate.delivery/movie.mp4'}),archiveVideo:async()=>({mime:'video/mp4',url:'https://test.public.blob.vercel-storage.com/movie.mp4'})};
-function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.'}}}};}
+function reviewer(decision='publish'){return {quote:()=>100,generate:async(system,prompt,asset)=>{assert.ok(asset.bytes.length);return {costMicrodollars:300,value:{action:decision,text:'An ink shoreline, imagined.',alt:'A wavering ink line',summary:'The observed result fits the experiment.',identityResult:'supported',identityEvidence:'Beginning, middle and ending preserve the jaw, eyes and mouth.'}}}};}
 test('style-rejected image is uploaded and published exactly once; replies stay disabled',async()=>{
  const {store:s,db}=await fixture();let generations=0,posts=0;const service={...services,image:async()=>{generations++;return services.image()}};
  const x={verify:async()=>({}),initMedia:async()=>({id:'777',expires_after_secs:86400}),appendMedia:async()=>{},finalizeMedia:async()=>({id:'777'}),mediaStatus:async()=>assert.fail('synchronous image must not poll STATUS'),post:async(text,reply,media)=>{posts++;assert.equal(reply,null);assert.equal(media,'777');assert.equal(text,'An ink shoreline, imagined.');return {id:'999',url:'https://x.com/i/web/status/999'}}};
@@ -208,5 +208,18 @@ test('editorial revision archives an accepted character opening frame but never 
   assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'reconsideration');
   assert.equal((await s.asset('media-1-first-frame-archive')).mime,'image/jpeg');
   assert.equal((await mediaStep(s,{},env,svc)).status,'no_media_jobs');
+ }finally{await db.close()}
+});
+for(const identityResult of ['not_supported','uncertain',undefined])test(`character identity ${identityResult} holds work despite publish recommendation`,async()=>{
+ const {store:s,db}=await fixture();let calls=0;
+ try{
+  await s.pool.query('INSERT INTO agent_assets(id,mime,bytes) VALUES($1,$2,$3)',['broadcast-avatar-v1','image/png',Buffer.from('approved-face')]);
+  await seed(s,{...plan,renderer:'character'});
+  const svc={...services,startCharacter:async()=>({id:'self'}),characterQuote:()=>1,archiveCharacter:async()=>({mime:'image/jpeg',bytes:Buffer.from('wrong-face')})};
+  await mediaStep(s,{},env,svc);await mediaStep(s,{},env,svc);
+  const p={quote:()=>1,generate:async(_s,prompt,_a,schema)=>{calls++;assert.ok(schema.required.includes('identityResult'));assert.match(prompt,/beginning, middle and ending/);return {costMicrodollars:1,value:{action:'publish',text:'A good-looking scene.',alt:'A different face',summary:'Attractive lighting',identityResult,identityEvidence:'The jaw and mouth no longer match the approved character.'}}}};
+  assert.equal((await mediaStep(s,p,env,svc)).status,'character_identity_held');
+  assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'reconsideration');
+  assert.equal(await readyMedia(s),null);await mediaStep(s,p,env,svc);assert.equal(calls,1);
  }finally{await db.close()}
 });
