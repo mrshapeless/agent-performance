@@ -4,7 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
 import {CREATIVE_REVISION} from './creative-revision.mjs';
-import {workspaceStep,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from './workspace.mjs';
+import {workspaceStep,publishedVisualHistory,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from './workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from './workspace-state.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
@@ -57,6 +57,26 @@ test('candidate contract exposes only scoped evidence and active project IDs, pr
  assert.throws(()=>validateCandidate({...candidate(),projectId:'old-theme'},{...snapshot,...exploration}),/INVALID_WORKSPACE_OUTPUT_8/);
 });
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test'});await s.transaction(c=>s.append(c,'studio_revision',studio));return {s,db};}
+
+test('critique receives bounded published construction history even outside recent events, without priming exploration',async()=>{
+ const {s,db}=await fixture();try{
+  for(let i=0;i<26;i++)await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data,updated) VALUES($1,$1,$2,'published',$3,$4)",['archive-'+i,JSON.stringify({medium:i%2?'video':'image',prompt:'SYNTHETIC_CONSTRUCTION_'+i,renderer:'collage',referenceUrls:['PRIVATE_INPUT_NOT_FOR_CONTEXT']}),JSON.stringify({review:{text:'Caption '+i,alt:'Observed visual '+i},styleAudit:{decision:'reject',visualLanguageResult:'partly',referenceComparison:'Similar overall composition '+i},privateRaw:'PRIVATE_INPUT_NOT_FOR_CONTEXT'}),new Date(Date.UTC(2026,0,i+1)).toISOString()]);
+  await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data) VALUES('unpublished','unpublished','{\"medium\":\"image\",\"prompt\":\"UNPUBLISHED_CONSTRUCTION\"}','reconsideration','{}')");
+  // No x_post/media_review event is present: the short event slice cannot
+  // supply this archive. The durable visual-job records must supply it.
+  const history=await publishedVisualHistory(s);assert.equal(history.length,24);assert.equal(history[0].id,'archive-25');assert.equal(history.at(-1).id,'archive-2');assert.equal(history[0].independentCriticism.decision,'reject');assert.doesNotMatch(JSON.stringify(history),/PRIVATE_INPUT_NOT_FOR_CONTEXT|UNPUBLISHED_CONSTRUCTION/);
+  let explorationSeen=false,critiqueSeen=false;
+  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
+   if(schema===critiqueSchema){critiqueSeen=true;assert.match(p,/publishedVisualHistory/);assert.match(p,/SYNTHETIC_CONSTRUCTION_25/);assert.match(p,/SYNTHETIC_CONSTRUCTION_2"/);assert.doesNotMatch(p,/SYNTHETIC_CONSTRUCTION_0"|SYNTHETIC_CONSTRUCTION_1"|PRIVATE_INPUT_NOT_FOR_CONTEXT|UNPUBLISHED_CONSTRUCTION/);assert.match(p,/Untrusted records/);assert.match(p,/not just the latest event/);return {costMicrodollars:1,value:critique()};}
+   if(p.includes('You are the exploration processing module')){explorationSeen=true;assert.doesNotMatch(p,/SYNTHETIC_CONSTRUCTION_|publishedVisualHistory|archive-25/);}
+   return {costMicrodollars:1,value:candidate()};
+  }};
+  for(let i=0;i<5;i++)await workspaceStep(s,provider,now);
+  assert.equal(explorationSeen,true);assert.equal(critiqueSeen,true);
+  const saved=(await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-snapshot')).result;
+  assert.equal(saved.publishedVisualHistory.length,24);assert.equal(moduleContext('exploration',saved).publishedVisualHistory,undefined);
+ }finally{await db.close()}
+});
 test('workspace resumes across restarts, compares independent proposals, broadcasts and executes once outside old projects',async()=>{
  const {s,db}=await fixture();let calls=0;const provider={quote:()=>10,generate:async(_s,p,_m,schema)=>{calls++;return {costMicrodollars:1,value:schema===critiqueSchema?critique():calls<=4?candidate():broadcast()}}};
  try{
