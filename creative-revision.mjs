@@ -1,5 +1,5 @@
 // Bump only when an editorial change invalidates unfinished creative intentions.
-export const CREATIVE_REVISION = 'personal-exploration-2026-10-28-v1';
+export const CREATIVE_REVISION = 'personal-exploration-2026-10-28-v2';
 export const stampCreativePlan = plan => ({...plan, creativeRevision: CREATIVE_REVISION});
 export const isCurrentCreativePlan = plan => plan?.creativeRevision === CREATIVE_REVISION;
 

@@ -168,11 +168,11 @@ test('memory sampling and broadcast ablations change available evidence, not mer
  }finally{await db.close();}
 });
 
-test('new commissions exclude repeated mechanisms and explicit direction conflicts, not model taste alone',()=>{
+test('new commissions select fresh direction-aligned ideas before paying for a render',()=>{
  const cs=modules.map(id=>({...candidate(),id})),v=critique();
  v.assessments[0].materiallyRepeated=true;v.assessments[1].operatorDirectionConflict=true;v.assessments[2].visualLanguageAligned=false;
- assert.deepEqual(selectableCandidates(cs,v).map(c=>c.id),['exploration','self_monitor']);
- const schema=broadcastContract(cs,{evidence:[],state:{goals:[]}},selectableCandidates(cs,v));assert.deepEqual(schema.properties.selectedId.enum,['exploration','self_monitor']);
+ assert.deepEqual(selectableCandidates(cs,v).map(c=>c.id),['self_monitor']);
+ const schema=broadcastContract(cs,{evidence:[],state:{goals:[]}},selectableCandidates(cs,v));assert.deepEqual(schema.properties.selectedId.enum,['self_monitor']);
  assert.equal(schema.properties.selection.items.properties.id.enum.length,4);
 });
 

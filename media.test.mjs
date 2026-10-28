@@ -26,11 +26,11 @@ test('character renderer uses approved portrait, durable Replicate prediction an
  assert.equal((await s.operation('media-1-archive')).result.action,'art_image');
  }finally{await db.close();}
 });
-test('character provider transmits only portrait and disables automatic prompt polishing',async()=>{
+test('character provider transmits only approved portrait to the identity-preserving model',async()=>{
  let body;
- const provider=new MediaProviders(env,async(url,options)=>{assert.match(url,/flux-kontext-pro/);body=JSON.parse(options.body);return Response.json({id:'one'});});
+ const provider=new MediaProviders(env,async(url,options)=>{assert.match(url,/google\/nano-banana/);body=JSON.parse(options.body);return Response.json({id:'one'});});
  await provider.startCharacter(plan,{mime:'image/png',bytes:Buffer.from('face')});
- assert.equal(body.input.input_image,'data:image/png;base64,ZmFjZQ==');assert.equal(body.input.prompt_upsampling,false);assert.equal(body.input.aspect_ratio,'1:1');
+ assert.deepEqual(body.input.image_input,['data:image/png;base64,ZmFjZQ==']);assert.equal(body.input.allow_fallback_model,undefined);assert.equal(body.input.aspect_ratio,'1:1');
  await assert.rejects(provider.startCharacter(plan,null),/REFERENCE_MISSING/);
  assert.throws(()=>validateMediaPlan({...plan,renderer:'character'},{GEMINI_API_KEY:'yes'}),/CHARACTER_NOT_CONFIGURED/);
  assert.throws(()=>validateMediaPlan({...plan,medium:'video',ratio:'16:9',duration:6,renderer:'character'},env),/INVALID_MEDIA_RENDERER/);
