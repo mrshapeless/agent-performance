@@ -12,6 +12,19 @@ import {studioOperationId} from './studio.mjs';
 const studio={projects:[{id:'forgotten-objects',status:'active',nextStep:'Study a forgotten object.'}]};
 const choice=()=>({action:'write',taskId:'first-chapter',projectId:'forgotten-objects',objective:'Explore an abandoned chair.',nextStep:'Revise the ending before commissioning an illustration.',text:'The chair kept a seat for someone who had stopped arriving.',summary:'Start a story from a remembered object.',evidence:[],lesson:{id:'',claim:'',conditions:'',evidence:[],counterevidence:[],status:'hypothesis'}});
 async function fixture(){const db=new PGlite();await db.exec(await readFile(new URL('./schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:1}));await s.complete('birth',1,{name:'Test artist'});await s.transaction(c=>s.append(c,'studio_revision',studio));await reconcileCreativeRevision(s);return {s,db};}
+
+test('working agenda excludes suspended goal backlog and prioritizes current commissions without deleting history',async()=>{
+ const {s,db}=await fixture();try{
+  for(const status of ['paused','completed','abandoned','active'])await s.pool.query('INSERT INTO agent_goals(id,status,objective,why,success) VALUES($1,$2,$3,$4,$5)',[status,status,'Synthetic objective','Synthetic reason','Synthetic outcome']);
+  for(let i=0;i<12;i++)await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step,goal_id,updated) VALUES($1,'p','commissioned','Historical objective','Historical next step',$2,now())",['old-'+i,['paused','completed','abandoned'][i%3]]);
+  for(let i=0;i<10;i++)await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step,goal_id,updated) VALUES($1,'p','active','Current objective','Current next step','active',$2)",['active-'+i,new Date(Date.UTC(2026,0,i+1)).toISOString()]);
+  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step,goal_id,updated) VALUES('current-commission','p','commissioned','Current commission','Execute current choice','active','2025-01-01')");
+  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step,updated) VALUES('independent','p','active','Independent choice','Consider it','2027-01-01')");
+  const rows=await agenda(s);assert.equal(rows.length,8);assert.equal(rows[0].id,'current-commission');assert.equal(rows[1].id,'independent');assert.equal(rows[2].id,'active-9');assert.equal(rows.some(r=>r.id.startsWith('old-')),false);assert.equal(rows.some(r=>r.id==='active-0'),false);
+  assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM agent_agenda WHERE id LIKE 'old-%'")).rows[0].n,12);
+  assert.deepEqual((await s.pool.query("SELECT status FROM agent_goals WHERE id='paused'")).rows[0],{status:'paused'});
+ }finally{await db.close()}
+});
 test('archive reaches old evidence, separates editorial interpretation and excludes private sources',async()=>{
  const {s,db}=await fixture();try{
  await s.transaction(async c=>{await s.append(c,'record_note',{text:'The amber chair was an editorial suggestion.',prompt:'PRIVATE_PROMPT'});await s.append(c,'private_memory',{text:'amber PRIVATE_SECRET'});for(let i=0;i<80;i++)await s.append(c,'draft_text',{text:'Unrelated item '+i});});

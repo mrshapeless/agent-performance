@@ -32,7 +32,9 @@ export async function lessons(store){
  // into independently measured support in planning or the public runtime.
  return rows.map(r=>({...r,recordedStatus:r.status,status:r.status==='retired'?'retired':'hypothesis',effectiveStatus:r.status==='retired'?'retired':'hypothesis',source:'agent_hypothesis',supportVerified:false,evidenceMeaning:'Recorded citations require inspection; agent self-assessment or publication does not establish audience preference or artistic success.'}));
 }
-export async function agenda(store){return (await store.pool.query("SELECT id,project_id,status,objective,next_step,artifact,version,updated FROM agent_agenda WHERE status IN ('active','commissioned') ORDER BY updated LIMIT 8")).rows;}
+// Working attention is not the historical backlog. Suspended/completed goals
+// remain in storage and goal history, without crowding out executable choices.
+export async function agenda(store){return (await store.pool.query("SELECT a.id,a.project_id,a.status,a.objective,a.next_step,a.artifact,a.version,a.updated FROM agent_agenda a WHERE a.status IN ('active','commissioned') AND (a.goal_id IS NULL OR EXISTS(SELECT 1 FROM agent_goals g WHERE g.id=a.goal_id AND g.status='active')) ORDER BY (a.status='commissioned') DESC,a.updated DESC,a.id LIMIT 8")).rows;}
 export async function commissionedTask(store){return (await store.pool.query("SELECT a.* FROM agent_agenda a WHERE status='commissioned' AND (goal_id IS NULL OR EXISTS(SELECT 1 FROM agent_goals g WHERE g.id=a.goal_id AND g.status='active')) ORDER BY updated LIMIT 1")).rows[0]??null;}
 export async function reconcileAgenda(store){
  await store.pool.query(`UPDATE agent_agenda a SET status='completed',updated=now(),version=version+1
