@@ -2,5 +2,13 @@
   "public/films/afterimage.mp4": "7df2b44f6f70983875570ac73733a263a00dcbb25e811c4abd3ed59d87d0f18d",
   "public/series/afterimage-01.jpg": "2774f1d275c7aafc6e08ecfbf70151cb85d4691c7167d527d1e22a80b0bff179",
   "public/series/afterimage-02.jpg": "ffcdb5b5c187246c687f4a2e0727dc3c84510527f4e902a6b681d7e0595b9166",
-  "public/series/afterimage-03.jpg": "3605cc75e7f28eab84b92a1c62290a13dfccd6bd3d6839011fabbbdb37e71afb"
+  "public/series/afterimage-03.jpg": "3605cc75e7f28eab84b92a1c62290a13dfccd6bd3d6839011fabbbdb37e71afb",
+  "public/films/portrait-wind.mp4": "1198b295f9971887bf1cfdec2750907ad8d161aa0968ea9796c1a5ddf05d2e98",
+  "public/series/portrait-wind.jpg": "8f31725653860bfa0a8adba91e21f77e31d21b984ae49b96d15156582c7399c5",
+  "public/films/portrait-visitor.mp4": "df741c6c252216304436868691cf46e7303c7d59bf93ce0e9674cb75175ca1d7",
+  "public/series/portrait-visitor.jpg": "7146eb74acdba1d3dd496ba3e49297cbedc1375e90248aaa24b467f408dc42ef",
+  "public/films/portrait-night-bus.mp4": "f53563ad577ae524fcb4839bf78e2a19feae8e830df7e6e855e8ee9e9066ee0a",
+  "public/series/portrait-night-bus.jpg": "2635d3b5828a9fe2f572773e52401ff58bc220bb6440c58e8353bf3a4865d115",
+  "public/films/portrait-off-air.mp4": "b4ece7ecb42fb208e1d2423bb1889be0e6f3fa46bd6a4ca75a3a4deb77e90ae9",
+  "public/series/portrait-off-air.jpg": "99a658e02cf23f0b804ffa9f9ea620d1778432c04d79b8cf9204c2e724104882"
 }

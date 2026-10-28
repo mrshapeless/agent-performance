@@ -106,6 +106,22 @@
   ],
   "rewrites": [
     {
+      "source": "/collections",
+      "destination": "/collections.html"
+    },
+    {
+      "source": "/small-interruptions",
+      "destination": "/small-interruptions.html"
+    },
+    {
+      "source": "/out-of-frame",
+      "destination": "/out-of-frame.html"
+    },
+    {
+      "source": "/character",
+      "destination": "/character.html"
+    },
+    {
       "source": "/work/:id",
       "destination": "/work-detail.html"
     },
