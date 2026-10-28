@@ -106,6 +106,14 @@
   ],
   "rewrites": [
     {
+      "source": "/nothing-important",
+      "destination": "/nothing-important.html"
+    },
+    {
+      "source": "/unplanned",
+      "destination": "/unplanned.html"
+    },
+    {
       "source": "/soft-days",
       "destination": "/small-interruptions.html"
     },
