@@ -1,5 +1,6 @@
 import {loadReferences,referenceImageInstruction} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
+import {composeCollage} from './collage.mjs';
 
 export const VIDEO_MODEL='google/veo-3.1-fast';
 export const MAX_VIDEO_BYTES=14_000_000;
@@ -22,6 +23,7 @@ export class MediaProviders {
  imageQuote(prompt){return new AppearanceImage(this.env,this.fetcher).quote(prompt);}
  references(ids){return loadReferences(ids,this.fetcher);}
  image(prompt,ratio,refs=[]){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?referenceImageInstruction+' Your chosen work: '+prompt:prompt,ratio,refs);}
+ collage(layout,sources,ratio){return composeCollage(layout,sources,ratio);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
  async replicate(method,path,body){

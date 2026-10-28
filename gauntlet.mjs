@@ -49,6 +49,7 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
   if(request.method==='POST'){
    try{const raw=await request.text();if(Buffer.byteLength(raw,'utf8')>4000)throw Error();body=JSON.parse(raw);action=body.action;if(action!=='feedback'&&raw.length>256)throw Error();}catch{return json({error:'INVALID_INPUT'},400);}
    if(!['init','step','plan','render','advance','feedback'].includes(action))return json({error:'INVALID_ACTION'},400);
+   if(body.renderer!==undefined&&(action!=='plan'||body.renderer!=='collage'))return json({error:'INVALID_RENDERER_TEST'},400);
    if(action==='feedback'&&(!/^[a-zA-Z0-9_-]{1,100}$/.test(body.assetId??'')||!['pass','fail'].includes(body.verdict)||!['observation','nextExperiment'].every(k=>typeof body[k]==='string'&&body[k].trim().length>0&&body[k].length<=1200)))return json({error:'INVALID_FEEDBACK'},400);
   }
   const pool=await openPool();let guard;
@@ -77,7 +78,11 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    // This diagnostic run tests still-image construction; never create an unaccounted
    // Replicate reservation in a separate ledger or upload a test movie to public Blob.
    const testEnv={...env,REPLICATE_API_TOKEN:undefined,BLOB_READ_WRITE_TOKEN:undefined,VIDEO_CADENCE_ENABLED:'false',X_REPLIES_ENABLED:'false'};
-   const testProvider=()=>{const p=createProvider();return {quote:p.quote.bind(p),generate:(system,prompt,...args)=>p.generate(system,prompt+' Diagnostic capability: only still images and text are available in this isolated run; no video generator.',...args)};};
+   const testProvider=()=>{const p=createProvider();return {quote:p.quote.bind(p),generate:(system,prompt,media,schema,refs)=>{
+    const collageTest=action==='plan'&&body?.renderer==='collage'&&schema?.properties?.alternatives;
+    if(collageTest){schema=structuredClone(schema);const a=schema.properties.alternatives.items;a.properties.renderer={type:'string',enum:['collage']};a.required=[...new Set([...a.required,'renderer'])];schema.properties.medium.enum=['image'];}
+    return p.generate(system,prompt+' Diagnostic capability: only still images and text are available in this isolated run; no video generator.'+(collageTest?' This explicit renderer qualification uses collage for image alternatives. This tests execution capability, not a claim that the agent independently preferred this renderer. Preserve the self-authored idea.':''),media,schema,refs);
+   }};};
    // Virtual slots isolate replay keys only. Actual event timestamps remain real.
    const slotTime=new Date(new Date(state.started).getTime()+state.cycle*7200000);
    const planId='x-plan-'+Math.floor(slotTime.getTime()/7200000);
@@ -108,7 +113,9 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
     if(decision.choice!=='commission')return json({status:'non_media_choice',choice:decision.choice});
     const sid=await studioOperationId(store,slotTime);if(!await store.operation(sid)){const r=await store.begin(sid,'step',()=>({maximum:0}));if(!r.replay)await store.complete(sid,0,{action:'gauntlet_studio_snapshot'});}
     const result=await socialStep(store,testProvider(),{...testEnv,X_ENABLED:'true'},slotTime,noPublishingClient);
-    const plan=await store.operation(planId);if(plan?.result?.action==='x_draft'&&['image','video'].includes(plan.result.medium))await enqueueMedia(store,planId,plan.result);
+    const plan=await store.operation(planId);
+    if(body?.renderer==='collage'&&plan?.result?.renderer!=='collage')return json({error:'RENDERER_TEST_NOT_SELECTED'},409);
+    if(plan?.result?.action==='x_draft'&&['image','video'].includes(plan.result.medium))await enqueueMedia(store,planId,plan.result);
     return json(result);
    }
    if(!job)return json({status:'no_media_job'});

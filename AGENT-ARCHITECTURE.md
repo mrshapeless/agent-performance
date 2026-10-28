@@ -4,9 +4,9 @@ Research and implementation review: 27 October 2026.
 
 ## Creative correction path (28 October)
 
-Exploration receives external observations and private reference pixels without
+Exploration receives viewer conversations and private reference pixels without
 inheriting the current persona motifs, project list or previous broadcast. The
-other modules retain continuity. An independent comparison precedes arbitration;
+other modules retain continuity. News remains available to perception; it does not anchor the independent exploration channel. An independent comparison precedes arbitration;
 weak creative proposals receive one durable revision, followed by advisory review.
 Recent visual-review fields survive memory projection rather than disappearing
 into generic publication summaries. Operator corrections remain attributed to the
@@ -19,6 +19,16 @@ can request one actual revision before rendering. Old queued jobs retain their
 contract. Unknown interrupted preflight calls are quarantined without replaying
 the paid request or starving later media jobs. Artistic rejection still does not
 veto publication.
+
+Image alternatives may select either one image-model render or a raster collage.
+The collage path authors a bounded layout, generates two or three independent
+sources in separate durable operations, then uses numeric crops, polygon masks,
+placement and source-specific resolution to compose their actual pixels. No final
+image-model pass harmonizes the assembly. Preflight revisions change the executable
+layout; changing only a caption is insufficient. Intermediate sources stay out of
+the public journal, public asset endpoint and final-work taste profiling.
+Existing image/video jobs keep their original renderer. Real visual evaluation is
+still required: layered construction alone does not establish an interesting work.
 
 The private gauntlet endpoint exercises the same controller, planner and image
 renderer in an isolated database schema. It has no X credentials or publishing

@@ -36,6 +36,8 @@
   "cli.mjs",
   "cloud.mjs",
   "cloud.test.mjs",
+  "collage.mjs",
+  "collage.test.mjs",
   "COGNITION.md",
   "cognition.mjs",
   "cognition.test.mjs",

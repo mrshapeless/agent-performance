@@ -8,6 +8,13 @@ import { createHandler, cloudRun } from './cloud.mjs';
 const fixture = { name: 'TEST ONLY', voice: 'test', interests: 'test', visualDirection: 'test', summary: 'Synthetic fixture' };
 const secret = 'a'.repeat(40);
 
+test('public asset endpoint hides intermediate collage sources but serves final art',async()=>{
+  let reads=0;
+  const handler=createHandler({env:{},openStore:async()=>({operation:async id=>id==='part'?{result:{purpose:'collage_source'}}:null,asset:async()=>{reads++;return {mime:'image/png',bytes:Buffer.from('synthetic final pixels')};}}),createProvider:()=>assert.fail('read only')});
+  assert.equal((await handler(new Request('https://example.org/api/asset?id=part'))).status,404);assert.equal(reads,0);
+  const final=await handler(new Request('https://example.org/api/asset?id=final'));assert.equal(final.status,200);assert.equal(await final.text(),'synthetic final pixels');assert.equal(reads,1);
+});
+
 test('Postgres schema and lifecycle: restart, replay, unresolved exclusion and daily cap', async () => {
   const db = new PGlite();
   await db.exec(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
@@ -125,4 +132,3 @@ test('uncertain provider result blocks later automatic spending', async()=>{
     assert.equal(calls,1);assert.equal((await store.publicRuntime()).unresolved,1);
   }finally{await db.close();}
 });
-

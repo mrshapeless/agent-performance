@@ -24,8 +24,8 @@ test('candidate contract exposes only scoped evidence and active project IDs, pr
  const perception=moduleContext('perception',snapshot),exploration=moduleContext('exploration',snapshot);
  const p=candidateContract(perception),e=candidateContract(exploration);
  assert.deepEqual(p.properties.evidence.items.enum,['post:1','news:0']);assert.deepEqual(p.properties.projectId.enum,['','old-theme']);
- assert.deepEqual(e.properties.evidence.items.enum,['news:0']);assert.deepEqual(e.properties.projectId.enum,['']);assert.ok(!e.properties.action.enum.includes('develop'));
- assert.equal(e.properties.goalId.pattern,candidateSchema.properties.goalId.pattern);
+ assert.equal(e.properties.evidence.maxItems,0);assert.deepEqual(e.properties.projectId.enum,['']);assert.ok(!e.properties.action.enum.includes('develop'));
+ assert.equal(e.properties.goalId.pattern,candidateSchema.properties.goalId.pattern);assert.deepEqual(moduleContext('exploration',{...snapshot,evidence:[...snapshot.evidence,{id:'visitor',kind:'conversation',source:'visitor'},{id:'self',kind:'conversation',source:'agent_utterance'}]}).evidence.map(e=>e.id),['visitor']);
  assert.equal(candidateSchema.properties.evidence.items.enum,undefined);assert.equal(candidateSchema.properties.projectId.enum,undefined);
  const empty=candidateContract({studio:{projects:[]},evidence:[]});assert.equal(empty.properties.evidence.maxItems,0);assert.equal(empty.properties.evidence.items.enum,undefined);
  assert.throws(()=>validateCandidate({...candidate(),evidence:['note:2']},{...snapshot,...perception}),/INVALID_WORKSPACE_OUTPUT_10/);
@@ -85,7 +85,7 @@ test('initial module calls receive the same scoped citation contract used by run
  try{
   await s.transaction(async c=>{await s.append(c,'x_post',{text:'Synthetic published work.'});await s.append(c,'workspace_note',{text:'Older hypothesis.'});await s.append(c,'observation',{news:[{source:'Synthetic source',title:'New cultural material'}]});});
   for(const name of modules)assert.equal((await workspaceStep(s,provider,now)).module,name);
-  assert.deepEqual(seen[2].properties.evidence.items.enum,['news:0']);assert.deepEqual(seen[2].properties.projectId.enum,['']);
+  assert.equal(seen[2].properties.evidence.maxItems,0);assert.deepEqual(seen[2].properties.projectId.enum,['']);
   assert.ok(!seen[1].properties.evidence.items.enum.includes('news:0'));assert.ok(seen[0].properties.evidence.items.enum.includes('news:0'));assert.deepEqual(seen[0].properties.projectId.enum,['','old-theme']);
  }finally{await db.close();}
 });
@@ -130,7 +130,7 @@ test('memory sampling and broadcast ablations change available evidence, not mer
   await s.transaction(async c=>{await s.append(c,'workspace_note',{text:'An older unresolved cultural question.',evidence:[],links:[]});await s.append(c,'observation',{news:[{source:'Culture',title:'An unfamiliar visual ritual',url:'https://example.org/ritual'}]});await s.append(c,'workspace_broadcast',{selfModel:{desire:'A persistent interest'},attention:['exploration']});});
   const evidence=await workspaceEvidence(s,1),state=await workspaceState(s);const snapshot={studio,state,evidence,tasks:[]};
   const memory=moduleContext('recall',snapshot),exploration=moduleContext('exploration',snapshot);
-  assert.ok(memory.evidence.some(e=>e.kind==='workspace_note'));assert.ok(exploration.evidence.some(e=>e.kind==='headline'));assert.ok(!memory.evidence.some(e=>e.kind==='headline'));
+  assert.ok(memory.evidence.some(e=>e.kind==='workspace_note'));assert.ok(!exploration.evidence.some(e=>e.kind==='headline'));assert.ok(moduleContext('perception',snapshot).evidence.some(e=>e.kind==='headline'));assert.ok(!memory.evidence.some(e=>e.kind==='headline'));
   const withoutMemory=moduleContext('recall',{...snapshot,evidence:[]});assert.equal(withoutMemory.evidence.length,0);
   const withoutBroadcast=moduleContext('exploration',{...snapshot,state:{...state,broadcast:null}});assert.equal(withoutBroadcast.previousBroadcast,null);assert.equal(exploration.previousBroadcast,null);assert.deepEqual(exploration.goals,[]);assert.deepEqual(exploration.studio,{projects:[]});assert.deepEqual(exploration.tasks,[]);
  }finally{await db.close();}

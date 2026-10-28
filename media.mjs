@@ -1,5 +1,6 @@
 import {validateReferenceIds} from './visual-references.mjs';
 import {preflightStep} from './creative-preflight.mjs';
+import {collageLayoutStep,collageSourceStep,validateCollage} from './collage.mjs';
 import {randomUUID} from 'node:crypto';
 import {constitution} from './domain.mjs';
 import {MediaProviders,mediaCapabilities} from './media-providers.mjs';
@@ -10,6 +11,8 @@ export const mediaPlanSchema=object({intent:{type:'string',enum:['project','expe
 mediaPlanSchema.properties.text={type:'string',maxLength:240,pattern:'^[\\x20-\\x7e\\r\\n]*$'};
 for(const [key,maxLength] of [['prompt',4000],['alt',500],['summary',1200],['diversityComparison',1400],['continuationReason',700]])mediaPlanSchema.properties[key]={type:'string',maxLength};
 for(const key of Object.keys(mediaPlanSchema.properties.alternatives.items.properties))mediaPlanSchema.properties.alternatives.items.properties[key]={type:'string',maxLength:key==='renderPrompt'?2000:key==='id'?80:600};
+mediaPlanSchema.properties.alternatives.items.properties.renderer={type:'string',enum:['single','collage']};
+mediaPlanSchema.properties.renderer={type:'string',enum:['single','collage']};
 
 export function validateMediaPlan(v,env,{requireAlternatives=false}={}){
  const medium=v.medium??'text';
@@ -27,9 +30,12 @@ export function validateMediaPlan(v,env,{requireAlternatives=false}={}){
   if(new Set(alternatives.map(a=>normalize(a.visualMechanism))).size!==3||new Set(alternatives.map(a=>normalize(a.viewerExperience))).size!==3)throw Error('DUPLICATE_CREATIVE_ALTERNATIVES');
   const chosen=alternatives.find(a=>a.id===v.selectedId);
   if(typeof chosen.renderPrompt!=='string'||chosen.renderPrompt.trim().length<10||chosen.renderPrompt.length>4000)throw Error('MISSING_SELECTED_RENDER_PROMPT');
-  v={...v,prompt:chosen.renderPrompt};
+  v={...v,prompt:chosen.renderPrompt,renderer:chosen.renderer??'single'};
  }
- return {...v,medium,...(requireAlternatives?{selectionVersion:'creative-v2'}:{}),...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
+ const renderer=v.renderer??'single';
+ if(!['single','collage'].includes(renderer)||(renderer==='collage'&&medium!=='image'))throw Error('INVALID_MEDIA_RENDERER');
+ if(renderer==='collage'&&v.collage)v={...v,collage:validateCollage(v.collage)};
+ return {...v,medium,renderer,...(requireAlternatives?{selectionVersion:'creative-v2'}:{}),...(medium==='image'?{referenceIds:validateReferenceIds(v.referenceIds??[2,10,17])}:{})};
 }
 export async function enqueueMedia(store,planId,plan){
  await store.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES($1,$2,$3,'queued') ON CONFLICT(id) DO NOTHING",['media-'+planId.replace('x-plan-',''),planId,JSON.stringify(plan)]);
@@ -64,6 +70,11 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  let op=null,maximum=0;
  try{
   if(job.state==='queued'){
+   if(job.plan.renderer==='collage'&&!job.plan.collage){
+    const result=await collageLayoutStep(store,provider,services,job);
+    if(result.ready){const saved=await store.pool.query('UPDATE agent_media_jobs SET plan=$1 WHERE id=$2 AND lease_token=$3 RETURNING id',[JSON.stringify({...job.plan,collage:result.layout}),job.id,job.lease_token]);if(!saved.rows.length)throw Error('MEDIA_LEASE_LOST');}
+    await patch(store,job,'queued',{...(result.ready?{referenceHashes:result.referenceHashes}:{})});return {status:'collage_planned',ready:result.ready};
+   }
    if(job.plan.selectionVersion==='creative-v2'&&!job.data.preflightReady){
     const result=await preflightStep(store,provider,job);
     if(['review_pending','revision_pending'].includes(result.audit.status)){
@@ -79,6 +90,16 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     }
     await patch(store,job,'queued',{preflightReady:result.ready,preflight:result.audit});
     return {status:'creative_preflight',phase:result.audit.status,ready:result.ready};
+   }
+   if(job.plan.renderer==='collage'){
+    const result=await collageSourceStep(store,services,job);
+    if(!result.ready){await patch(store,job,'queued');return {status:'collage_layer_created',layerId:result.layerId??null};}
+    op=job.id+'-render';maximum=0;
+    const req=await store.begin(op,'step',()=>({maximum}));
+    if(req.replay){if(req.status==='complete'&&req.result?.assetId){await patch(store,job,'rendered',{assetId:req.result.assetId});return {status:'recovered_render'};}throw Error('COLLAGE_OUTCOME_UNKNOWN');}
+    const asset=await services.collage(job.plan.collage,result.sources,job.plan.ratio);
+    await store.complete(op,0,{action:'art_image',text:job.plan.alt,alt:job.plan.alt,summary:job.plan.summary,projectId:job.plan.projectId??null,intent:job.plan.intent??null,assetId:op,mime:asset.mime,renderer:'collage',manifestHash:result.manifestHash},asset);
+    await patch(store,job,'rendered',{assetId:op,renderer:'collage',sourceAssetIds:result.sources.map(s=>s.assetId)});return {status:'collage_composed'};
    }
    op=job.id+'-render';maximum=job.plan.medium==='image'?services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0):services.videoQuote();
    const req=await store.begin(op,'step',()=>({maximum,budgetProvider:job.plan.medium==='video'?'replicate':null}));
@@ -176,6 +197,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   const ready=!status.processing_info||status.processing_info.state==='succeeded';
   await patch(store,job,ready?'ready':'processing_x');return {status:ready?'media_ready':'x_media_processing'};
  }catch(error){
+  if(error.collageOperation){op=error.collageOperation;maximum=error.collageMaximum;}
   if(['UNRESOLVED_OPERATION','DAILY_ALLOWANCE_EXHAUSTED'].includes(error.message)){await patch(store,job,job.state);return {status:'media_waiting_for_allowance_or_lane'};}
   // Failed read/poll calls may be retried; paid generation/review calls may not.
   if(!op&&['processing','uploading','processing_x'].includes(job.state)&&!['VIDEO_GENERATION_FAILED','VIDEO_PROCESSING_TIMEOUT','X_MEDIA_EXPIRED','X_MEDIA_PROCESSING_FAILED','MEDIA_UNTRUSTED_URL','MEDIA_TOO_LARGE','MEDIA_INVALID_MP4'].includes(error.message)){

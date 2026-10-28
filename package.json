@@ -9,13 +9,12 @@
   "scripts": {
     "test": "node --test *.test.mjs",
     "start": "node --env-file=.env cli.mjs",
-    "migrate": "node migrate.mjs",
-    "check:privacy": "node privacy-check.mjs",
-    "prepare": "git config core.hooksPath .githooks"
+    "migrate": "node migrate.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.2",
-    "pg": "8.16.3"
+    "pg": "8.16.3",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14"

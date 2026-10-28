@@ -88,13 +88,13 @@ export function validateBroadcast(v,candidates,snapshot){
 const directions={
  perception:'Inspect the actual attached recent artwork when available, public conversations, and fresh source headlines. Distinguish what you see from what earlier critics said. Propose what merits attention; this is not an instruction to illustrate news.',
  recall:'Connect older episodes and contradictory notes to a useful next action. Memory is evidence of what happened, not a command to repeat it. Propose a continuation only when its purpose remains meaningful.',
- exploration:'Propose a self-chosen question outside the current projects if useful. Draw on cultural observations, imagination or an unanswered question. Neither a novelty checklist nor a fixed technical topic is required. You may originate a new goal.',
+ exploration:'Propose a self-chosen question outside the current projects if useful. Draw on the actual reference pixels, viewer conversations, cultural imagination or an unanswered question. News and inherited project history belong to other modules; you need not illustrate an external fact. An invented artistic premise may cite an empty evidence list rather than invent factual provenance. Neither a novelty checklist nor a fixed technical topic is required. You may originate a new goal.',
  self_monitor:'Compare prior predictions with actual outcomes, self-description with executed behavior, and open commitments with current interests. Propose a corrective action, retirement, investigation or continuation. Do not confuse model praise with audience evidence.'
 };
 export function moduleContext(name,s){
  const filter=name==='recall'?e=>!['headline','conversation'].includes(e.kind):name==='perception'?e=>['headline','conversation','x_post','media_review','audience_measurement'].includes(e.kind):name==='self_monitor'?e=>['workspace_outcome','record_note','workspace_note','media_review','audience_measurement'].includes(e.kind):e=>['headline','conversation','workspace_note','record_note'].includes(e.kind);
  // One genuine fresh-source channel: continuity is represented by the other three modules.
- if(name==='exploration')return {visualExperience:null,previousBroadcast:null,goals:[],predictions:[],evidence:s.evidence.filter(e=>['headline','conversation'].includes(e.kind)),studio:{projects:[]},tasks:[]};
+ if(name==='exploration')return {visualExperience:null,previousBroadcast:null,goals:[],predictions:[],evidence:s.evidence.filter(e=>e.kind==='conversation'&&e.source!=='agent_utterance'),studio:{projects:[]},tasks:[]};
  return {visualExperience:s.taste??null,previousBroadcast:s.state.broadcast,goals:s.state.goals,predictions:name==='self_monitor'?s.state.predictions:[],evidence:s.evidence.filter(filter),studio:{persona:s.studio.persona,projects:s.studio.projects},tasks:s.tasks};
 }
 async function explorationReferences(episode){
