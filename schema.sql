@@ -128,3 +128,5 @@ CREATE TABLE IF NOT EXISTS agent_taste_feedback (
 );
 
 CREATE TABLE IF NOT EXISTS agent_tool_projects (id text PRIMARY KEY, tool text NOT NULL CHECK(tool IN ('grok','cursor')),goal_id text NOT NULL DEFAULT '', brief jsonb NOT NULL,state text NOT NULL CHECK(state IN ('queued','running','returned','reviewed')),result text,review jsonb,created timestamptz NOT NULL DEFAULT now(),updated timestamptz NOT NULL DEFAULT now());
+ALTER TABLE agent_tool_projects ADD COLUMN IF NOT EXISTS quality_evidence jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE agent_tool_projects ADD COLUMN IF NOT EXISTS deliveries jsonb NOT NULL DEFAULT '[]';
