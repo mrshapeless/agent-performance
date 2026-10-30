@@ -64,9 +64,9 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    if(action==='decision-check'){
     const store=new PostgresStore(scopedPool(pool)),provider=createProvider();
     const operations=(await store.pool.query("SELECT id,status,result->>'action' AS action,result->>'failureCode' AS failure_code FROM agent_operations WHERE id LIKE $1 ORDER BY id DESC LIMIT 18",['workspace-v1-'+CREATIVE_REVISION+'-%'])).rows;
-    const id='decision-check-v1-'+Math.floor(now().getTime()/3600000);
+    const id='decision-check-v2-'+Math.floor(now().getTime()/3600000);
     const candidates=Array.from({length:4},(_,i)=>({id:'synthetic-candidate-'+i,evidence:['synthetic-evidence-0']}));
-    const snapshot={evidence:Array.from({length:32},(_,i)=>({id:'synthetic-evidence-'+i,kind:'workspace_note'})),state:{goals:Array.from({length:16},(_,i)=>({id:'synthetic-goal-'+i})),predictions:[]}};
+    const snapshot={evidence:Array.from({length:64},(_,i)=>({id:'synthetic-evidence-'+i,kind:'workspace_note'})),state:{goals:Array.from({length:16},(_,i)=>({id:('synthetic-goal-'+i+'-').padEnd(61,'x')})),predictions:[]}};
     const system='Synthetic schema compatibility test. Return valid JSON. No output will be executed.';
     const prompt='Choose synthetic-candidate-0, with no goal changes and no working policies. This is a diagnostic with no real data.';
     const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true,operations});

@@ -14,6 +14,8 @@ test('decision failure survives unrelated activity and clears only after a succe
 test('provider diagnostics classify errors without exposing provider text or credentials',()=>{
  const e=geminiFailure(400,{error:{message:'schema produces a constraint with too many states secret-private-input'}});
  assert.equal(e.code,'GEMINI_SCHEMA_COMPLEXITY');assert.doesNotMatch(JSON.stringify(e),/secret-private/);
+ assert.equal(geminiFailure(400,[{error:{message:'schema produces a constraint with too many states'}}]).code,'GEMINI_SCHEMA_COMPLEXITY');
+ assert.equal(geminiFailure(400,{error:{message:JSON.stringify([{error:{message:'schema produces a constraint with too many states'}}])}}).code,'GEMINI_SCHEMA_COMPLEXITY');
  assert.equal(geminiFailure(400,{error:{message:'API key not valid'}}).code,'GEMINI_KEY_INVALID');
  assert.equal(geminiFailure(429,null).code,'GEMINI_RATE_LIMITED');
  assert.equal(geminiFailure(503,{error:{message:'private provider detail'}}).code,'GEMINI_HTTP_503');

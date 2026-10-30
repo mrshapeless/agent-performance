@@ -1,6 +1,14 @@
 // Provider messages may echo input. Persist only a bounded diagnostic category.
 export function geminiFailure(status,body){
-  const message=String(body?.error?.message??'');
+  // Some Google gateways wrap the standard error in an array or JSON string.
+  let envelope=body;
+  for(let i=0;i<4;i++){
+    if(Array.isArray(envelope)){envelope=envelope[0];continue;}
+    if(typeof envelope==='string'){try{envelope=JSON.parse(envelope);continue;}catch{break;}}
+    if(typeof envelope?.error?.message==='string'&&/^[\[{]/.test(envelope.error.message.trim())){try{envelope=JSON.parse(envelope.error.message);continue;}catch{}}
+    break;
+  }
+  const message=String(envelope?.error?.message??'');
   const reason=/API key not valid|API_KEY_INVALID/i.test(message)?'KEY_INVALID':
     /too many states|too much branching|schema.*complex|constraint.*states/i.test(message)?'SCHEMA_COMPLEXITY':
     /schema|generation_config|generationConfig/i.test(message)?'SCHEMA_INVALID':
@@ -25,7 +33,8 @@ export class Gemini {
     return Math.ceil((Buffer.byteLength(system + prompt) + 2048) * this.inputPrice + 8192 * this.outputPrice);
   }
   async generate(system, prompt, media=null, responseJsonSchema=null,references=[]) {
-    const response = await this.fetcher(
+    let response;
+    try{response = await this.fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
       {
         method: 'POST',
@@ -36,7 +45,7 @@ export class Gemini {
           contents: [{ role: 'user', parts: [{ text: prompt }, ...(media?[{inlineData:{mimeType:media.mime,data:Buffer.from(media.bytes).toString('base64')}}]:[]),...references.flatMap((a,i)=>[{text:'REFERENCE '+(i+1)+' (not the candidate)'},{inlineData:{mimeType:a.mime,data:Buffer.from(a.bytes).toString('base64')}}])] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}) },
         }),
-      });
+      });}catch(cause){const error=Error('Gemini transport failed');error.code=cause?.name==='TimeoutError'?'GEMINI_TIMEOUT':'GEMINI_NETWORK_FAILED';throw error;}
     if (!response.ok) throw geminiFailure(response.status,await response.json().catch(()=>null));
     const body = await response.json();
     const usage = body.usageMetadata;
