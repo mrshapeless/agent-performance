@@ -7,6 +7,7 @@ import {PostgresStore} from './postgres.mjs';
 import {axes} from './taste.mjs';
 import {workspaceEvidence} from './workspace-state.mjs';
 import {scopedPool} from './instance.mjs';
+import {CREATIVE_REVISION} from './creative-revision.mjs';
 
 const secret='synthetic-test-secret-not-a-credential';
 const ids=['perception','recall','exploration','self_monitor'];
@@ -52,6 +53,17 @@ async function fixture(){
  const call=async action=>{const r=await request(action);assert.equal(r.status,200,await r.clone().text());return r.json();};
  return {db,original,request,call,pool,setLocked:v=>{locked=v;},get opened(){return opened;},get renderedPrompt(){return renderedPrompt;},get renderCalls(){return renderCalls;}};
 }
+
+test('decision diagnostics expose only current revision operation metadata and reuse synthetic request',async()=>{
+ const f=await fixture();try{
+  const id='workspace-v1-'+CREATIVE_REVISION+'-498157-broadcast';
+  for(const op of [id,'workspace-v1-zzz-old-498000-broadcast'])await f.db.query("INSERT INTO generation_02.agent_operations(id,kind,status,amount,day,result) VALUES($1,'step','complete',0,'2026-10-28',$2)",[op,JSON.stringify({action:'cognition_failed',failureCode:'GEMINI_HTTP_400',privateContext:'DO_NOT_COPY'})]);
+  const first=await f.call('decision-check'),second=await f.call('decision-check');
+  assert.equal(first.status,'passed');assert.equal(second.replay,true);
+  assert.deepEqual(first.operations,[{id,status:'complete',action:'cognition_failed',failure_code:'GEMINI_HTTP_400'}]);
+  assert.doesNotMatch(JSON.stringify(second),/DO_NOT_COPY|zzz-old/);
+ }finally{await f.db.close();}
+});
 
 test('private gauntlet seeds nonempty FK-linked experience, executes cognition through preflight and pixels, never publishes or mutates source',async()=>{
  const f=await fixture();try{
