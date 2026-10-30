@@ -145,13 +145,14 @@ export async function workspaceStep(store,provider,now=new Date()){
  const open=(await store.pool.query("SELECT id FROM agent_operations WHERE id LIKE 'workspace-v1-%-snapshot' AND result->>'creativeRevision'=$1 AND status='complete' AND NOT EXISTS (SELECT 1 FROM agent_operations b WHERE b.id=replace(agent_operations.id,'-snapshot','-broadcast')) ORDER BY id LIMIT 1",[CREATIVE_REVISION])).rows[0];
  const episode=open?open.id.replace(/-snapshot$/,''):'workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000);
  const prior=await store.operation(episode+'-broadcast');
+ const compatibilityRepair=prior?.result?.failureCode==='GEMINI_HTTP_400';
  const repair=prior?.result?.action==='cognition_failed'&&!prior.result.failureCode;
  const firstRepair=repair?await store.operation(episode+'-broadcast-repair1'):null;
  const linkRepair=firstRepair?.result?.failureCode==='INVALID_WORKSPACE_OUTPUT_14';
  const secondRepair=linkRepair?await store.operation(episode+'-broadcast-repair2'):null;
  const schemaRepair=secondRepair?.result?.failureCode==='WORKSPACE_PROVIDER_FAILED';
- const broadcastId=episode+'-broadcast'+(schemaRepair?'-repair3':linkRepair?'-repair2':repair?'-repair1':'');
- const done=schemaRepair?await store.operation(broadcastId):linkRepair?secondRepair:repair?firstRepair:prior;if(done)return {status:done.status,replay:true};
+ const broadcastId=episode+'-broadcast'+(compatibilityRepair?'-schema-v2':schemaRepair?'-repair3':linkRepair?'-repair2':repair?'-repair1':'');
+ const done=compatibilityRepair||schemaRepair?await store.operation(broadcastId):linkRepair?secondRepair:repair?firstRepair:prior;if(done)return {status:done.status,replay:true};
  let snapshot=(await store.operation(episode+'-snapshot'))?.result;
  if(!snapshot){
   const evidence=await workspaceEvidence(store,Math.floor(now.getTime()/3600000));

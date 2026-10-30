@@ -242,6 +242,15 @@ test('working instructions survive restart, change next module input, and can be
 });
 
 import {validatePolicies,workingPolicy} from './adaptive-policy.mjs';
+test('legacy HTTP400 arbitration receives one durable schema repair without rerunning modules',async()=>{
+ const {s,db}=await fixture();let proposals=0,decisions=0;
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>{
+  if(schema===critiqueSchema)return {costMicrodollars:1,value:critique()};
+  if(p.startsWith('Arbitrate')){decisions++;if(decisions===1)throw Error('Gemini HTTP 400; reservation retained');return {costMicrodollars:1,value:broadcast()};}
+  proposals++;return {costMicrodollars:1,value:candidate()};
+ }};
+ try{for(let i=0;i<9;i++)await workspaceStep(s,provider,now);assert.equal(proposals,4);assert.equal(decisions,2);assert.ok((await workspaceState(s)).broadcast);await workspaceStep(s,provider,now);assert.equal(decisions,2);}finally{await db.close();}
+});
 test('adaptive instructions expire, reject fabricated and visitor evidence, and are replaced rather than accumulated',()=>{
  const p={module:'exploration',instruction:'Try a new method',reason:'A recorded failure',evidence:['1'],test:'Compare actual output',expiresAfterHours:2};
  assert.throws(()=>validatePolicies([p],[{id:'1',kind:'conversation'}]));

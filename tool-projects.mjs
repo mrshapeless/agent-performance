@@ -50,7 +50,8 @@ export async function toolProjectAPI(request,store,provider){
  }
  if(!/^[a-zA-Z0-9-]{1,100}$/.test(b.id??''))return reply({error:'INVALID_ID'},400);
  if(b.action==='start'){
-  const r=await store.pool.query("UPDATE agent_tool_projects SET state='running',updated=now() WHERE id=$1 AND state='queued' RETURNING id",[b.id]);return reply({status:r.rows.length?'running':'unchanged'});
+  const r=await store.pool.query("UPDATE agent_tool_projects SET state='running',updated=now() WHERE id=$1 AND state='queued' RETURNING id",[b.id]);
+  return r.rows.length?reply({status:'running',claimed:true,id:b.id}):reply({error:'ALREADY_CLAIMED',claimed:false},409);
  }
  if(b.action==='revise'){
   const r=await store.pool.query("UPDATE agent_tool_projects SET deliveries=deliveries || jsonb_build_array(jsonb_build_object('result',result,'review',review,'qualityEvidence',quality_evidence,'savedAt',updated)),state='running',result=NULL,review=NULL,quality_evidence='{}',updated=now() WHERE id=$1 AND state='reviewed' RETURNING id",[b.id]);

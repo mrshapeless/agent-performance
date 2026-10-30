@@ -29,7 +29,9 @@ test('tool result returns to memory only after agent review; duplicate return ca
   assert.equal(await s.transaction(c=>enqueueToolProject(c,'test-two',brief)),'test-one');
   const call=b=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify(b)}),s,{quote:()=>1,generate:async()=>({costMicrodollars:1,value:{decision:'revise',reason:'The report does not establish the pause interaction.',nextStep:'Verify the interaction and return actual observations.'}})});
   assert.equal((await call({action:'result',id:'test-one',result:'An unclaimed result'})).status,409);
-  await call({action:'start',id:'test-one'});await call({action:'result',id:'test-one',result:'Built prototype; interaction not tested.'});
+  assert.equal((await (await call({action:'start',id:'test-one'})).json()).claimed,true);
+  assert.equal((await call({action:'start',id:'test-one'})).status,409);
+  await call({action:'result',id:'test-one',result:'Built prototype; interaction not tested.'});
   assert.equal(await s.latest('workspace_note'),null);
   assert.equal((await call({action:'result',id:'test-one',result:'Overwrite'})).status,409);
   const reviewed=await (await call({action:'review',id:'test-one'})).json();assert.equal(reviewed.review.decision,'revise');
