@@ -1,3 +1,4 @@
+import {toolProjectAPI} from './tool-projects.mjs';
 import {atelierHandler,atelierStep} from './atelier.mjs';
 import {workStep,publicWorks} from './works.mjs';
 import {roomHandler} from './room.mjs';
@@ -53,6 +54,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
     });
     const url = new URL(request.url);
+    const toolProjects=url.pathname==='/api/tool-projects';
     const works = url.pathname === '/api/works';
     const project = url.pathname === '/api/project';
     if(works && request.method !== 'GET')return reply({error:'METHOD_NOT_ALLOWED'},405);
@@ -68,12 +70,12 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     const manual = url.pathname === '/api/manual-replies';
     const assetRead = request.method === 'GET' && url.pathname === '/api/asset';
     const tick = ['/api/tick','/api/setup','/api/social','/api/observe','/api/audience','/api/media','/api/project','/api/atelier-worker'].includes(url.pathname);
-    const publicRead = !atelier && !manual && !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
+    const publicRead = !toolProjects && !atelier && !manual && !tick && request.method === 'GET' && url.searchParams.get('view') === 'public';
     if (!works && !room && !inbox && !publicRead && !assetRead && !authorized(request.headers.get('authorization'), tick ? env.CRON_SECRET : env.AGENT_ADMIN_SECRET)) return reply({ error: 'UNAUTHORIZED' }, 401);
     if (tick ? request.method !== 'GET' : !['GET', 'POST'].includes(request.method)) return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
     let kind, id;
-    if ((manual||atelier) && request.method==='POST' && (env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true'))return reply({error:'EXECUTION_DISABLED'},409);
-    if (!room && !atelier && !manual && !inbox && (tick || request.method === 'POST')) {
+    if ((toolProjects||manual||atelier) && request.method==='POST' && (env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true'))return reply({error:'EXECUTION_DISABLED'},409);
+    if (!toolProjects && !room && !atelier && !manual && !inbox && (tick || request.method === 'POST')) {
       if (env.VERCEL_ENV !== 'production') return reply({ error: 'PRODUCTION_ONLY' }, 403);
       if (env.AGENT_ENABLED !== 'true') return reply({ error: 'AGENT_DISABLED' }, 409);
       kind = tick ? 'auto' : url.searchParams.get('action');
@@ -86,7 +88,8 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     try {
       store = await openStore();
       if(atelier)return await atelierHandler(request,store,request.method==='POST'?createProvider():null);
-      if(atelierWorker)return reply(await atelierStep(store,createProvider()));
+      if(toolProjects)return await toolProjectAPI(request,store,request.method==='POST'?createProvider():null);
+       if(atelierWorker)return reply(await atelierStep(store,createProvider()));
       if(works){const id=url.searchParams.get('id');if(id&&!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return reply({error:'INVALID_WORK'},400);const items=await publicWorks(store,id);return reply({works:items},id&&!items.length?404:200);}
       if(project)return reply(await workStep(store,createProvider(),env));
       if (manual) return await manualReplyHandler(request,store,request.method==='POST'?createProvider():null,env);

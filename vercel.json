@@ -70,6 +70,9 @@
     "api/gauntlet.mjs": {
       "maxDuration": 120,
       "includeFiles": "{private/**,public/series/afterimage-*.jpg,schema.sql}"
+    },
+    "api/tool-projects.mjs": {
+      "maxDuration": 120
     }
   },
   "crons": [
