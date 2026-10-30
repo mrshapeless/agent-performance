@@ -16,4 +16,6 @@ test('provider diagnostics classify errors without exposing provider text or cre
  assert.equal(e.code,'GEMINI_SCHEMA_COMPLEXITY');assert.doesNotMatch(JSON.stringify(e),/secret-private/);
  assert.equal(geminiFailure(400,{error:{message:'API key not valid'}}).code,'GEMINI_KEY_INVALID');
  assert.equal(geminiFailure(429,null).code,'GEMINI_RATE_LIMITED');
+ assert.equal(geminiFailure(503,{error:{message:'private provider detail'}}).code,'GEMINI_HTTP_503');
+ assert.doesNotMatch(JSON.stringify(geminiFailure(400,{error:{message:'private provider detail'}})),/private provider/);
 });

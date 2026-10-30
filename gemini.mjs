@@ -6,7 +6,7 @@ export function geminiFailure(status,body){
     /schema|generation_config|generationConfig/i.test(message)?'SCHEMA_INVALID':
     status===429?'RATE_LIMITED':status===402?'BILLING_REQUIRED':status===403?'ACCESS_DENIED':'REQUEST_FAILED';
   const error=Error(`Gemini HTTP ${status}; reservation retained`);
-  error.code=`GEMINI_${reason}`;error.diagnostic={httpStatus:status,reason};return error;
+  error.code=reason==='REQUEST_FAILED'?`GEMINI_HTTP_${status}`:`GEMINI_${reason}`;error.diagnostic={httpStatus:status,reason};return error;
 }
 export class Gemini {
   constructor(env = process.env, fetcher = fetch) {
