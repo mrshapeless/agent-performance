@@ -1,3 +1,13 @@
+// Provider messages may echo input. Persist only a bounded diagnostic category.
+export function geminiFailure(status,body){
+  const message=String(body?.error?.message??'');
+  const reason=/API key not valid|API_KEY_INVALID/i.test(message)?'KEY_INVALID':
+    /too many states|too much branching|schema.*complex|constraint.*states/i.test(message)?'SCHEMA_COMPLEXITY':
+    /schema|generation_config|generationConfig/i.test(message)?'SCHEMA_INVALID':
+    status===429?'RATE_LIMITED':status===402?'BILLING_REQUIRED':status===403?'ACCESS_DENIED':'REQUEST_FAILED';
+  const error=Error(`Gemini HTTP ${status}; reservation retained`);
+  error.code=`GEMINI_${reason}`;error.diagnostic={httpStatus:status,reason};return error;
+}
 export class Gemini {
   constructor(env = process.env, fetcher = fetch) {
     this.key = env.GEMINI_API_KEY;
@@ -27,7 +37,7 @@ export class Gemini {
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}) },
         }),
       });
-    if (!response.ok) throw Error(`Gemini HTTP ${response.status}; reservation retained`);
+    if (!response.ok) throw geminiFailure(response.status,await response.json().catch(()=>null));
     const body = await response.json();
     const usage = body.usageMetadata;
     if (!usage || !Number.isSafeInteger(usage.promptTokenCount) ||

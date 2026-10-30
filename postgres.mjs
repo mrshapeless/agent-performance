@@ -1,5 +1,5 @@
 import {creativeMemory} from './atelier.mjs';
-import {publicWorkspace,canonicalMediaReviews} from './workspace-state.mjs';
+import {publicWorkspace,canonicalMediaReviews,decisionHealth} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
 import { createHash } from 'node:crypto';
 
@@ -119,6 +119,7 @@ export class PostgresStore {
   }
   async publicRuntime() {
     const state = await this.status();
+    const cognitionHealth=decisionHealth((await this.pool.query("SELECT DISTINCT ON(kind) seq,kind,created,payload FROM agent_events WHERE kind IN ('workspace_broadcast','cognition_failed') ORDER BY kind,seq DESC")).rows);
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
     const started = state.unresolved ? (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_started' ORDER BY seq DESC LIMIT 1")).rows[0]?.created : null;
@@ -128,7 +129,7 @@ export class PostgresStore {
     const decision=await this.latest('cognitive_decision');
     const publicDecision=decision?Object.fromEntries(['action','choice','text','summary','projectId','taskId','evidence'].filter(k=>k in decision).map(k=>[k,decision[k]])):null;
     return { workspace:await publicWorkspace(this), cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
-      blocked: !!started && Date.now() - Date.parse(started) > 120_000,
+      cognitionHealth, blocked: cognitionHealth.status==='failed'||cognitionHealth.status==='stale'||(!!started && Date.now() - Date.parse(started) > 120_000),
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
   async publicJournal() {

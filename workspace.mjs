@@ -55,7 +55,9 @@ export function broadcastContract(candidates,snapshot,eligible=candidates){
  p.selectedId={type:'string',enum:eligible.map(c=>c.id)};p.attention.items=candidatesEnum;
  p.selection.items.properties.id=candidatesEnum;p.selection.items.properties.reason={type:'string',maxLength:700};
  p.note.properties.links={...evidenceList,maxItems:3};p.note.properties.claim={type:'string',maxLength:1500,description:'Concise memory hypothesis, preferably at most 400 characters; not an essay.'};
- if(snapshot.state.goals.length)p.goalChanges.items={anyOf:snapshot.state.goals.map(g=>object({id:{type:'string',enum:[g.id]},status:{type:'string',enum:snapshot.state.predictions.some(p=>p.goal_id===g.id&&p.status==='observed'&&p.outcome===1)?['active','paused','completed','abandoned']:['active','paused','abandoned']},reason:{type:'string',maxLength:700}}))};
+ // Do not multiply constrained-decoding branches by every historical goal.
+ // Completion still requires matching observed evidence in validateBroadcast.
+ if(snapshot.state.goals.length)p.goalChanges.items=object({id:{type:'string',enum:snapshot.state.goals.map(g=>g.id)},status:{type:'string',enum:['active','paused','completed','abandoned']},reason:{type:'string',maxLength:700}});
  else p.goalChanges.maxItems=0;
  return schema;
 }
@@ -182,7 +184,7 @@ export async function workspaceStep(store,provider,now=new Date()){
    const value=validateCandidate(answer.value,{...snapshot,studio:ctx.studio,evidence:ctx.evidence});
    await store.complete(id,cost,{...value,id:name,choice:value.action,action:'workspace_proposal',appliedPolicy});
    return {status:'module_completed',module:name};
-  }catch(error){const failureCode=/^Gemini HTTP (\d{3})/.test(error.message)?'GEMINI_HTTP_'+error.message.match(/\d{3}/)[0]:/^INVALID_WORKSPACE_OUTPUT_\d+$/.test(error.message)?error.message:error.message==='Incomplete generation'?'GEMINI_INCOMPLETE':error instanceof TypeError?'PROVIDER_TYPE_ERROR':'MODULE_FAILED';console.error('workspace_module_failed',name,failureCode);await store.complete(id,cost,{action:'workspace_module_failed',failureCode,summary:name+' proposal unavailable; no action executed.'});return {status:'module_failed',module:name,failureCode};}
+  }catch(error){const failureCode=error.code?.startsWith('GEMINI_')?error.code:/^Gemini HTTP (\d{3})/.test(error.message)?'GEMINI_HTTP_'+error.message.match(/\d{3}/)[0]:/^INVALID_WORKSPACE_OUTPUT_\d+$/.test(error.message)?error.message:error.message==='Incomplete generation'?'GEMINI_INCOMPLETE':error instanceof TypeError?'PROVIDER_TYPE_ERROR':'MODULE_FAILED';console.error('workspace_module_failed',name,failureCode);await store.complete(id,cost,{action:'workspace_module_failed',failureCode,summary:name+' proposal unavailable; no action executed.'});return {status:'module_failed',module:name,failureCode};}
  }
  const candidates=[];
  for(const name of modules){const r=(await store.operation(episode+'-'+name))?.result;if(r?.action==='workspace_proposal')candidates.push({...r,action:r.choice});}
@@ -255,5 +257,5 @@ export async function workspaceStep(store,provider,now=new Date()){
    await store.append(c,'cognitive_decision',{choice:chosen.action,taskId:['write','commission'].includes(chosen.action)?taskId:null,goalId:chosen.goalId,projectId:chosen.projectId||null,text:chosen.proposal,summary:v.summary,evidence:chosen.evidence,workspaceEpisode:episode});
   });
   return {status:'workspace_decided',choice:chosen.action,taskId,goalId:chosen.goalId};
- }catch(error){const failureCode=/^INVALID_WORKSPACE_OUTPUT_\d+$/.test(error.message)?error.message:/^Gemini HTTP (\d{3})/.test(error.message)?'GEMINI_HTTP_'+error.message.match(/\d{3}/)[0]:error.message==='Incomplete generation'?'GEMINI_INCOMPLETE':/^[0-9A-Z]{5}$/.test(error.code??'')?error.code:'WORKSPACE_'+stage.toUpperCase()+'_FAILED';console.error('workspace_failure',stage,failureCode);await store.complete(id,cost,{action:'cognition_failed',failureCode,summary:'Workspace choice could not be applied; previous goals and tasks are preserved.'});return {status:'workspace_decision_failed',failureCode};}
+ }catch(error){const failureCode=error.code?.startsWith('GEMINI_')?error.code:/^INVALID_WORKSPACE_OUTPUT_\d+$/.test(error.message)?error.message:/^Gemini HTTP (\d{3})/.test(error.message)?'GEMINI_HTTP_'+error.message.match(/\d{3}/)[0]:error.message==='Incomplete generation'?'GEMINI_INCOMPLETE':/^[0-9A-Z]{5}$/.test(error.code??'')?error.code:'WORKSPACE_'+stage.toUpperCase()+'_FAILED';console.error('workspace_failure',stage,failureCode);await store.complete(id,cost,{action:'cognition_failed',failureCode,summary:'Workspace choice could not be applied; previous goals and tasks are preserved.'});return {status:'workspace_decision_failed',failureCode};}
 }

@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {authorized} from './cloud.mjs';
 import {ACTIVE_INSTANCE,scopedPool} from './instance.mjs';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep} from './workspace.mjs';
+import {workspaceStep,broadcastContract} from './workspace.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 import {mediaStep,enqueueMedia} from './media.mjs';
@@ -50,7 +50,7 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
   const url=new URL(request.url);let action,body;
   if(request.method==='POST'){
    try{const raw=await request.text();if(Buffer.byteLength(raw,'utf8')>4000)throw Error();body=JSON.parse(raw);action=body.action;if(action!=='feedback'&&raw.length>256)throw Error();}catch{return json({error:'INVALID_INPUT'},400);}
-   if(!['init','step','plan','render','advance','feedback','quality-start','quality-step'].includes(action))return json({error:'INVALID_ACTION'},400);
+   if(!['decision-check','init','step','plan','render','advance','feedback','quality-start','quality-step'].includes(action))return json({error:'INVALID_ACTION'},400);
    if(body.renderer!==undefined&&(action!=='plan'||body.renderer!=='collage'))return json({error:'INVALID_RENDERER_TEST'},400);
    if(action==='feedback'&&(!/^[a-zA-Z0-9_-]{1,100}$/.test(body.assetId??'')||!['pass','fail'].includes(body.verdict)||!['observation','nextExperiment'].every(k=>typeof body[k]==='string'&&body[k].trim().length>0&&body[k].length<=1200)))return json({error:'INVALID_FEEDBACK'},400);
   }
@@ -61,6 +61,20 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    // pair session-level lock/unlock calls across separate transactions.
    await guard.query('BEGIN');
    if(!(await guard.query('SELECT pg_try_advisory_xact_lock($1) AS locked',[lock])).rows[0].locked)return json({status:'busy'},409);
+   if(action==='decision-check'){
+    const store=new PostgresStore(scopedPool(pool)),provider=createProvider();
+    const id='decision-check-v1-'+Math.floor(now().getTime()/3600000);
+    const candidates=Array.from({length:4},(_,i)=>({id:'synthetic-candidate-'+i,evidence:['synthetic-evidence-0']}));
+    const snapshot={evidence:Array.from({length:32},(_,i)=>({id:'synthetic-evidence-'+i,kind:'workspace_note'})),state:{goals:Array.from({length:16},(_,i)=>({id:'synthetic-goal-'+i})),predictions:[]}};
+    const system='Synthetic schema compatibility test. Return valid JSON. No output will be executed.';
+    const prompt='Choose synthetic-candidate-0, with no goal changes and no working policies. This is a diagnostic with no real data.';
+    const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true});
+    const req=await store.begin(id,'step',()=>({maximum:provider.quote(system,prompt)}));if(req.replay)return json({status:req.status,replay:true});
+    let cost=req.maximum,result;
+    try{const r=await provider.generate(system,prompt,null,broadcastContract(candidates,snapshot));cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Synthetic arbitration schema accepted; no agent action executed.'};}
+    catch(e){result={action:'decision_diagnostic',status:'failed',failureCode:e.code?.startsWith('GEMINI_')?e.code:'DIAGNOSTIC_FAILED',summary:'Synthetic request failed; no agent action executed.'};}
+    await store.complete(id,cost,result);return json({status:result.status,result});
+   }
    if(action?.startsWith('quality-')||url.searchParams.has('quality')){
     const production=new PostgresStore(scopedPool(pool));
     return json(await qualityTrial(production,createProvider(),env,createServices(env),action??'status',body?.medium??url.searchParams.get('quality')));

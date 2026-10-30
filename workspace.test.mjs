@@ -213,9 +213,8 @@ test('arbitration cannot commission a repeated premise by ignoring its selection
 
 test('goal completion contract matches the evidence validator before a paid arbitration',()=>{
  const schema=broadcastContract(modules.map(id=>({...candidate(),id})),{evidence:[],state:{goals:[{id:'unverified'},{id:'observed'}],predictions:[{goal_id:'observed',status:'observed',outcome:1}]}});
- const alternatives=schema.properties.goalChanges.items.anyOf;
- assert.ok(!alternatives[0].properties.status.enum.includes('completed'));
- assert.ok(alternatives[1].properties.status.enum.includes('completed'));
+ assert.equal(schema.properties.goalChanges.items.anyOf,undefined);
+ assert.deepEqual(schema.properties.goalChanges.items.properties.id.enum,['unverified','observed']);
 });
 
 test('working instructions survive restart, change next module input, and can be retired',async()=>{

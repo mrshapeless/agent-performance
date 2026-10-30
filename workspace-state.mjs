@@ -5,6 +5,14 @@ export function reviewEvidence(p){
  return Object.fromEntries(keys.filter(k=>typeof p[k]==='string').map(k=>[k,p[k].slice(0,1600)]));
 }
 const payloadOf=r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload;
+export function decisionHealth(events,now=Date.now()){
+ const rows=[...events].sort((a,b)=>Number(b.seq)-Number(a.seq));
+ const success=rows.find(e=>e.kind==='workspace_broadcast');
+ const failure=rows.find(e=>e.kind==='cognition_failed');
+ const failed=!!failure&&(!success||Number(failure.seq)>Number(success.seq));
+ const stale=!success||now-Date.parse(success.created)>2*3600000;
+ return {status:failed?'failed':stale?'stale':'healthy',lastSucceededAt:success?.created??null,lastFailedAt:failure?.created??null,failureCode:failed?payloadOf(failure)?.failureCode??'DECISION_FAILED':null};
+}
 // One artwork is one observation, not votes from successive model calls.
 export async function canonicalMediaReviews(query,eventRows){
  const rows=eventRows??(await query("SELECT seq,kind,payload FROM agent_events WHERE kind='media_review' ORDER BY seq DESC LIMIT 160")).rows;
