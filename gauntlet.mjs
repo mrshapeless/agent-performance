@@ -63,17 +63,18 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    if(!(await guard.query('SELECT pg_try_advisory_xact_lock($1) AS locked',[lock])).rows[0].locked)return json({status:'busy'},409);
    if(action==='decision-check'){
     const store=new PostgresStore(scopedPool(pool)),provider=createProvider();
+    const operations=(await store.pool.query("SELECT id,status,result->>'action' AS action,result->>'failureCode' AS failure_code FROM agent_operations WHERE id LIKE 'workspace-v1-%' ORDER BY id DESC LIMIT 18")).rows;
     const id='decision-check-v1-'+Math.floor(now().getTime()/3600000);
     const candidates=Array.from({length:4},(_,i)=>({id:'synthetic-candidate-'+i,evidence:['synthetic-evidence-0']}));
     const snapshot={evidence:Array.from({length:32},(_,i)=>({id:'synthetic-evidence-'+i,kind:'workspace_note'})),state:{goals:Array.from({length:16},(_,i)=>({id:'synthetic-goal-'+i})),predictions:[]}};
     const system='Synthetic schema compatibility test. Return valid JSON. No output will be executed.';
     const prompt='Choose synthetic-candidate-0, with no goal changes and no working policies. This is a diagnostic with no real data.';
-    const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true});
+    const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true,operations});
     const req=await store.begin(id,'step',()=>({maximum:provider.quote(system,prompt)}));if(req.replay)return json({status:req.status,replay:true});
     let cost=req.maximum,result;
     try{const r=await provider.generate(system,prompt,null,broadcastContract(candidates,snapshot));cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Synthetic arbitration schema accepted; no agent action executed.'};}
     catch(e){result={action:'decision_diagnostic',status:'failed',failureCode:e.code?.startsWith('GEMINI_')?e.code:'DIAGNOSTIC_FAILED',summary:'Synthetic request failed; no agent action executed.'};}
-    await store.complete(id,cost,result);return json({status:result.status,result});
+    await store.complete(id,cost,result);return json({status:result.status,result,operations});
    }
    if(action?.startsWith('quality-')||url.searchParams.has('quality')){
     const production=new PostgresStore(scopedPool(pool));
