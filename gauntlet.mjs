@@ -67,7 +67,7 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
     const operations=(await store.pool.query("SELECT id,status,result->>'action' AS action,result->>'failureCode' AS failure_code FROM agent_operations WHERE id LIKE $1 ORDER BY id DESC LIMIT 18",['workspace-v1-'+CREATIVE_REVISION+'-%'])).rows;
     // One explicitly authorized diagnostic; never execute its returned decision.
     const id='decision-live-approved-20261030';
-    const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true,operations});
+    const old=await store.operation(id);
     const row=(await store.pool.query("SELECT id,result FROM agent_operations WHERE id LIKE $1 AND result->>'action'='workspace_snapshot' ORDER BY id DESC LIMIT 1",['workspace-v1-'+CREATIVE_REVISION+'-%'])).rows[0];
     if(!row)return json({status:'no_snapshot'});
     const episode=row.id.replace(/-snapshot$/,''),snapshot=row.result,candidates=[];
@@ -76,9 +76,11 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
     if(!critique?.assessments||candidates.length<2)return json({status:'incomplete_snapshot'});
     const eligible=selectableCandidates(candidates,critique);if(!eligible.length)return json({status:'no_eligible_candidates'});
     const system=constitution,prompt=arbitrationPrompt(snapshot,candidates,critique,eligible);
+    const contract=broadcastContract(candidates,snapshot,eligible);
+    if(old)return json({status:old.status,result:old.result,replay:true,operations,contract,requestBytes:Buffer.byteLength(system+prompt)});
     const req=await store.begin(id,'step',()=>({maximum:provider.quote(system,prompt)}));if(req.replay)return json({status:req.status,replay:true});
     let cost=req.maximum,result;
-    try{const r=await provider.generate(system,prompt,null,broadcastContract(candidates,snapshot,eligible));cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Authorized live request accepted; no agent action executed.'};}
+    try{const r=await provider.generate(system,prompt,null,contract);cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Authorized live request accepted; no agent action executed.'};}
     catch(e){const detail=String(e.providerDetail||e.message||'').split(env.GEMINI_API_KEY||'__absent_key__').join('[redacted]').slice(0,3000);result={action:'decision_diagnostic',status:'failed',failureCode:e.code?.startsWith('GEMINI_')?e.code:'DIAGNOSTIC_FAILED',privateDetail:detail,summary:'Authorized live diagnostic failed; no agent action executed.'};}
     await store.complete(id,cost,result);return json({status:result.status,result,operations});
    }
