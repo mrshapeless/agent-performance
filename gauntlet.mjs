@@ -5,7 +5,8 @@ import {createHash} from 'node:crypto';
 import {authorized} from './cloud.mjs';
 import {ACTIVE_INSTANCE,scopedPool} from './instance.mjs';
 import {PostgresStore} from './postgres.mjs';
-import {workspaceStep,broadcastContract} from './workspace.mjs';
+import {workspaceStep,broadcastContract,arbitrationPrompt,selectableCandidates,modules} from './workspace.mjs';
+import {constitution} from './domain.mjs';
 import {socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 import {mediaStep,enqueueMedia} from './media.mjs';
@@ -64,16 +65,21 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    if(action==='decision-check'){
     const store=new PostgresStore(scopedPool(pool)),provider=createProvider();
     const operations=(await store.pool.query("SELECT id,status,result->>'action' AS action,result->>'failureCode' AS failure_code FROM agent_operations WHERE id LIKE $1 ORDER BY id DESC LIMIT 18",['workspace-v1-'+CREATIVE_REVISION+'-%'])).rows;
-    const id='decision-check-v2-'+Math.floor(now().getTime()/3600000);
-    const candidates=Array.from({length:4},(_,i)=>({id:'synthetic-candidate-'+i,evidence:['synthetic-evidence-0']}));
-    const snapshot={evidence:Array.from({length:64},(_,i)=>({id:'synthetic-evidence-'+i,kind:'workspace_note'})),state:{goals:Array.from({length:16},(_,i)=>({id:('synthetic-goal-'+i+'-').padEnd(61,'x')})),predictions:[]}};
-    const system='Synthetic schema compatibility test. Return valid JSON. No output will be executed.';
-    const prompt='Choose synthetic-candidate-0, with no goal changes and no working policies. This is a diagnostic with no real data.';
+    // One explicitly authorized diagnostic; never execute its returned decision.
+    const id='decision-live-approved-20261030';
     const old=await store.operation(id);if(old)return json({status:old.status,result:old.result,replay:true,operations});
+    const row=(await store.pool.query("SELECT id,result FROM agent_operations WHERE id LIKE $1 AND result->>'action'='workspace_snapshot' ORDER BY id DESC LIMIT 1",['workspace-v1-'+CREATIVE_REVISION+'-%'])).rows[0];
+    if(!row)return json({status:'no_snapshot'});
+    const episode=row.id.replace(/-snapshot$/,''),snapshot=row.result,candidates=[];
+    for(const name of modules){const original=(await store.operation(episode+'-'+name))?.result;const revised=(await store.operation(episode+'-creative-revision-'+name))?.result;const r=revised?.action==='workspace_proposal'?revised:original;if(r?.action==='workspace_proposal')candidates.push({...r,action:r.choice});}
+    const critique=(await store.operation(episode+'-creative-review-final'))?.result??(await store.operation(episode+'-creative-review-initial'))?.result;
+    if(!critique?.assessments||candidates.length<2)return json({status:'incomplete_snapshot'});
+    const eligible=selectableCandidates(candidates,critique);if(!eligible.length)return json({status:'no_eligible_candidates'});
+    const system=constitution,prompt=arbitrationPrompt(snapshot,candidates,critique,eligible);
     const req=await store.begin(id,'step',()=>({maximum:provider.quote(system,prompt)}));if(req.replay)return json({status:req.status,replay:true});
     let cost=req.maximum,result;
-    try{const r=await provider.generate(system,prompt,null,broadcastContract(candidates,snapshot));cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Synthetic arbitration schema accepted; no agent action executed.'};}
-    catch(e){result={action:'decision_diagnostic',status:'failed',failureCode:e.code?.startsWith('GEMINI_')?e.code:'DIAGNOSTIC_FAILED',summary:'Synthetic request failed; no agent action executed.'};}
+    try{const r=await provider.generate(system,prompt,null,broadcastContract(candidates,snapshot,eligible));cost=r.costMicrodollars;result={action:'decision_diagnostic',status:'passed',summary:'Authorized live request accepted; no agent action executed.'};}
+    catch(e){const detail=String(e.providerDetail||e.message||'').split(env.GEMINI_API_KEY||'__absent_key__').join('[redacted]').slice(0,3000);result={action:'decision_diagnostic',status:'failed',failureCode:e.code?.startsWith('GEMINI_')?e.code:'DIAGNOSTIC_FAILED',privateDetail:detail,summary:'Authorized live diagnostic failed; no agent action executed.'};}
     await store.complete(id,cost,result);return json({status:result.status,result,operations});
    }
    if(action?.startsWith('quality-')||url.searchParams.has('quality')){

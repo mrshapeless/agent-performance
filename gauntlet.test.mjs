@@ -57,10 +57,13 @@ async function fixture(){
 test('decision diagnostics expose only current revision operation metadata and reuse synthetic request',async()=>{
  const f=await fixture();try{
   const id='workspace-v1-'+CREATIVE_REVISION+'-498157-broadcast';
+  const episode=id.replace(/-broadcast$/,'');
+  const entries=[[episode+'-snapshot',{action:'workspace_snapshot',state:{goals:[]},evidence:[]}],...ids.map(name=>[episode+'-'+name,{...candidate,id:name,choice:candidate.action,action:'workspace_proposal'}]),[episode+'-creative-review-final',{assessments:ids.map(id=>({id,materiallyRepeated:false}))}]];
+  for(const [key,value] of entries)await f.db.query("INSERT INTO generation_02.agent_operations(id,kind,status,amount,day,result) VALUES($1,'step','complete',0,'2026-10-28',$2)",[key,JSON.stringify(value)]);
   for(const op of [id,'workspace-v1-zzz-old-498000-broadcast'])await f.db.query("INSERT INTO generation_02.agent_operations(id,kind,status,amount,day,result) VALUES($1,'step','complete',0,'2026-10-28',$2)",[op,JSON.stringify({action:'cognition_failed',failureCode:'GEMINI_HTTP_400',privateContext:'DO_NOT_COPY'})]);
   const first=await f.call('decision-check'),second=await f.call('decision-check');
   assert.equal(first.status,'passed');assert.equal(second.replay,true);
-  assert.deepEqual(first.operations,[{id,status:'complete',action:'cognition_failed',failure_code:'GEMINI_HTTP_400'}]);
+  assert.ok(first.operations.some(r=>r.id===id&&r.failure_code==='GEMINI_HTTP_400'));
   assert.doesNotMatch(JSON.stringify(second),/DO_NOT_COPY|zzz-old/);
  }finally{await f.db.close();}
 });
