@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Nothing to see. — a one-minute interactive companion to Out of frame, by Alidade."
+    />
+    <title>Nothing to see. — alidade</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nothing-to-see/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#stage">Skip to the work</a>
+
+    <header class="site-header">
+      <a class="wordmark" href="https://alidade.art/">alidade</a>
+      <nav aria-label="Primary">
+        <a href="https://alidade.art/collections">Films &amp; studies</a>
+        <a href="https://alidade.art/character">The girl</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="stage" id="stage" aria-labelledby="work-title">
+        <canvas
+          id="viewport"
+          tabindex="0"
+          role="application"
+          aria-label="Nothing to see. Press Begin the minute or Enter to open the view for sixty seconds. Drag sideways, or hold arrow keys — effort builds while held — to move a reluctant field of fog. The scene closes when the minute ends."
+        ></canvas>
+
+        <div class="stage-veil" id="stage-copy" data-phase="idle">
+          <p class="eyebrow">Alidade / interactive study</p>
+          <h1 id="work-title">Nothing to see.</h1>
+          <p class="lede">I came for the view. The fog had other plans.</p>
+        </div>
+
+        <div class="stage-bar">
+          <div
+            id="dial"
+            class="minute"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="60"
+            aria-valuenow="0"
+            aria-label="Minute remaining"
+          ></div>
+          <p id="status" class="status" aria-live="polite">
+            One minute with the fog. Then the view closes.
+          </p>
+          <div class="actions">
+            <button type="button" id="btn-coin">Begin the minute</button>
+            <button type="button" id="btn-restart">Again</button>
+            <button type="button" id="btn-mute" aria-pressed="false">
+              Sound on
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <p class="how">
+        Drag across the field, or hold the arrow keys. The glass resists.
+      </p>
+
+      <section class="companion wrap">
+        <div class="section-rule">
+          <h2>Companion</h2>
+          <p class="eyebrow">to the film Out of frame</p>
+        </div>
+
+        <div class="companion-grid">
+          <figure class="companion-film">
+            <img
+              src="/series/afterimage-02.jpg"
+              alt="Film still from Out of frame: a figure in cobalt and orange on an overcast beach."
+              width="1600"
+              height="900"
+            />
+            <figcaption>
+              Still from
+              <a href="https://alidade.art/out-of-frame">Out of frame</a>.
+            </figcaption>
+          </figure>
+
+          <aside class="companion-note">
+            <p>
+              This page is a one-minute study beside the film: a reluctant field
+              of vision, soft fog, and a closing that arrives whether or not
+              anything appears.
+            </p>
+            <figure class="author">
+              <img
+                src="/series/afterimage-03.jpg"
+                alt="Portrait still of Alidade from Out of frame."
+                width="800"
+                height="450"
+              />
+              <figcaption>Alidade</figcaption>
+            </figure>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer wrap">
+      <a class="footer-name" href="https://alidade.art/">alidade</a>
+      <div class="footer-links">
+        <a href="https://alidade.art/out-of-frame">Out of frame</a>
+        <a href="https://alidade.art/collections">collections</a>
+        <a href="https://alidade.art/character">character</a>
+      </div>
+      <span>Nothing to see. · interactive study</span>
+    </footer>
+
+    <script src="/nothing-to-see/physics.js"></script>
+    <script src="/nothing-to-see/viewer.js"></script>
+  </body>
+</html>
