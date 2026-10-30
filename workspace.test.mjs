@@ -217,3 +217,40 @@ test('goal completion contract matches the evidence validator before a paid arbi
  assert.ok(!alternatives[0].properties.status.enum.includes('completed'));
  assert.ok(alternatives[1].properties.status.enum.includes('completed'));
 });
+
+test('working instructions survive restart, change next module input, and can be retired',async()=>{
+ const {s,db}=await fixture();let cycle=0,applied=0;
+ try{
+  await s.transaction(c=>s.append(c,'record_note',{text:'Synthetic operator feedback: repeated posed portraits hide the idea.'}));
+  const evidence=(await workspaceEvidence(s,0)).find(e=>e.kind==='record_note');
+  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
+   if(schema===critiqueSchema)return {costMicrodollars:1,value:critique()};
+   if(p.startsWith('Arbitrate'))return {costMicrodollars:1,value:{...broadcast(),workingPolicies:cycle===0?[{module:'exploration',instruction:'Build a sequence around an unresolved choice before selecting a subject.',reason:'Test whether choices produce more expressive work than posed portraits.',test:'Next proposal contains two incompatible possible actions and their consequence.',evidence:[evidence.id],expiresAfterHours:2}]:[]}};
+   const v=candidate();
+   if(p.includes('You are the exploration')&&cycle===1){assert.match(p,/AGENT-AUTHORED WORKING EXPERIMENT/);assert.match(p,/Build a sequence around an unresolved choice/);v.proposal='A sequence of two incompatible actions and their consequences.';applied++;}
+   if(p.includes('You are the exploration')&&cycle===2)assert.doesNotMatch(p,/AGENT-AUTHORED WORKING EXPERIMENT/);
+   return {costMicrodollars:1,value:v};
+  }};
+  for(cycle=0;cycle<3;cycle++){
+   const time=new Date(now.getTime()+cycle*3600000);
+   for(let i=0;i<6;i++)await workspaceStep(new PostgresStore(s.pool),provider,time);
+   const state=await workspaceState(s);assert.equal(state.broadcast.workingPolicies.length,cycle===0?1:0);
+  }
+  assert.equal(applied,1);
+  const receipts=(await s.pool.query("SELECT result FROM agent_operations WHERE result->>'action'='workspace_proposal'")).rows.filter(r=>r.result.appliedPolicy);
+  assert.equal(receipts.length,1);assert.equal(receipts[0].result.proposal,'A sequence of two incompatible actions and their consequences.');
+ }finally{await db.close();}
+});
+
+import {validatePolicies,workingPolicy} from './adaptive-policy.mjs';
+test('adaptive instructions expire, reject fabricated and visitor evidence, and are replaced rather than accumulated',()=>{
+ const p={module:'exploration',instruction:'Try a new method',reason:'A recorded failure',evidence:['1'],test:'Compare actual output',expiresAfterHours:2};
+ assert.throws(()=>validatePolicies([p],[{id:'1',kind:'conversation'}]));
+ assert.throws(()=>validatePolicies([{...p,evidence:['missing']}],[{id:'1',kind:'record_note'}]));
+ assert.throws(()=>validatePolicies([p,p],[{id:'1',kind:'record_note'}]));
+ const b={episode:'workspace-100',workingPolicies:validatePolicies([p],[{id:'1',kind:'record_note'}])};
+ assert.equal(workingPolicy(b,'exploration','workspace-101').instruction,p.instruction);
+ assert.equal(workingPolicy(b,'exploration','workspace-103'),null);
+ assert.equal(workingPolicy(b,'exploration','workspace-100'),null);
+ assert.equal(workingPolicy({...b,workingPolicies:[]},'exploration','workspace-101'),null);
+});

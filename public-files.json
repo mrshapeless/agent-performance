@@ -17,6 +17,7 @@
   "STUDIO.md",
   "accounts.mjs",
   "accounts.test.mjs",
+  "adaptive-policy.mjs",
   "api/agent.mjs",
   "api/asset.mjs",
   "api/atelier-worker.mjs",
