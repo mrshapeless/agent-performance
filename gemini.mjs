@@ -33,7 +33,8 @@ export class Gemini {
     // This is a configured tariff estimate, not a provider billing guarantee.
     return Math.ceil((Buffer.byteLength(system + prompt) + 2048) * this.inputPrice + 8192 * this.outputPrice);
   }
-  async generate(system, prompt, media=null, responseJsonSchema=null,references=[]) {
+  async generate(system, prompt, media=null, responseJsonSchema=null,references=[],options={}) {
+    if(options.thinkingLevel!==undefined&&!['low','medium','high'].includes(options.thinkingLevel))throw Error('INVALID_THINKING_LEVEL');
     let response;
     try{response = await this.fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
@@ -44,7 +45,7 @@ export class Gemini {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }, ...(media?[{inlineData:{mimeType:media.mime,data:Buffer.from(media.bytes).toString('base64')}}]:[]),...references.flatMap((a,i)=>[{text:'REFERENCE '+(i+1)+' (not the candidate)'},{inlineData:{mimeType:a.mime,data:Buffer.from(a.bytes).toString('base64')}}])] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}) },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192, ...(responseJsonSchema?{responseJsonSchema}:{}),...(options.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{}) },
         }),
       });}catch(cause){const error=Error('Gemini transport failed');error.code=cause?.name==='TimeoutError'?'GEMINI_TIMEOUT':'GEMINI_NETWORK_FAILED';throw error;}
     if (!response.ok) throw geminiFailure(response.status,await response.json().catch(()=>null));

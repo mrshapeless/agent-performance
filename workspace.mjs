@@ -153,7 +153,9 @@ export async function workspaceStep(store,provider,now=new Date()){
  const schemaRepair=secondRepair?.result?.failureCode==='WORKSPACE_PROVIDER_FAILED';
  const schemaAttempt=compatibilityRepair?await store.operation(episode+'-broadcast-schema-v2'):null;
  const jsonRepair=schemaAttempt?.result?.failureCode==='GEMINI_HTTP_400';
- const broadcastId=episode+'-broadcast'+(jsonRepair?'-json-v1':compatibilityRepair?'-schema-v2':schemaRepair?'-repair3':linkRepair?'-repair2':repair?'-repair1':'');
+ const jsonAttempt=jsonRepair?await store.operation(episode+'-broadcast-json-v1'):null;
+ const latencyRepair=['WORKSPACE_PROVIDER_FAILED','GEMINI_TIMEOUT','GEMINI_INCOMPLETE'].includes(jsonAttempt?.result?.failureCode);
+ const broadcastId=episode+'-broadcast'+(latencyRepair?'-json-low-v1':jsonRepair?'-json-v1':compatibilityRepair?'-schema-v2':schemaRepair?'-repair3':linkRepair?'-repair2':repair?'-repair1':'');
  const done=jsonRepair||compatibilityRepair||schemaRepair?await store.operation(broadcastId):linkRepair?secondRepair:repair?firstRepair:prior;if(done)return {status:done.status,replay:true};
  let snapshot=(await store.operation(episode+'-snapshot'))?.result;
  if(!snapshot){
@@ -236,13 +238,13 @@ export async function workspaceStep(store,provider,now=new Date()){
  if(!eligible.length){const req=await store.begin(id,'step',()=>({maximum:0}));if(!req.replay)await store.complete(id,0,{action:'cognition_failed',failureCode:'NO_FRESH_PROPOSAL',summary:'All creative proposals repeated rejected mechanisms after revision; no new commission issued.',creativeCritique:critique});return {status:'workspace_no_fresh_proposal'};}
  const prompt=arbitrationPrompt(snapshot,candidates,critique,eligible);
  const contract=broadcastContract(candidates,snapshot,eligible);
- const requestPrompt=prompt+(jsonRepair?'\nReturn a JSON object matching this contract: '+JSON.stringify(contract):'');
+ const requestPrompt=prompt+'\nReturn a JSON object matching this contract: '+JSON.stringify(contract)+'\nKeep all free-text explanations concise.';
  const req=await store.begin(id,'step',()=>({prompt:requestPrompt,maximum:provider.quote(constitution,requestPrompt)}));if(req.replay)return {status:req.status};let cost=req.maximum;
  let stage='provider';
  try{
   // A single durable JSON-mode recovery for provider-side schema rejection.
   // The same semantic validator still gates every state change below.
-  const answer=await provider.generate(constitution,req.prompt,null,jsonRepair?null:contract);cost=answer.costMicrodollars;
+  const answer=await provider.generate(constitution,req.prompt,null,null,[],{thinkingLevel:'low'});cost=answer.costMicrodollars;
   stage='validate';
   if(!eligible.some(c=>c.id===answer.value?.selectedId))throw Error('REPEATED_COMMISSION_SELECTED');
   const v=validateBroadcast(answer.value,candidates,snapshot),chosen=candidates.find(c=>c.id===v.selectedId),taskId='ws-'+CREATIVE_REVISION+'-'+episode.split('-').at(-1)+'-'+chosen.id;

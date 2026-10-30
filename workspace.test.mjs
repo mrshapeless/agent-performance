@@ -200,7 +200,7 @@ test('arbitration cannot commission a repeated premise by ignoring its selection
  const {s,db}=await fixture();
  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
   if(schema===critiqueSchema){const v=critique();v.assessments[2].materiallyRepeated=true;return {costMicrodollars:1,value:v};}
-  if(p.startsWith('Arbitrate')){assert.ok(!schema.properties.selectedId.enum.includes('exploration'));return {costMicrodollars:1,value:broadcast()};}
+  if(p.startsWith('Arbitrate')){const contract=JSON.parse(p.split('Return a JSON object matching this contract: ')[1].split('\nKeep all')[0]);assert.ok(!contract.properties.selectedId.enum.includes('exploration'));return {costMicrodollars:1,value:broadcast()};}
   return {costMicrodollars:1,value:candidate()};
  }};
  try{
