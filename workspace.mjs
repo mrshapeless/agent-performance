@@ -42,7 +42,7 @@ export const broadcastSchema=object({selectedId:str,attention:list(str,1,3),summ
 broadcastSchema.properties.workingPolicies=policySchema;
 broadcastSchema.required.push('workingPolicies');
 export function selectableCandidates(candidates,critique){
- const rejected=new Set((critique?.assessments??[]).filter(a=>a.materiallyRepeated||a.operatorDirectionConflict===true||a.visualLanguageAligned===false||a.compellingWithoutExplanation===false).map(a=>a.id));
+ const rejected=new Set((critique?.assessments??[]).filter(a=>a.materiallyRepeated||a.legibleHook===false||a.operatorDirectionConflict===true||a.visualLanguageAligned===false||a.compellingWithoutExplanation===false).map(a=>a.id));
  return candidates.filter(c=>!['commission','write','develop'].includes(c.action)||!rejected.has(c.id));
 }
 export function broadcastContract(candidates,snapshot,eligible=candidates){

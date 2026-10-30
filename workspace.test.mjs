@@ -102,11 +102,11 @@ test('invalid arbitration preserves earlier intentions atomically; no alternate 
  try{for(let i=0;i<5;i++)await workspaceStep(s,provider,now);assert.equal((await workspaceStep(s,provider,now)).status,'workspace_decision_failed');assert.equal((await s.pool.query('SELECT * FROM agent_goals')).rows.length,0);await workspaceStep(s,provider,now);assert.equal(calls,6);assert.equal((await s.status()).unresolved,0);}finally{await db.close();}
 });
 
-test('material repetition forces an actual durable revision before commission; final critique is advisory',async()=>{
+test('material repetition requires revision and a passing final hook before commission',async()=>{
  const {s,db}=await fixture();let revisions=0,reviews=0,calls=0;
  const provider={quote:()=>1,generate:async(_system,p,_media,schema)=>{
   calls++;
-  if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:reviews===1,legibleHook:false,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
+  if(schema===critiqueSchema){reviews++;const v=critique();v.assessments[2]={...v.assessments[2],materiallyRepeated:reviews===1,legibleHook:reviews>1,revision:'Change the visual relationship rather than the object.'};return {costMicrodollars:1,value:v};}
   if(p.startsWith('Revise this')){revisions++;assert.deepEqual(schema.properties.projectId.enum,['']);assert.equal(schema.properties.evidence.maxItems,0);assert.ok(!schema.properties.action.enum.includes('develop'));return {costMicrodollars:1,value:{...candidate(),proposal:'An interrupted amateur game screenshot whose score becomes a swarm of faces.'}};}
   return {costMicrodollars:1,value:p.startsWith('Arbitrate')?broadcast():candidate()};
  }};
@@ -120,7 +120,7 @@ test('material repetition forces an actual durable revision before commission; f
   const task=(await s.pool.query('SELECT * FROM agent_agenda')).rows[0];assert.match(task.next_step,/amateur game/);
   assert.equal(revisions,1);assert.equal(reviews,2);assert.equal(calls,8);
   assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,8);
-  const op=await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,false);
+  const op=await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,true);
  }finally{await db.close();}
 });
 
@@ -278,3 +278,5 @@ test('adaptive instructions expire, reject fabricated and visitor evidence, and 
  assert.equal(workingPolicy(b,'exploration','workspace-100'),null);
  assert.equal(workingPolicy({...b,workingPolicies:[]},'exploration','workspace-101'),null);
 });
+
+test('missing cold-viewer hook cannot win even when other scores approve',()=>{const cs=modules.map(id=>({...candidate(),id})),v=critique();v.assessments[0].legibleHook=false;assert.ok(!selectableCandidates(cs,v).some(c=>c.id===cs[0].id));cs[0].action='research';assert.ok(selectableCandidates(cs,v).some(c=>c.id===cs[0].id));});

@@ -1,5 +1,5 @@
 // Bump only when an editorial change invalidates unfinished creative intentions.
-export const CREATIVE_REVISION = 'out-of-frame-2026-10-28-v5';
+export const CREATIVE_REVISION = 'internet-native-2026-10-30-v6';
 export const stampCreativePlan = plan => ({...plan, creativeRevision: CREATIVE_REVISION});
 export const isCurrentCreativePlan = plan => plan?.creativeRevision === CREATIVE_REVISION;
 
