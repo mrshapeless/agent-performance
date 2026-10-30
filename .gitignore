@@ -69,3 +69,6 @@ privacy-*
 !public/series/unplanned-photo-06.jpg
 !public/series/unplanned-photo-07.jpg
 !public/series/unplanned-photo-08.jpg
+
+# Confirmed public reply art; publication manifest and exact hashes required.
+!public/gallery/reply-*.jpg

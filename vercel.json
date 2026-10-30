@@ -123,10 +123,6 @@
       "destination": "/small-interruptions.html"
     },
     {
-      "source": "/collections",
-      "destination": "/collections.html"
-    },
-    {
       "source": "/small-interruptions",
       "destination": "/small-interruptions.html"
     },
@@ -147,24 +143,20 @@
       "destination": "/admin.html"
     },
     {
-      "source": "/work",
-      "destination": "/work.html"
-    },
-    {
       "source": "/about",
       "destination": "/about.html"
-    },
-    {
-      "source": "/journal",
-      "destination": "/journal.html"
     },
     {
       "source": "/chat",
       "destination": "/chat.html"
     },
     {
-      "source": "/behind",
-      "destination": "/behind.html"
+      "source": "/gallery",
+      "destination": "/gallery.html"
+    },
+    {
+      "source": "/experiments",
+      "destination": "/experiments.html"
     }
   ],
   "headers": [
@@ -193,6 +185,28 @@
           "value": "no-store"
         }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/work",
+      "destination": "/gallery",
+      "permanent": false
+    },
+    {
+      "source": "/collections",
+      "destination": "/gallery",
+      "permanent": false
+    },
+    {
+      "source": "/journal",
+      "destination": "/experiments#record",
+      "permanent": false
+    },
+    {
+      "source": "/behind",
+      "destination": "/about",
+      "permanent": false
     }
   ]
 }
