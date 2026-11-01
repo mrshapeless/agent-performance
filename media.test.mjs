@@ -8,7 +8,7 @@ import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia} from './media.mjs';
 import {socialStep} from './integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
-const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
+const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',editorialResult:'supported',editorialEvidence:'The visible hesitation and caption together communicate an awkward comic reversal.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
 test('diagnostic jobs cannot be selected by cron or published even with forged ready state',async()=>{
@@ -240,7 +240,7 @@ test('character video request sends only generated opening frame through documen
  const film={...plan,medium:'video',renderer:'character',duration:6,ratio:'9:16',referenceIds:[25,26],privateBoard:'never-transmit'};
  assert.throws(()=>p.startVideo(film),/VIDEO_FIRST_FRAME_MISSING/);assert.equal(calls,0);
  await p.startVideo(film,{mime:'image/jpeg',bytes:Buffer.from('opening')});
- assert.match(body.input.prompt,/RENDER DIRECTION: lo-fi retro girl/);assert.ok(body.input.prompt.endsWith(film.prompt));assert.equal(body.input.image,'data:image/jpeg;base64,b3BlbmluZw==');assert.equal(body.input.duration,6);assert.equal(body.input.aspect_ratio,'9:16');assert.equal(body.input.generate_audio,true);
+ assert.match(body.input.prompt,/RENDER DIRECTION: lo-fi retro image-making/);assert.ok(body.input.prompt.endsWith(film.prompt));assert.equal(body.input.image,'data:image/jpeg;base64,b3BlbmluZw==');assert.equal(body.input.duration,6);assert.equal(body.input.aspect_ratio,'9:16');assert.equal(body.input.generate_audio,true);
  assert.doesNotMatch(JSON.stringify(body),/never-transmit|referenceIds|image_input|reference_images/);
 });
 
@@ -280,4 +280,21 @@ for(const identityResult of ['not_supported','uncertain',undefined])test(`charac
   assert.equal((await s.pool.query("SELECT state FROM agent_media_jobs WHERE id='media-1'")).rows[0].state,'revising');
   assert.equal(await readyMedia(s),null);assert.equal(calls,1);
  }finally{await db.close()}
+});
+
+test('finished caption is independently inspected and editorial rejection blocks attractive media',async()=>{
+ const {store:s,db}=await fixture();try{
+ await seed(s);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
+ const critic={quote:()=>1,generate:async(_sys,prompt,_asset,schema)=>{
+ assert.match(prompt,/Proposed publication caption/);assert.match(prompt,/An ink shoreline, imagined/);assert.ok(schema.required.includes('editorialResult'));
+ return {costMicrodollars:1,value:{...quality,action:'publish',summary:'Attractive but meaningless prop inspection.',editorialResult:'not_supported',editorialEvidence:'The caption invents a technical result absent from the scene.'}};
+ }};
+ assert.equal((await mediaStep(s,critic,env,services,()=>assert.fail('no upload'))).status,'media_revision_required');
+ assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
+});
+test('missing editorial evidence cannot satisfy the publication gate',async()=>{
+ const {passesQuality}=await import('./visual-contract.mjs');
+ assert.equal(passesQuality({...quality,decision:'publish',editorialEvidence:undefined}),false);
+ assert.equal(passesQuality({...quality,decision:'publish',editorialResult:'uncertain'}),false);
 });

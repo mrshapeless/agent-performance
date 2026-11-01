@@ -96,3 +96,18 @@ test('cognition can request an extended work without publishing or losing its in
  const {s,db}=await fixture();let calls=0;const now=new Date('2026-10-26T22:00:00Z');const v={...choice(),action:'develop',nextStep:'Develop a three-part illustrated story.'};const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls===1?{queries:['chair']}:v})};
  try{await cognitionStep(s,provider,now);assert.equal((await cognitionStep(s,provider,now)).choice,'develop');const request=await s.latest('work_request');assert.equal(request.projectId,v.projectId);assert.equal(request.text,v.text);assert.equal(await s.latest('x_post'),null);await cognitionStep(s,provider,now);assert.equal(calls,2);}finally{await db.close()}
 });
+
+test('terminal rejection reopens a commission once, but live revision and unknown publication protect it',async()=>{
+ const {s,db}=await fixture();try{
+ await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('reject-test','forgotten-objects','commissioned','A scene','Review')");
+ const p=JSON.stringify({agendaId:'reject-test',agendaVersion:1});
+ await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,state,plan) VALUES('parent','x-plan-parent','rejected',$1),('child','x-plan-child','queued',$1)",[p]);
+ await reconcileAgenda(s);assert.equal((await agenda(s))[0].status,'commissioned');
+ await s.pool.query("UPDATE agent_media_jobs SET state='rejected' WHERE id='child'");
+ await s.begin('x-publish-unknown','step',()=>({maximum:0}));
+ await reconcileAgenda(s);assert.equal((await agenda(s))[0].status,'commissioned');
+ await s.complete('x-publish-unknown',0,{action:'wait'});
+ await reconcileAgenda(s);assert.equal((await agenda(s))[0].status,'active');assert.equal((await agenda(s))[0].version,2);
+ await reconcileAgenda(s);assert.equal((await agenda(s))[0].version,2);
+ }finally{await db.close()}
+});

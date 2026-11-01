@@ -39,7 +39,9 @@ export async function commissionedTask(store){return (await store.pool.query("SE
 export async function reconcileAgenda(store){
  await store.pool.query(`UPDATE agent_agenda a SET status='completed',updated=now(),version=version+1
  WHERE status='commissioned' AND EXISTS (SELECT 1 FROM agent_events e WHERE e.kind='x_post' AND e.payload::jsonb->>'agendaId'=a.id AND COALESCE(e.payload::jsonb->>'agendaVersion','1')=a.version::text)`);
- await store.pool.query(`UPDATE agent_agenda a SET status='active',next_step='Previous media execution failed; inspect the recorded outcome and revise before commissioning again.',updated=now(),version=version+1
- WHERE status='commissioned' AND EXISTS(SELECT 1 FROM agent_media_jobs j WHERE j.plan->>'agendaId'=a.id AND COALESCE(j.plan->>'agendaVersion','1')=a.version::text AND j.state='failed')`);
+ await store.pool.query(`UPDATE agent_agenda a SET status='active',next_step='Previous media execution failed or was rejected; inspect the recorded criticism and choose a new intention or revision before commissioning again.',updated=now(),version=version+1
+ WHERE status='commissioned' AND EXISTS(SELECT 1 FROM agent_media_jobs j WHERE j.plan->>'agendaId'=a.id AND COALESCE(j.plan->>'agendaVersion','1')=a.version::text AND j.state IN ('failed','rejected','superseded','reconsideration'))
+ AND NOT EXISTS(SELECT 1 FROM agent_media_jobs j WHERE j.plan->>'agendaId'=a.id AND COALESCE(j.plan->>'agendaVersion','1')=a.version::text AND j.state NOT IN ('failed','rejected','superseded','reconsideration'))
+ AND NOT EXISTS(SELECT 1 FROM agent_operations o WHERE o.status='pending' AND o.id LIKE 'x-publish-%')`);
 }
 
