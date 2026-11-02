@@ -96,6 +96,15 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
+  const recoveryState=(await c.query(`SELECT j.state,
+    j.data ? 'mediaId' AS has_media_id,j.data ? 'finalized' AS finalized,
+    j.data ? 'creditRecovery20261102' AS recovery_attempted,
+    j.plan->>'creativeRevision'=$1 AS current_revision,
+    j.data->'review'->>'decision'='publish' AS approved,
+    o.status AS upload_status,o.result->>'errorCode' AS upload_error
+    FROM agent_media_jobs j LEFT JOIN agent_operations o ON o.id=j.id || '-upload'
+    WHERE j.id='media-culture-and-emotion-2026-11-02-v7-249111' AND j.state='failed'`,[CREATIVE_REVISION])).rows[0];
+  if(recoveryState)console.info('MEDIA_RECOVERY_STATE',JSON.stringify(recoveryState));
   // Operator-authorized single recovery after replenishing credits. Only a
   // confirmed rejected initialization can resume; unknown outcomes stay stopped.
   await c.query(`UPDATE agent_media_jobs j SET state='approved',
