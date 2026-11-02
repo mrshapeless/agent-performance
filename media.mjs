@@ -96,12 +96,31 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
+  // Recover the one inspected ready image wrongly selected under the obsolete
+  // visual-contract literal. Never re-upload, and never touch any publish attempt.
+  await c.query(`UPDATE agent_media_jobs j SET state='ready',
+    data=data || '{"readyRecovery20261102":true}'::jsonb,updated=now()
+    WHERE j.id='media-culture-and-emotion-2026-11-02-v7-249111'
+    AND state='failed' AND data->>'error'='X_HTTP_400'
+    AND data->>'finalized'='true' AND data->>'publicationPolicy'=$1
+    AND NOT(data ? 'readyRecovery20261102')
+    AND plan->>'creativeRevision'=$2
+    AND (lease_until IS NULL OR lease_until<now())
+    AND (data->>'expiresAt')::numeric > extract(epoch FROM now())*1000
+    AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id=j.id || '-upload'
+      AND o.status='complete' AND o.result->>'mediaId'=j.data->>'mediaId')
+    AND NOT EXISTS(SELECT 1 FROM agent_operations p
+      WHERE p.id LIKE 'x-publish-' || regexp_replace(j.plan_id,'^x-plan-','') || '%')`,[VISUAL_CONTRACT,CREATIVE_REVISION]);
   const recoveryState=(await c.query(`SELECT j.state,
     j.data ? 'mediaId' AS has_media_id,j.data ? 'finalized' AS finalized,
     j.data ? 'creditRecovery20261102' AS recovery_attempted,
     j.plan->>'creativeRevision'=$1 AS current_revision,
     j.data->'review'->>'decision'='publish' AS approved,
-    o.status AS upload_status,o.result->>'errorCode' AS upload_error
+    o.status AS upload_status,o.result->>'errorCode' AS upload_error,
+    j.data ? 'finalizeRecovery' AS finalize_recovery,
+    (SELECT result->>'errorCode' FROM agent_operations WHERE id=j.id || '-upload-finalize-recovery') AS recovery_error,
+    (SELECT jsonb_agg(jsonb_build_object('status',status,'action',result->>'action')) FROM agent_operations
+      WHERE id LIKE 'x-publish-' || regexp_replace(j.plan_id,'^x-plan-','') || '%') AS publication_attempts
     FROM agent_media_jobs j LEFT JOIN agent_operations o ON o.id=j.id || '-upload'
     WHERE j.id='media-culture-and-emotion-2026-11-02-v7-249111' AND j.state='failed'`,[CREATIVE_REVISION])).rows[0];
   if(recoveryState)console.info('MEDIA_RECOVERY_STATE',JSON.stringify(recoveryState));
@@ -121,7 +140,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   // Recover the pre-finalize-response image uploader once, using the saved asset.
   // A new upload operation is charged; paid image generation is never repeated.
   await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
-  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE (($2::text IS NULL AND NOT(plan ? 'qualityTrial')) OR id=$2) AND available_at<=now() AND (plan->>'creativeRevision'=$1 OR state='processing' OR (state='queued' AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id IN (agent_media_jobs.id || '-render',agent_media_jobs.id || '-first-frame-render') AND o.status='complete' AND o.result ? 'predictionId') AND NOT EXISTS(SELECT 1 FROM agent_operations pending WHERE pending.status='pending' AND pending.id LIKE agent_media_jobs.id || '-%'))) AND (state IN ('queued','processing','rendered','revising','approved','uploading','processing_x') OR (state='ready' AND (NOT(data ? 'styleAudit') OR data->>'publicationPolicy' IS DISTINCT FROM 'out-of-frame-v1'))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE",[CREATIVE_REVISION,targetJobId])).rows[0];
+  const row=(await c.query("SELECT * FROM agent_media_jobs WHERE (($2::text IS NULL AND NOT(plan ? 'qualityTrial')) OR id=$2) AND available_at<=now() AND (plan->>'creativeRevision'=$1 OR state='processing' OR (state='queued' AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id IN (agent_media_jobs.id || '-render',agent_media_jobs.id || '-first-frame-render') AND o.status='complete' AND o.result ? 'predictionId') AND NOT EXISTS(SELECT 1 FROM agent_operations pending WHERE pending.status='pending' AND pending.id LIKE agent_media_jobs.id || '-%'))) AND (state IN ('queued','processing','rendered','revising','approved','uploading','processing_x') OR (state='ready' AND (NOT(data ? 'styleAudit') OR data->>'publicationPolicy' IS DISTINCT FROM $3))) AND (lease_until IS NULL OR lease_until<now()) ORDER BY created LIMIT 1 FOR UPDATE",[CREATIVE_REVISION,targetJobId,VISUAL_CONTRACT])).rows[0];
   if(!row)return null;
   await c.query("UPDATE agent_media_jobs SET lease_token=$1,lease_until=now()+interval '3 minutes' WHERE id=$2",[token,row.id]);
   return {...row,lease_token:token};
@@ -280,6 +299,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   }
   if(!passesQuality(job.data.review)||!passesQuality(job.data.styleAudit)||(job.plan.renderer==='character'&&job.data.styleAudit?.identityResult!=='supported')||job.data.publicationPolicy!==VISUAL_CONTRACT)return await holdForRevision(store,job,{holdReason:'QUALITY_EVIDENCE_MISSING'});
   if(job.plan.qualityTrial){await patch(store,job,job.state);return {status:'quality_trial_complete'};}
+  if(job.state==='ready'){await patch(store,job,'ready',{publicationPolicy:VISUAL_CONTRACT});return {status:'media_ready'};}
   if(env.X_ENABLED!=='true'){await patch(store,job,job.state);return {status:'x_disabled'};}
   const x=xFactory(store,env);
   if(job.state==='approved'){

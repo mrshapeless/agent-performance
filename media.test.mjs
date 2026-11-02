@@ -11,6 +11,27 @@ import {XClient} from './x.mjs';
 const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',editorialResult:'supported',editorialEvidence:'The visible hesitation and caption together communicate an awkward comic reversal.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
+test('inspected finalized recovery preserves media and refuses any prior publish attempt',async()=>{
+ const {store:s,db}=await fixture();const id='media-culture-and-emotion-2026-11-02-v7-249111';try{
+  await seed(s);for(let i=0;i<3;i++)await mediaStep(s,reviewer(),env,services);
+  await s.pool.query("UPDATE agent_media_jobs SET id=$1,state='failed',data=data || $2::jsonb",[id,JSON.stringify({error:'X_HTTP_400',finalized:true,mediaId:'777',expiresAt:Date.now()+86400000})]);
+  await s.begin(id+'-upload','step',()=>({maximum:1}));await s.complete(id+'-upload',1,{action:'media_upload',mediaId:'777'});
+  assert.equal((await mediaStep(s,reviewer(),env,services,()=>assert.fail('no upload'))).status,'no_media_jobs');
+  assert.equal((await readyMedia(s)).data.mediaId,'777');
+  await s.pool.query("UPDATE agent_media_jobs SET state='failed',data=data - 'readyRecovery20261102'");
+  await s.begin('x-publish-1','step',()=>({maximum:1}));
+  await mediaStep(s,reviewer(),env,services,()=>assert.fail('no upload'));
+  assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
+});
+test('ready media is not polled again after the visual contract changes',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s);for(let i=0;i<3;i++)await mediaStep(s,reviewer(),env,services);
+  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=data || '{\"finalized\":true,\"mediaId\":\"777\"}'::jsonb");
+  assert.equal((await mediaStep(s,reviewer(),env,services,()=>assert.fail('ready media must not call X'))).status,'no_media_jobs');
+  assert.ok(await readyMedia(s));
+ }finally{await db.close()}
+});
 test('credit recovery resumes only the confirmed rejected upload once, without generating again',async()=>{
  const {store:s,db}=await fixture();const id='media-culture-and-emotion-2026-11-02-v7-249111';let uploads=0;
  try{
