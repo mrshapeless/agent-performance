@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "node migrate.mjs",
+  "buildCommand": "node scripts/migrate.mjs",
   "outputDirectory": "public",
   "regions": [
     "iad1"
@@ -69,7 +69,7 @@
     },
     "api/gauntlet.mjs": {
       "maxDuration": 120,
-      "includeFiles": "{private/**,public/series/afterimage-*.jpg,schema.sql}"
+      "includeFiles": "{private/**,public/series/afterimage-*.jpg,db/schema.sql}"
     },
     "api/tool-projects.mjs": {
       "maxDuration": 120

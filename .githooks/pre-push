@@ -1,2 +1,2 @@
 #!/bin/sh
-node privacy-check.mjs
+node scripts/privacy-check.mjs

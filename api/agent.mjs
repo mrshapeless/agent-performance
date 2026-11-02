@@ -1,8 +1,8 @@
-import { scopedPool, instanceEnv } from '../instance.mjs';
+import { scopedPool, instanceEnv } from '../src/instance.mjs';
 import pg from 'pg';
-import { PostgresStore } from '../postgres.mjs';
-import { Gemini } from '../gemini.mjs';
-import { createHandler } from '../cloud.mjs';
+import { PostgresStore } from '../src/postgres.mjs';
+import { Gemini } from '../src/gemini.mjs';
+import { createHandler } from '../src/cloud.mjs';
 
 export default {
   fetch: createHandler({
@@ -18,4 +18,3 @@ export default {
     createProvider: () => new Gemini(),
   }),
 };
-
