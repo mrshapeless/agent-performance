@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from './postgres.mjs';
-import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia} from './media.mjs';
+import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia,recentPublishedPixels} from './media.mjs';
 import {socialStep} from './integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from './media-providers.mjs';
 import {XClient} from './x.mjs';
@@ -342,4 +342,26 @@ test('missing editorial evidence cannot satisfy the publication gate',async()=>{
  const {passesQuality}=await import('./visual-contract.mjs');
  assert.equal(passesQuality({...quality,decision:'publish',editorialEvidence:undefined}),false);
  assert.equal(passesQuality({...quality,decision:'publish',editorialResult:'uncertain'}),false);
+});
+
+test('published pixel comparison excludes missing assets and preserves ordered evidence',async()=>{
+ let query=''; const store={pool:{query:async q=>{query=q;return {rows:[{id:'new',data:{assetId:'a'}},{id:'missing',data:{assetId:'b'}},{id:'old',data:{assetId:'c'}}]};}},asset:async id=>id==='b'?null:{mime:'image/jpeg',bytes:Buffer.from(id)}};
+ const result=await recentPublishedPixels(store,{load:async a=>a});
+ assert.match(query,/state='published'/);assert.match(query,/LIMIT 6/);
+ assert.deepEqual(result.ids,['new','old']);assert.equal(result.requested,3);assert.equal(result.images[0].bytes.toString(),'a');
+});
+
+test('recent published pixels reach independent editor and repeated staging blocks upload',async()=>{
+ const {store:s,db}=await fixture();try{
+  await seed(s);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
+  await s.pool.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state,data) VALUES('prior','prior',$1,'published',$2)",[JSON.stringify({medium:'image'}),JSON.stringify({assetId:'synthetic-prior'})]);
+  const originalAsset=s.asset.bind(s);s.asset=async id=>id==='synthetic-prior'?{mime:'image/jpeg',bytes:Buffer.from('prior-pixels')}:originalAsset(id);
+  const critic={quote:()=>1,generate:async(_sys,prompt,_asset,_schema,refs)=>{
+   assert.match(prompt,/RECENT PUBLISHED WORKS/);assert.match(prompt,/prior/);
+   assert.equal(Buffer.from(refs.at(-1).bytes).toString(),'prior-pixels');
+   return {costMicrodollars:1,value:{...quality,action:'publish',summary:'Repeated staging.',editorialResult:'not_supported',editorialEvidence:'The same medium portrait and held object recur; only the subject changes.'}};
+  }};
+  assert.equal((await mediaStep(s,critic,env,services,()=>assert.fail('must not upload'))).status,'media_revision_required');
+  assert.equal(await readyMedia(s),null);
+ }finally{await db.close()}
 });
