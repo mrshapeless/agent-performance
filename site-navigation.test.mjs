@@ -1,8 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-test('five public destinations are consistent across primary pages and series',()=>{
+test('six public destinations are consistent across primary pages and series',()=>{
  for(const file of ['index.html','gallery.html','experiments.html','about.html','chat.html','character.html','out-of-frame.html','unplanned.html','nothing-to-see/index.html']){
   const h=readFileSync('public/'+file,'utf8');const nav=h.match(/<nav[^>]*>([\s\S]*?)<\/nav>/)[1];
-  assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1]),['/','/gallery','/experiments','/about','/chat'],file);
+  assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m=>m[1]),['/','/gallery','/experiments','/memory','/about','/chat'],file);
  }
 });
 test('home has no duplicate image artworks and no legacy journal links',()=>{const h=readFileSync('public/index.html','utf8');const images=[...h.matchAll(/<img[^>]*src="([^"]+)"/g)].map(m=>m[1]);assert.equal(images.length,new Set(images).size);assert.ok(!h.includes('href="/journal'));});

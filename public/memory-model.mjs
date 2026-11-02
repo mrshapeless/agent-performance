@@ -1,0 +1,17 @@
+const labels={workspace_broadcast:'Decision',workspace_note:'Memory note',workspace_outcome:'Outcome',studio_revision:'Studio revision',reflect:'Strategy revision',cognitive_decision:'Decision',media_review:'Artist review',art_image:'Image work',art_video:'Film work',x_post:'Publication',draft_text:'Draft',identity:'Identity'};
+const lane=k=>k.includes('outcome')||k==='media_review'?'outcome':k.includes('broadcast')||k==='cognitive_decision'?'decision':['art_image','art_video','x_post','draft_text'].includes(k)?'work':'memory';
+const str=x=>typeof x==='string'?x:'';
+export function memoryGraph(data){
+ const nodes=[],edges=[],ids=new Set();let omitted=0;
+ function add(n){if(!ids.has(n.id)){nodes.push(n);ids.add(n.id);}}
+ const events=(data.events||[]).filter(e=>labels[e.kind]).sort((a,b)=>Date.parse(a.created)-Date.parse(b.created));
+ for(const e of events){const p=e.content||{};add({id:'event:'+e.seq,label:labels[e.kind],type:lane(e.kind),time:Date.parse(e.created),date:e.created,title:str(p.summary)||str(p.text)||str(p.alt)||labels[e.kind],body:str(p.observedResult),status:'Recorded event',url:/^https:\/\/x\.com\//.test(p.url||'')?p.url:null,seq:String(e.seq),current:false});}
+ const latest=events.length?Math.max(...events.map(e=>Date.parse(e.created))):Date.now(),w=data.runtime?.workspace||{},b=w.broadcast;
+ if(b){add({id:'self',label:'Current point of view',type:'memory',time:latest,current:true,title:str(b.selfModel?.desire),body:(b.selfModel?.preferences||[]).filter(x=>typeof x==='string').join('\n\n'),uncertainty:(b.selfModel?.uncertainties||[]).filter(x=>typeof x==='string').join('\n\n'),change:str(b.selfModel?.change),status:'Current self-description · model-authored'});add({id:'attention',label:'Current attention',type:'decision',time:latest,current:true,title:str(b.summary),body:'Selected: '+str(b.selectedId),status:'Current server snapshot'});edges.push({source:'self',target:'attention',kind:'context'});}
+ for(const g of w.goals||[]){add({id:'goal:'+g.id,label:g.status==='completed'?'Completed goal':'Goal',type:'goal',current:true,time:latest,title:str(g.objective),body:str(g.why),status:str(g.status),test:str(g.success),evidence:g.evidence||[]});}
+ for(const p of w.predictions||[]){add({id:'prediction:'+p.id,label:p.status==='observed'?'Checked prediction':'Prediction',type:'outcome',current:true,time:latest,title:str(p.metric).replaceAll('_',' '),body:'Expected probability: '+Math.round(p.probability*100)+'%. '+(p.status==='observed'?'Recorded outcome: '+p.outcome+'.':'Outcome not yet recorded.'),status:str(p.status),uncertainty:p.metric==='visual_alignment'?'Model visual assessment, not audience approval.':'A recorded operational outcome is not evidence of audience preference.'});if(ids.has('goal:'+p.goal_id))edges.push({source:'goal:'+p.goal_id,target:'prediction:'+p.id,kind:'goal prediction'});}
+ for(const n of nodes){for(const e of n.evidence||[]){const id='event:'+e;if(ids.has(id))edges.push({source:id,target:n.id,kind:'cited evidence'});else omitted++;}delete n.evidence;}
+ if(b)for(const e of b.evidence||[]){const id='event:'+e;if(ids.has(id))edges.push({source:id,target:'attention',kind:'cited evidence'});else omitted++;}
+ const decisions=nodes.filter(n=>!n.current&&n.type==='decision');for(let i=1;i<decisions.length;i++)edges.push({source:decisions[i-1].id,target:decisions[i].id,kind:'sequence'});
+ return {nodes,edges,omitted,latest,events:events.length};
+}

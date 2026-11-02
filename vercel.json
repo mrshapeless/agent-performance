@@ -157,6 +157,10 @@
     {
       "source": "/experiments",
       "destination": "/experiments.html"
+    },
+    {
+      "source": "/memory",
+      "destination": "/memory.html"
     }
   ],
   "headers": [
