@@ -11,6 +11,30 @@ import {XClient} from './x.mjs';
 const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',editorialResult:'supported',editorialEvidence:'The visible hesitation and caption together communicate an awkward comic reversal.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};
+test('credit recovery resumes only the confirmed rejected upload once, without generating again',async()=>{
+ const {store:s,db}=await fixture();const id='media-culture-and-emotion-2026-11-02-v7-249111';let uploads=0;
+ try{
+  await seed(s);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);await mediaStep(s,reviewer(),env,services);
+  await s.pool.query("UPDATE agent_media_jobs SET id=$1,state='failed',data=data || '{\"error\":\"X_HTTP_400\"}'::jsonb",[id]);
+  await s.begin(id+'-upload','step',()=>({maximum:1}));
+  // Pending/uncertain requests cannot resume.
+  assert.equal((await mediaStep(s,reviewer(),env,services,()=>assert.fail('uncertain'))).status,'no_media_jobs');
+  await s.complete(id+'-upload',1,{action:'media_failed',errorCode:'X_HTTP_400'});
+  const x=()=>({verify:async()=>{},initMedia:async()=>{uploads++;throw Error('X_HTTP_400')}});
+  assert.equal((await mediaStep(s,reviewer(),env,{...services,image:()=>assert.fail('no regeneration')},x)).status,'media_failed');
+  assert.equal(uploads,1);
+  assert.equal((await mediaStep(s,reviewer(),env,services,x)).status,'no_media_jobs');
+  assert.equal(uploads,1);
+ }finally{await db.close()}
+});
+test('X rejection diagnostics omit response prose, credentials and query values',async()=>{
+ const original=console.error,logs=[];console.error=(...v)=>logs.push(v);
+ try{
+  const x=new XClient({X_EXPECTED_USERNAME:'artist'},async()=>Response.json({detail:'private-secret',errors:[{code:123,message:'private-secret'}]},{status:400}),async()=> 'private-secret');
+  await assert.rejects(x.request('GET','/2/media/upload?media_id=123456'),e=>e.xDiagnostic.route==='/2/media/upload'&&e.status===400);
+  assert.ok(!JSON.stringify(logs).includes('private-secret'));assert.ok(!JSON.stringify(logs).includes('123456'));
+ }finally{console.error=original}
+});
 test('diagnostic jobs cannot be selected by cron or published even with forged ready state',async()=>{
  const {store:s,db}=await fixture();try{
   await seed(s,{...plan,qualityTrial:'qualification'});

@@ -19,7 +19,15 @@ export class XClient {
       // An explicit 401 rejects the request. Never retry timeout or an ambiguous write.
       if(r.status===401&&this.bearer&&attempt===0){access=await this.bearer(access);continue;}
       if(method==='GET' && [429,502,503,504].includes(r.status) && attempt===0){await new Promise(resolve=>setTimeout(resolve,1000));continue;}
-      if(!r.ok){const error=Error('X_HTTP_'+r.status);error.phase=method==='GET'?'verify':'publish';error.status=r.status;throw error;}
+      if(!r.ok){
+        const error=Error('X_HTTP_'+r.status);error.phase=method==='GET'?'verify':'publish';error.status=r.status;
+        // Log route and numeric provider codes only, never response prose, tokens or payloads.
+        const route=path.split('?')[0].replace(/\d{5,}/g,':id');
+        let problem;try{problem=await r.json();}catch{}
+        error.xDiagnostic={method,route,status:r.status,codes:(Array.isArray(problem?.errors)?problem.errors:[]).map(e=>e.code).filter(Number.isInteger).slice(0,8)};
+        console.error('X_REQUEST_REJECTED',JSON.stringify(error.xDiagnostic));
+        throw error;
+      }
       if(r.status===204)return {};
       const raw=await r.text();return raw?JSON.parse(raw):{};
     }

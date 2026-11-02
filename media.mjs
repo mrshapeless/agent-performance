@@ -96,6 +96,19 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
+  // Operator-authorized single recovery after replenishing credits. Only a
+  // confirmed rejected initialization can resume; unknown outcomes stay stopped.
+  await c.query(`UPDATE agent_media_jobs j SET state='approved',
+    data=data || '{"creditRecovery20261102":true,"retries":0}'::jsonb,updated=now()
+    WHERE j.id='media-culture-and-emotion-2026-11-02-v7-249111'
+    AND j.state='failed' AND j.data->>'error'='X_HTTP_400'
+    AND NOT(j.data ? 'mediaId') AND NOT(j.data ? 'creditRecovery20261102')
+    AND j.data->'review'->>'decision'='publish'
+    AND j.plan->>'creativeRevision'=$1
+    AND (j.lease_until IS NULL OR j.lease_until<now())
+    AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id=j.id || '-upload'
+      AND o.status='complete' AND o.result->>'errorCode'='X_HTTP_400'
+      AND NOT(o.result ? 'mediaId'))`,[CREATIVE_REVISION]);
   // Recover the pre-finalize-response image uploader once, using the saved asset.
   // A new upload operation is charged; paid image generation is never repeated.
   await c.query("UPDATE agent_media_jobs SET state='approved',data=data || '{\"finalizeRecovery\":true,\"retries\":0}'::jsonb,updated=now() WHERE plan->>'medium'='image' AND data->'review'->>'decision'='publish' AND data->>'mediaId' IS NOT NULL AND NOT(data ? 'finalized') AND NOT(data ? 'finalizeRecovery') AND (state='processing_x' OR (state='failed' AND data->>'error'='MEDIA_PROVIDER_RETRY_LIMIT')) AND (lease_until IS NULL OR lease_until<now())");
@@ -261,7 +274,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   if(env.X_ENABLED!=='true'){await patch(store,job,job.state);return {status:'x_disabled'};}
   const x=xFactory(store,env);
   if(job.state==='approved'){
-   op=job.id+(job.data.finalizeRecovery?'-upload-finalize-recovery':'-upload');maximum=1_000_000;
+   op=job.id+(job.data.creditRecovery20261102?'-upload-credit-recovery-20261102':job.data.finalizeRecovery?'-upload-finalize-recovery':'-upload');maximum=1_000_000;
    const req=await store.begin(op,'step',()=>({maximum}));
    if(req.replay){
     if(req.status==='complete'&&req.result?.mediaId){await patch(store,job,'uploading',{mediaId:req.result.mediaId,expiresAt:req.result.expiresAt,segment:0});return {status:'upload_recovered'};}
