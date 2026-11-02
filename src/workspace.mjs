@@ -62,9 +62,14 @@ export function broadcastContract(candidates,snapshot,eligible=candidates){
  p.selectedId={type:'string',enum:eligible.map(c=>c.id)};p.attention.items=candidatesEnum;
  p.selection.items.properties.id=candidatesEnum;p.selection.items.properties.reason={type:'string',maxLength:700};
  p.note.properties.links={...evidenceList,maxItems:3};p.note.properties.claim={type:'string',maxLength:1500,description:'Concise memory hypothesis, preferably at most 400 characters; not an essay.'};
- // Do not multiply constrained-decoding branches by every historical goal.
- // Completion still requires matching observed evidence in validateBroadcast.
- if(snapshot.state.goals.length)p.goalChanges.items=object({id:{type:'string',enum:snapshot.state.goals.map(g=>g.id)},status:{type:'string',enum:['active','paused','completed','abandoned']},reason:{type:'string',maxLength:700}});
+ // Two bounded branches, not one per historical goal. Do not invite a completion
+ // which the semantic validator would reject and roll back the entire decision.
+ if(snapshot.state.goals.length){
+  const change=(ids,statuses)=>object({id:{type:'string',enum:ids},status:{type:'string',enum:statuses},reason:{type:'string',maxLength:700}});
+  const ongoing=change(snapshot.state.goals.map(g=>g.id),['active','paused','abandoned']);
+  const completed=snapshot.state.goals.filter(g=>(snapshot.state.predictions??[]).some(p=>p.goal_id===g.id&&p.status==='observed'&&p.outcome===1)).map(g=>g.id);
+  p.goalChanges.items=completed.length?{anyOf:[ongoing,change(completed,['completed'])]}:ongoing;
+ }
  else p.goalChanges.maxItems=0;
  return schema;
 }
@@ -234,7 +239,7 @@ export async function workspaceStep(store,provider,now=new Date()){
   for(const assessment of needs){
    const index=candidates.findIndex(c=>c.id===assessment.id),original=candidates[index],revisionId=episode+'-creative-revision-'+original.id,old=await store.operation(revisionId);
    if(old){if(old.status!=='complete')return {status:'creative_revision_pending'};if(old.result?.action==='workspace_proposal')candidates[index]={...old.result,action:old.result.choice};continue;}
-   const revisionContext=moduleContext(original.id,snapshot);
+   const revisionContext={...moduleContext(original.id,snapshot),toolProjects:snapshot.toolProjects??[]};
    const prompt='Revise this executable creative proposal after an independent comparison. '+audienceDirection+' Change its actual perceptible mechanism or hook, not only its rationale or surface subject. Keep freedom of subject and medium; do not add a generic low-fi filter or invent a new biography. Preserve the goal if useful, or originate one. No automatic replies. Return a complete candidate. Evidence and project IDs may only come from the supplied context. '+JSON.stringify({original,assessment,evidence:revisionContext.evidence,projects:revisionContext.studio.projects});
    const req=await store.begin(revisionId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:'creative_revision_pending'};let cost=req.maximum;
    try{const refs=original.id==='exploration'?await explorationReferences(episode):[];const answer=await provider.generate(constitution,prompt,null,candidateContract(revisionContext),refs);cost=answer.costMicrodollars;const v=validateCandidate(answer.value,{...snapshot,studio:revisionContext.studio,evidence:revisionContext.evidence});if(v.proposal.trim()===original.proposal.trim())throw Error('UNCHANGED_CREATIVE_REVISION');await store.complete(revisionId,cost,{...v,id:original.id,choice:v.action,action:'workspace_proposal',revisionOf:original.id});}

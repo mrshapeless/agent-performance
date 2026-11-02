@@ -213,8 +213,15 @@ test('arbitration cannot commission a repeated premise by ignoring its selection
 
 test('goal completion contract matches the evidence validator before a paid arbitration',()=>{
  const schema=broadcastContract(modules.map(id=>({...candidate(),id})),{evidence:[],state:{goals:[{id:'unverified'},{id:'observed'}],predictions:[{goal_id:'observed',status:'observed',outcome:1}]}});
- assert.equal(schema.properties.goalChanges.items.anyOf,undefined);
- assert.deepEqual(schema.properties.goalChanges.items.properties.id.enum,['unverified','observed']);
+ const [ongoing,completed]=schema.properties.goalChanges.items.anyOf;
+ assert.deepEqual(ongoing.properties.id.enum,['unverified','observed']);
+ assert.ok(!ongoing.properties.status.enum.includes('completed'));
+ assert.deepEqual(completed.properties.id.enum,['observed']);
+ assert.deepEqual(completed.properties.status.enum,['completed']);
+ const snapshot={evidence:[],state:{goals:[{id:'unverified'}],predictions:[]}};
+ const cs=modules.map(id=>({...candidate(),id}));
+ assert.ok(!broadcastContract(cs,snapshot).properties.goalChanges.items.properties.status.enum.includes('completed'));
+ assert.throws(()=>validateBroadcast({...broadcast(),goalChanges:[{id:'unverified',status:'completed',reason:'Unsupported completion'}]},cs,snapshot),/INVALID_WORKSPACE_OUTPUT_12/);
 });
 
 test('working instructions survive restart, change next module input, and can be retired',async()=>{
@@ -301,5 +308,35 @@ test('selected external research creates one queued request and records its rece
   assert.equal(rows.length,1);assert.equal(rows[0].state,'queued');assert.equal(rows[0].tool,'grok');
   const receipt=await s.latest('cognitive_decision');assert.equal(receipt.toolProjectId,rows[0].id);assert.equal(receipt.executionState,'queued_or_existing_request_not_completed');
   await workspaceStep(s,provider,now);assert.equal((await s.pool.query('SELECT * FROM agent_tool_projects')).rows.length,1);
+ }finally{await db.close();}
+});
+
+test('unsupported completion aborts a selected research transaction, not just its goal update',async()=>{
+ const {s,db}=await fixture();
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>({costMicrodollars:1,value:schema===critiqueSchema?critique():p.startsWith('Arbitrate')?{...broadcast(),goalChanges:[{id:'unverified',status:'completed',reason:'No observed evidence'}]}:candidate('research')})};
+ try{
+  await s.pool.query("INSERT INTO agent_goals(id,status,objective,why,success,evidence) VALUES('unverified','active','Test','Test','Test','[]')");
+  let result;for(let i=0;i<6;i++)result=await workspaceStep(s,provider,now);
+  assert.equal(result.failureCode,'INVALID_WORKSPACE_OUTPUT_12');
+  assert.equal((await s.pool.query('SELECT * FROM agent_tool_projects')).rows.length,0);
+  assert.equal((await s.pool.query("SELECT status FROM agent_goals WHERE id='unverified'")).rows[0].status,'active');
+ }finally{await db.close();}
+});
+
+test('creative revision sees the same busy tools as semantic validation',async()=>{
+ const {s,db}=await fixture();let revisionChecked=false;
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>{
+  if(schema===critiqueSchema){const c=critique();c.assessments[0].materiallyRepeated=true;return {costMicrodollars:1,value:c};}
+  if(p.startsWith('Revise this executable')){
+   revisionChecked=true;assert.ok(!schema.properties.action.enum.includes('research'));
+   assert.ok(schema.properties.action.enum.includes('prototype'));
+   return {costMicrodollars:1,value:{...candidate(),proposal:'A materially revised synthetic work.'}};
+  }
+  return {costMicrodollars:1,value:candidate()};
+ }};
+ try{
+  await s.pool.query("INSERT INTO agent_tool_projects(id,tool,brief,state) VALUES('pending-grok','grok','{}','queued')");
+  for(let i=0;i<6;i++)await workspaceStep(s,provider,now);
+  assert.equal(revisionChecked,true);
  }finally{await db.close();}
 });
