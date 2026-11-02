@@ -280,3 +280,26 @@ test('adaptive instructions expire, reject fabricated and visitor evidence, and 
 });
 
 test('missing cold-viewer hook cannot win even when other scores approve',()=>{const cs=modules.map(id=>({...candidate(),id})),v=critique();v.assessments[0].legibleHook=false;assert.ok(!selectableCandidates(cs,v).some(c=>c.id===cs[0].id));cs[0].action='research';assert.ok(selectableCandidates(cs,v).some(c=>c.id===cs[0].id));});
+
+test('busy external tools are excluded from proposal schema and rejected by validation',()=>{
+ const snapshot={studio,evidence:[],toolProjects:[{tool:'grok',state:'running'},{tool:'cursor',state:'returned'}]};
+ const allowed=candidateContract(snapshot).properties.action.enum;
+ assert.ok(!allowed.includes('research'));assert.ok(!allowed.includes('prototype'));assert.ok(allowed.includes('write'));
+ assert.throws(()=>validateCandidate(candidate('research'),snapshot),/INVALID/);
+ assert.throws(()=>validateCandidate(candidate('prototype'),snapshot),/INVALID/);
+ snapshot.toolProjects=[{tool:'grok',state:'reviewed'}];
+ assert.ok(candidateContract(snapshot).properties.action.enum.includes('research'));
+});
+
+test('selected external research creates one queued request and records its receipt without claiming completion',async()=>{
+ const {s,db}=await fixture();
+ const provider={quote:()=>1,generate:async(_s,p,_m,schema)=>({costMicrodollars:1,value:schema===critiqueSchema?critique():p.startsWith('Arbitrate')?broadcast():candidate('research')})};
+ try{
+  let result;for(let i=0;i<6;i++)result=await workspaceStep(s,provider,now);
+  assert.equal(result.status,'workspace_decided');assert.equal(result.choice,'research');
+  const rows=(await s.pool.query('SELECT * FROM agent_tool_projects')).rows;
+  assert.equal(rows.length,1);assert.equal(rows[0].state,'queued');assert.equal(rows[0].tool,'grok');
+  const receipt=await s.latest('cognitive_decision');assert.equal(receipt.toolProjectId,rows[0].id);assert.equal(receipt.executionState,'queued_or_existing_request_not_completed');
+  await workspaceStep(s,provider,now);assert.equal((await s.pool.query('SELECT * FROM agent_tool_projects')).rows.length,1);
+ }finally{await db.close();}
+});
