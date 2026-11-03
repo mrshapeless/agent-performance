@@ -18,10 +18,11 @@ test('reconcile only the confirmed 402; retry once, preserve unknown writes and 
  await s.begin('x-publish-248973','step',()=>({maximum:210000}));
  await recoverRejectedX(c,'other');assert.equal((await s.status()).unresolved,1);
  await recoverRejectedX(c,'generation_02');await recoverRejectedX(c,'generation_02');assert.equal((await s.status()).unresolved,0);assert.equal((await s.publicJournal()).filter(e=>e.kind==='x_failed').length,1);
- const current='x-plan-'+CREATIVE_REVISION+'-248973';await s.begin(current,'step',()=>({maximum:0}));await s.complete(current,0,stampCreativePlan({action:'x_draft',text:'original',summary:'A fresh decision'}));
+ const current='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/1800000);await s.begin(current,'step',()=>({maximum:0}));await s.complete(current,0,stampCreativePlan({action:'x_draft',text:'original',summary:'A fresh decision'}));
  const client=()=>({post:async text=>{calls++;assert.equal(text,'original');return {id:'123',url:'https://x.com/i/web/status/123'}}});
  assert.equal((await socialStep(s,null,env,now,client)).status,'published');await socialStep(s,null,env,now,client);assert.equal(calls,1);
- const later=new Date('2026-10-21T21:00:00Z');await s.begin('x-plan-'+CREATIVE_REVISION+'-248974','step',()=>({maximum:1}));await s.complete('x-plan-'+CREATIVE_REVISION+'-248974',1,stampCreativePlan({action:'x_draft',text:'next',summary:'choice'}));
+ await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[now.toISOString()]);
+ const later=new Date('2026-10-21T21:00:00Z');await s.begin('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),'step',()=>({maximum:1}));await s.complete('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),1,stampCreativePlan({action:'x_draft',text:'next',summary:'choice'}));
  const rejected=()=>({post:async()=>{throw Error('X_HTTP_402')}});
  assert.equal((await socialStep(s,null,env,later,rejected)).status,'payment_required');assert.equal((await s.status()).unresolved,0);
  const timeout=()=>({post:async()=>{calls++;throw Error('timeout')}});

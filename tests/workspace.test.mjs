@@ -73,7 +73,7 @@ test('critique receives bounded published construction history even outside rece
   }};
   for(let i=0;i<5;i++)await workspaceStep(s,provider,now);
   assert.equal(explorationSeen,true);assert.equal(critiqueSeen,true);
-  const saved=(await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-snapshot')).result;
+  const saved=(await s.operation('workspace-v1-'+CREATIVE_REVISION+'-m20-'+Math.floor(now.getTime()/1200000)+'-snapshot')).result;
   assert.equal(saved.publishedVisualHistory.length,24);assert.equal(moduleContext('exploration',saved).publishedVisualHistory,undefined);
  }finally{await db.close()}
 });
@@ -120,7 +120,7 @@ test('material repetition requires revision and a passing final hook before comm
   const task=(await s.pool.query('SELECT * FROM agent_agenda')).rows[0];assert.match(task.next_step,/amateur game/);
   assert.equal(revisions,1);assert.equal(reviews,2);assert.equal(calls,8);
   assert.equal((await workspaceStep(s,provider,now)).replay,true);assert.equal(calls,8);
-  const op=await s.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/3600000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,true);
+  const op=await s.operation('workspace-v1-'+CREATIVE_REVISION+'-m20-'+Math.floor(now.getTime()/1200000)+'-broadcast');assert.equal(op.result.creativeCritique.assessments[2].legibleHook,true);
  }finally{await db.close();}
 });
 

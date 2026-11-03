@@ -32,7 +32,7 @@ export function validateDecision(v,studio,memories,tasks,knownLessons){
 export async function cognitionStep(store,provider,now=new Date()){
  await reconcileAgenda(store);
  const studio=await store.latest('studio_revision');if(!studio)return {status:'studio_required'};
- const id='cognition-v2-'+Math.floor(now.getTime()/3600000),searchId=id+'-recall';
+ const id='cognition-v3-'+Math.floor(now.getTime()/1200000),searchId=id+'-recall';
  const existing=await store.operation(id);if(existing)return {status:existing.status,replay:true};
  const tasks=await agenda(store),known=await lessons(store);
  const works=(await store.pool.query("SELECT id,phase,plan->>'title' AS title FROM agent_works ORDER BY created DESC LIMIT 5")).rows;

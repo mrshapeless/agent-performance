@@ -1,3 +1,5 @@
+import {originalPublicationWindow} from './original-cadence.mjs';
+import {currentMemeEvidence} from './meme-evidence.mjs';
 import {creativeMemory} from './atelier.mjs';
 import {publicWorkspace,canonicalMediaReviews,decisionHealth} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
@@ -58,7 +60,7 @@ export class PostgresStore {
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
       const observations=(await client.query("SELECT payload FROM agent_events WHERE kind='observation' ORDER BY seq DESC LIMIT 1")).rows[0];
-      const external=observations?JSON.parse(observations.payload):null;
+      const external={...(observations?JSON.parse(observations.payload):{}),memeEvidence:currentMemeEvidence()};
       const studioRow=(await client.query("SELECT payload FROM agent_events WHERE kind='studio_revision' ORDER BY seq DESC LIMIT 1")).rows[0];
       const studio=studioRow?JSON.parse(studioRow.payload):null;
       const projectHistory=planningHistory((await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse(),reviews);
@@ -66,8 +68,12 @@ export class PostgresStore {
       const workspaceRow=(await client.query("SELECT payload FROM agent_events WHERE kind='workspace_broadcast' ORDER BY seq DESC LIMIT 1")).rows[0];
       const workspace=workspaceRow?JSON.parse(workspaceRow.payload):null;
       const taste = await creativeMemory(client.query.bind(client));
-      const request = buildRequest(identity, recent, { kind, external, studio, workspace, taste, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!external && !strategyRow?.payload?.includes('experience-v1')),
+      const request = buildRequest(identity, recent, { kind, external, studio, workspace, taste, projectHistory, visualHistory, reflectionDue: since >= 6 || (!!observations && !strategyRow?.payload?.includes('experience-v1')),
         strategy: strategyRow ? JSON.parse(strategyRow.payload).text : null });
+      if(request.originalPublication){
+        const window=await originalPublicationWindow(client.query.bind(client));
+        if(!window.due)return {replay:true,status:'cadence_wait',nextAt:window.nextAt};
+      }
       if (!Number.isSafeInteger(request.maximum) || request.maximum < 0) throw Error('INVALID_COST');
       const { day, spent } = (await client.query(`SELECT
         (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow')::date::text AS day,

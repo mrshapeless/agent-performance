@@ -18,7 +18,7 @@ async function plannerFixture(project=''){
  await s.transaction(async c=>{await s.append(c,'studio_revision',{projects:project?[{id:project,status:'active'}]:[]});await s.append(c,'cognitive_decision',{choice:'commission'});});
  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('fresh',$1,'commissioned','A fresh choice','Write a personal observation')",[project]);
  const sid=await studioOperationId(s,now);await s.begin(sid,'step',()=>({maximum:0}));await s.complete(sid,0,{action:'studio_test_ready'});
- const id='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/7200000);
+ const id='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(now.getTime()/1800000);
  const run=(provider,x=()=>({post:async()=>({id:'123',url:'https://x.com/i/status/123'})}))=>socialStep(s,provider,{X_ENABLED:'true',VIDEO_CADENCE_ENABLED:'false'},now,x,async()=>[]);
  return {s,db,id,run};
 }

@@ -11,7 +11,8 @@ export function validatePolicies(policies,evidence){
  return policies.map(p=>Object.fromEntries(policySchema.items.required.map(k=>[k,p[k]])));
 }
 export function workingPolicy(broadcast,module,episode){
- const previous=Number(broadcast?.episode?.split('-').at(-1)),current=Number(episode?.split('-').at(-1));
+ const hours=id=>Number(id?.split('-').at(-1))/(id?.includes('-m20-')?3:1);
+ const previous=hours(broadcast?.episode),current=hours(episode);
  if(!Number.isFinite(previous)||!Number.isFinite(current)||current<=previous)return null;
  const p=broadcast?.workingPolicies?.find(p=>p.module===module);
  if(!p||current-previous>p.expiresAfterHours)return null;

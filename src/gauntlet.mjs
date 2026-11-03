@@ -114,10 +114,10 @@ export function createGauntletHandler({env,openPool,createProvider,now=()=>new D
    }};};
    // Virtual slots isolate replay keys only. Actual event timestamps remain real.
    const slotTime=new Date(new Date(state.started).getTime()+state.cycle*7200000);
-   const planId='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(slotTime.getTime()/7200000);
+   const planId='x-plan-'+CREATIVE_REVISION+'-'+Math.floor(slotTime.getTime()/1800000);
    const currentPlan=await store.operation(planId);
    const job=(await store.pool.query('SELECT * FROM agent_media_jobs WHERE plan_id=$1',[planId])).rows[0];
-   const broadcast=await store.operation('workspace-v1-'+CREATIVE_REVISION+'-'+Math.floor(slotTime.getTime()/3600000)+'-broadcast');
+   const broadcast=await store.operation('workspace-v1-'+CREATIVE_REVISION+'-m20-'+Math.floor(slotTime.getTime()/1200000)+'-broadcast');
    const decision=await store.latest('cognitive_decision');
    const mediaFinished=['rejected','failed','reconsideration'].includes(job?.state)||(job?.state==='approved'&&!!job.data.styleAudit);
    const finished=(broadcast?.result?.action==='workspace_broadcast'&&decision?.choice!=='commission')||currentPlan?.status==='complete'&&(currentPlan.result?.action==='wait'||currentPlan.result?.medium==='text'||mediaFinished);
