@@ -6,7 +6,7 @@ import {PostgresStore} from '../src/postgres.mjs';
 import {CREATIVE_REVISION} from '../src/creative-revision.mjs';
 import {workspaceStep,publishedVisualHistory,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from '../src/workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from '../src/workspace-state.mjs';
-import {socialStep} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 import {studioOperationId} from '../src/studio.mjs';
 import {scopedSQL} from '../src/instance.mjs';
 import {creativeMemory} from '../src/atelier.mjs';

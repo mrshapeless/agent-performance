@@ -7,7 +7,8 @@ import {ACTIVE_INSTANCE,scopedPool} from './instance.mjs';
 import {PostgresStore} from './postgres.mjs';
 import {workspaceStep,broadcastContract,arbitrationPrompt,selectableCandidates,modules} from './workspace.mjs';
 import {constitution} from './domain.mjs';
-import {socialStep} from './integrations.mjs';
+// Renderer qualification exercises the commissioned-media path, not hourly text publishing.
+import {legacySocialStep as socialStep} from './integrations.mjs';
 import {studioOperationId} from './studio.mjs';
 import {mediaStep,enqueueMedia} from './media.mjs';
 import {MediaProviders} from './media-providers.mjs';

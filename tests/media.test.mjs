@@ -5,7 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
 import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia,recentPublishedPixels} from '../src/media.mjs';
-import {socialStep} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from '../src/media-providers.mjs';
 import {XClient} from '../src/x.mjs';
 const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',editorialResult:'supported',editorialEvidence:'The visible hesitation and caption together communicate an awkward comic reversal.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};

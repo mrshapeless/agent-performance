@@ -5,7 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
 import {recoverRejectedX} from '../src/recover-x.mjs';
-import {socialStep} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 test('reconcile only the confirmed 402; retry once, preserve unknown writes and prevent duplicates',async()=>{
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};

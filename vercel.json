@@ -86,7 +86,7 @@
     },
     {
       "path": "/api/social",
-      "schedule": "1-56/5 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/observe",

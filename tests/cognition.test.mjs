@@ -7,7 +7,7 @@ import {PostgresStore} from '../src/postgres.mjs';
 import {cognitionStep,validateDecision} from '../src/cognition.mjs';
 import {recall,agenda,reconcileAgenda,lessons} from '../src/memory.mjs';
 import {scopedSQL} from '../src/instance.mjs';
-import {socialStep} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 import {studioOperationId} from '../src/studio.mjs';
 const studio={projects:[{id:'forgotten-objects',status:'active',nextStep:'Study a forgotten object.'}]};
 const choice=()=>({action:'write',taskId:'first-chapter',projectId:'forgotten-objects',objective:'Explore an abandoned chair.',nextStep:'Revise the ending before commissioning an illustration.',text:'The chair kept a seat for someone who had stopped arriving.',summary:'Start a story from a remembered object.',evidence:[],lesson:{id:'',claim:'',conditions:'',evidence:[],counterevidence:[],status:'hypothesis'}});

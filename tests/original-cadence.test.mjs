@@ -9,7 +9,7 @@ import {originalDelayMinutes,originalPublicationWindow} from '../src/original-ca
 import {currentMemeEvidence} from '../src/meme-evidence.mjs';
 
 test('publication delay is stable and a delayed poll cannot accumulate catch-up slots',async()=>{
- for(let i=0;i<100;i++){const n=originalDelayMinutes(i);assert.ok(n>=30&&n<=45);assert.equal(n,originalDelayMinutes(i));}
+ for(let i=0;i<100;i++){const n=originalDelayMinutes(i);assert.equal(n,60);assert.equal(n,originalDelayMinutes(i));}
  const last={seq:1,payload:JSON.stringify({postId:'one'}),created:'2026-11-03T10:00:00Z'};
  const query=async()=>({rows:[last]});const due=Date.parse(last.created)+originalDelayMinutes('one')*60000;
  assert.equal((await originalPublicationWindow(query,new Date(due-1))).due,false);

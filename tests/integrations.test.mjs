@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { XClient, signOAuth } from '../src/x.mjs';
 import { AppearanceImage } from '../src/appearance.mjs';
-import { setupAppearance,socialStep } from '../src/integrations.mjs';
+import { setupAppearance,legacySocialStep as socialStep } from '../src/integrations.mjs';
 import {CREATIVE_REVISION,reconcileCreativeRevision} from '../src/creative-revision.mjs';
 import {studioOperationId} from '../src/studio.mjs';
 import { PostgresStore } from '../src/postgres.mjs';

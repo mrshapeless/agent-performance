@@ -4,7 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
 import {studioStep,validateStudio,validateStudioChoice,studioSchema} from '../src/studio.mjs';
-import {socialStep,setupAppearance} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep,setupAppearance} from '../src/integrations.mjs';
 const snapshot=()=>({persona:{selfDescription:'I collect awkward shapes.',desire:'Make an unlikely shape feel familiar.',temperament:'Playful but stubborn about edges.',relationshipToAudience:'Invite disagreement about the work.',voiceExamples:['This edge refuses to behave.','I made it too smooth.','What would you remove?'],embodiment:{description:'A folded paper creature with an expressive face.',recognitionAnchors:'Folded cheek and uneven eyes.',portraitPrompt:'Square paper creature portrait with uneven eyes.'},growthNote:'A first provisional self-description.'},voice:'Curious and spare',visualDirection:'Ink experiments',interests:[{topic:'Edges',why:'My earlier image left a boundary unresolved.',question:'When does a boundary become a shape?'}],criteria:['Each work tests a distinct transformation.'],tensions:['Precision versus ambiguity'],projects:[{id:'moving-edge',title:'Moving edge',status:'active',question:'Can a line become a place?',intent:'Explore one line across several works.',nextStep:'Write the first transformation.',assessment:'New project; no outcome yet.',evidence:[]}],summary:'Starting an independent series from an unresolved visual question.'});
 test('legacy schema failure gets exactly one bounded repair attempt with a provider schema',async()=>{
  const {s,db}=await fixture();const now=new Date('2026-10-22T20:00:00Z');let calls=0;

@@ -1,8 +1,7 @@
-import {createHash} from 'node:crypto';
-// Stable per confirmed post, never rerolled by polling. Five-minute worker cadence
-// adds up to five minutes: eligibility 30-45m yields a normal 30-50m window.
+// Prepare immediately after the last confirmed original; publish one hour later.
+// A late worker never creates catch-up slots. Atomic store gate also uses this.
 export function originalDelayMinutes(postId) {
-  return 30 + createHash('sha256').update(String(postId)).digest().readUInt32BE(0) % 16;
+  return 60;
 }
 export async function originalPublicationWindow(query, now = new Date()) {
   const last = (await query("SELECT seq,payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 1")).rows[0];

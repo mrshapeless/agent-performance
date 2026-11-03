@@ -5,7 +5,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
 import {videoDay,videoCadence,claimVideoCadence,videoCadenceDirection} from '../src/video-cadence.mjs';
-import {socialStep,planningReferenceBoards} from '../src/integrations.mjs';
+import {legacySocialStep as socialStep,planningReferenceBoards} from '../src/integrations.mjs';
 import {studioOperationId} from '../src/studio.mjs';
 import {mediaStep} from '../src/media.mjs';
 const env={REPLICATE_API_TOKEN:'synthetic',BLOB_READ_WRITE_TOKEN:'synthetic'},now=new Date('2026-10-28T10:00:00Z');

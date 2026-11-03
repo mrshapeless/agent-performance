@@ -1,3 +1,4 @@
+import {hourlyOriginalStep} from './hourly-original.mjs';
 import {originalPublicationWindow} from './original-cadence.mjs';
 import {CREATIVE_REVISION,stampCreativePlan,isCurrentCreativePlan,reconcileCreativeRevision} from './creative-revision.mjs';
 import {audienceDirection} from './audience-direction.mjs';
@@ -124,7 +125,7 @@ export async function setupAppearance(store,provider,env,makeImage=e=>new Appear
   return {phase:'image',status:'complete'};
 }
 
-export async function socialStep(store,provider,env,now=new Date(),makeClient=xClient,referenceLoader=planningReferenceBoards){
+export async function legacySocialStep(store,provider,env,now=new Date(),makeClient=xClient,referenceLoader=planningReferenceBoards){
   if(env.X_ENABLED!=='true')return {status:'not_connected'};
   const x=makeClient(store,env);
   await reconcileAgenda(store);
@@ -272,4 +273,13 @@ export async function reconcileX(store,x,now=new Date()){
  }
  await store.complete(row.id,amount,{action:'x_failed',text:'The interrupted post was not found in the authenticated account timeline.',summary:'Checked the complete returned timeline from one minute before the attempt, after a five-minute settling interval. No matching post found; publication lock released.'});
  return {status:'reconciled_absent'};
+}
+
+export async function socialStep(store,provider,env,now=new Date(),makeClient=xClient){
+  if(env.X_ENABLED!=='true')return {status:'not_connected'};
+  const x=makeClient(store,env);
+  const recovery=await reconcileX(store,x,now);
+  if(recovery)return recovery;
+  await reconcileCreativeRevision(store,now);
+  return hourlyOriginalStep(store,provider,env,now,x);
 }
