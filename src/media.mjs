@@ -190,7 +190,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    }
    if(job.plan.selectionVersion==='creative-v2'&&!job.data.preflightReady){
     const result=await preflightStep(store,provider,job);
-    if(result.rejected){await patch(store,job,'rejected',{preflight:result.audit,holdReason:'EDITORIAL_PREFLIGHT_REJECTED'});return {status:'media_rejected'};}
+    if(result.rejected){await patch(store,job,'rejected',{preflight:result.audit,holdReason:'EDITORIAL_PREFLIGHT_REJECTED'});return {status:'media_rejected',stage:'preflight',phase:result.audit.status,failureCode:result.audit.failureCode??'EDITORIAL_REVISION_REJECTED',checks:result.audit.assessment?Object.fromEntries(['repeatedMechanism','lostCommission','polishedAgainstRemit','legibleHook'].map(k=>[k,result.audit.assessment[k]])):null};}
     if(['review_pending','revision_pending'].includes(result.audit.status)){
      // We acquired a fresh job lease after the previous owner expired. Do not
      // repeat its unknown paid call, or leave the whole media lane occupied.

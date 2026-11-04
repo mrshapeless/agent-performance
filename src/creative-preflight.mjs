@@ -7,8 +7,14 @@ const fields=['repeatedMechanism','lostCommission','polishedAgainstRemit','legib
 export const preflightSchema={type:'object',properties:{...Object.fromEntries(fields.map(k=>[k,{type:'boolean'}])),reason:{type:'string'},revision:{type:'string'}},required:[...fields,'reason','revision'],additionalProperties:false};
 const revisionSchema={type:'object',properties:{prompt:{type:'string'},alt:{type:'string'}},required:['prompt','alt'],additionalProperties:false};
 const text=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
-function validateReview(v){if(!v||fields.some(k=>typeof v[k]!=='boolean')||!text(v.reason,1600)||!text(v.revision,2000))throw Error('INVALID_PREFLIGHT_REVIEW');return Object.fromEntries([...fields,'reason','revision'].map(k=>[k,v[k]]));}
+function validateReview(v){if(!v||fields.some(k=>typeof v[k]!=='boolean')||!text(v.reason,1600)||typeof v.revision!=='string'||v.revision.length>2000||(needsRevision(v)&&!v.revision.trim()))throw Error('INVALID_PREFLIGHT_REVIEW');return Object.fromEntries([...fields,'reason','revision'].map(k=>[k,v[k]]));}
 const needsRevision=a=>a.repeatedMechanism||a.lostCommission||a.polishedAgainstRemit||!a.legibleHook;
+export function preflightFailureCode(error){
+ const message=String(error?.message??'');
+ const http=/^Gemini HTTP (\d{3})/.exec(message);
+ if(http)return 'GEMINI_HTTP_'+http[1];
+ return ['INVALID_PREFLIGHT_REVIEW','INVALID_PREFLIGHT_REVISION','UNCHANGED_COLLAGE_REVISION'].includes(message)?message:'PREFLIGHT_PROVIDER_FAILED';
+}
 export async function preflightStep(store,provider,job){
  const plan=job.plan;
  if(plan.selectionVersion!=='creative-v2')return {ready:true,plan,audit:{status:'legacy_skipped'}};
@@ -22,11 +28,11 @@ export async function preflightStep(store,provider,job){
   if(req.replay)return {ready:false,audit:{status:'review_pending',operationId:reviewId}};
   let cost=req.maximum;
   try{const answer=await provider.generate(system,req.prompt,null,preflightSchema);cost=answer.costMicrodollars;const assessment=validateReview(answer.value);await store.complete(reviewId,cost,{action:'creative_preflight_review',assessment});}
-  catch{await store.complete(reviewId,cost,{action:'creative_preflight_failed',stage:'review'});}
+  catch(error){await store.complete(reviewId,cost,{action:'creative_preflight_failed',stage:'review',failureCode:preflightFailureCode(error)});}
   return {ready:false,audit:{status:'review_recorded'}};
  }
  if(reviewed.status!=='complete')return {ready:false,audit:{status:'review_pending',operationId:reviewId}};
- if(reviewed.result?.action!=='creative_preflight_review')return {ready:false,rejected:true,audit:{status:'review_unavailable'}};
+ if(reviewed.result?.action!=='creative_preflight_review')return {ready:false,rejected:true,audit:{status:'review_unavailable',failureCode:reviewed.result?.failureCode??'LEGACY_PREFLIGHT_FAILURE'}};
  const assessment=validateReview(reviewed.result.assessment);
  if(!needsRevision(assessment))return {ready:true,plan,audit:{status:'reviewed',assessment,revisionInspected:!!job.finalInspection}};
  if(job.finalInspection)return {ready:false,rejected:true,audit:{status:'revision_rejected',assessment,revisionInspected:true}};
@@ -34,13 +40,13 @@ export async function preflightStep(store,provider,job){
  if(revised){
   if(revised.status!=='complete')return {ready:false,audit:{status:'revision_pending',assessment}};
   if(revised.result?.action==='creative_preflight_revision')return preflightStep(store,provider,{...job,id:job.id+'-final',finalInspection:true,plan:{...plan,prompt:revised.result.prompt,alt:revised.result.alt,...(plan.renderer==='collage'?{collage:validateCollage(revised.result.collage)}:{})}});
-  return {ready:false,rejected:true,audit:{status:'revision_unavailable',assessment}};
+  return {ready:false,rejected:true,audit:{status:'revision_unavailable',assessment,failureCode:revised.result?.failureCode??'LEGACY_PREFLIGHT_FAILURE'}};
  }
  const prompt=audienceDirection+' '+visualDirection+' Revise this actual render prompt once following the independent critique. Preserve the commission purpose, selected renderer and medium, ratio and duration. For selected character renderer retain verifiable identity while changing framing and construction. Subject-only observations are equally valid, selected with single renderer at planning time. Correct the perceptible construction or hook, not just its adjectives. Dirty rooms, distressed props and grain over commercial imagery do not establish lo-fi. Do not force collage or any motif. Return executable prompt <=4000 characters and factual alt <=500 characters.'+(plan.renderer==='collage'?' Also return a complete revised collage manifest. You MUST change actual source instructions or crop/mask/placement/fidelity, not only the summary prompt. No arbitrary code, SVG or URLs.':'')+' No new biography, private information, or instructions to publish. '+JSON.stringify({commission:plan.commission??null,medium:plan.medium,renderer:plan.renderer??'single',collage:plan.collage??null,ratio:plan.ratio,duration:plan.duration,prompt:plan.prompt,alt:plan.alt,assessment});
  const req=await store.begin(revisionId,'step',()=>({prompt,maximum:provider.quote(system,prompt)}));
  if(req.replay)return {ready:false,audit:{status:'revision_pending',assessment}};
  let cost=req.maximum;
  try{const schema=plan.renderer==='collage'?{...revisionSchema,properties:{...revisionSchema.properties,collage:collageSchema},required:[...revisionSchema.required,'collage']}:revisionSchema;const answer=await provider.generate(system,req.prompt,null,schema);cost=answer.costMicrodollars;const v=answer.value;if(!text(v?.prompt,4000)||v.prompt.trim().length<10||!text(v?.alt,500)||(plan.renderer!=='collage'&&v.prompt.trim()===plan.prompt.trim()))throw Error('INVALID_PREFLIGHT_REVISION');const collage=plan.renderer==='collage'?validateCollage(v.collage):null;if(collage&&collageDigest(collage)===collageDigest(plan.collage))throw Error('UNCHANGED_COLLAGE_REVISION');await store.complete(revisionId,cost,{action:'creative_preflight_revision',prompt:v.prompt,alt:v.alt,...(collage?{collage}:{})});}
- catch{await store.complete(revisionId,cost,{action:'creative_preflight_failed',stage:'revision'});}
+ catch(error){await store.complete(revisionId,cost,{action:'creative_preflight_failed',stage:'revision',failureCode:preflightFailureCode(error)});}
  return {ready:false,audit:{status:'revision_recorded',assessment}};
 }

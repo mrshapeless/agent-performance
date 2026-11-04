@@ -56,13 +56,30 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
    await mediaBlocked(store,parent.plan_id,'MEDIA_REJECTED');
    const pending=(await store.pool.query("SELECT id FROM agent_operations WHERE status='pending' LIMIT 1")).rows.length;
    if(pending)return {status:'hourly_recovery_pending'};
-   // One fresh commission per hour, never a minute-by-minute regeneration loop.
-   // Legacy rejected commissions get one migration into this durable cadence.
-   const nextAt=new Date(new Date(parent.created).getTime()+3600000);
+   // Preparation retries are separate from the hourly publication clock.
+   // Keep enough lead time for a replacement, with a rolling paid-work bound.
+   const code=terminal.data?.preflight?.failureCode;
+   if(['GEMINI_HTTP_401','GEMINI_HTTP_402','GEMINI_HTTP_403','GEMINI_HTTP_429'].includes(code))return mediaBlocked(store,parent.plan_id,code);
+   const nextAt=new Date(new Date(terminal.updated??parent.created).getTime()+5*60000);
    if(parent.plan?.preparationCycle&&now<nextAt)return {status:'hourly_editorial_cooldown',nextAt:nextAt.toISOString()};
    cycle=rootCycle+'-r-'+createHash('sha256').update(parent.id).digest('hex').slice(0,16);
    const inspection=terminal.data?.styleAudit??terminal.data?.review??terminal.data?.preflight;
    rejectionFeedback={previousCaption:parent.plan.text,previousRenderer:parent.plan.renderer,inspection};
+   const recovery=await reservePreparationRecovery(store,cycle,now);
+   if(recovery)return recovery;
+  }
+ }
+ // A pair of rejected planning sets must not permanently pin a publication
+ // cycle before it even has a media job. Resume a bounded new preparation.
+ const blocked=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='hourly_editorial_blocked' AND payload::jsonb->>'preparationCycle' LIKE $1 ORDER BY seq DESC LIMIT 1",[rootCycle+'%'])).rows[0];
+ if(blocked&&(!parent||Date.parse(blocked.created)>=Date.parse(parent.created))){
+  const failure=typeof blocked.payload==='string'?JSON.parse(blocked.payload):blocked.payload;
+  if(failure.retryable){
+   const nextAt=new Date(Date.parse(blocked.created)+5*60000);
+   if(now<nextAt)return {status:'hourly_editorial_cooldown',nextAt:nextAt.toISOString()};
+   cycle=rootCycle+'-r-'+createHash('sha256').update(failure.preparationCycle).digest('hex').slice(0,16);
+   rejectionFeedback={previousReview:failure.review??null};
+   const recovery=await reservePreparationRecovery(store,cycle,now);if(recovery)return recovery;
   }
  }
  const window=await originalPublicationWindow(store.pool.query.bind(store.pool),now);
@@ -104,7 +121,12 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
  }
  if(!chosen){
   const id=cycle+'-blocked';
-  if(!await store.operation(id)){const req=await store.begin(id,'step',()=>({maximum:0}));if(!req.replay)await store.complete(id,0,{action:'hourly_editorial_blocked',summary:'Both original-post candidate sets failed preparation or independent review. Hourly publication needs attention; rejected drafts were not posted.'});}
+  if(!await store.operation(id)){
+   const plans=await Promise.all([0,1].map(i=>store.operation(`x-plan-${cycle}-${i}`)));
+   const reviews=await Promise.all([0,1].map(i=>store.operation(`x-plan-${cycle}-${i}-review`)));
+   const retryable=plans.every(p=>p?.status==='complete'&&Array.isArray(p.result?.candidates))&&reviews.every(r=>r?.status==='complete'&&r.result?.action==='hourly_review_internal');
+   const req=await store.begin(id,'step',()=>({maximum:0}));if(!req.replay)await store.complete(id,0,{action:'hourly_editorial_blocked',preparationCycle:cycle,retryable,review:reviews.at(-1)?.result??null,summary:'Candidate sets exhausted. Known editorial rejections schedule bounded replacement preparation; provider failures need attention. No rejected image was posted.'});
+  }
   return {status:'hourly_editorial_blocked',nextAt:window.nextAt};
  }
  // Persist the complete image-caption commission. Rendering and pixel review
@@ -160,6 +182,16 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
  await store.complete(publishId,maximum,{action:'x_post',text,url:post.url,postId:post.id,assetId:approved.data.assetId,mime:approved.data.mime,alt:approved.data.review.alt??media.plan.alt,summary:'Pixel-reviewed original image-caption experiment.',creativeRevision:CREATIVE_REVISION,intent:'experiment',editorialMechanism:chosen.mechanism,costBasis:'reserved estimate; reconcile against X billing'});
  await finishMedia(store,planId);
  return {status:'published',url:post.url};
+}
+
+async function reservePreparationRecovery(store,cycle,now){
+ const id=cycle+'-recovery-start';
+ if(await store.operation(id))return null;
+ if((await store.pool.query("SELECT id FROM agent_operations WHERE status='pending' LIMIT 1")).rows.length)return {status:'hourly_recovery_pending'};
+ const rows=(await store.pool.query("SELECT created FROM agent_events WHERE kind='hourly_preparation_restarted' AND created >= $1 ORDER BY created",[new Date(now.getTime()-3600000).toISOString()])).rows;
+ if(rows.length>=3)return {status:'hourly_preparation_limit',nextAt:new Date(Date.parse(rows[0].created)+3600000).toISOString()};
+ const req=await store.begin(id,'step',()=>({maximum:0}));if(!req.replay)await store.complete(id,0,{action:'hourly_preparation_restarted',preparationCycle:cycle,summary:'Prepare a replacement after a confirmed rejection; publication interval unchanged.'});
+ return null;
 }
 
 async function mediaBlocked(store,planId,failureCode){
