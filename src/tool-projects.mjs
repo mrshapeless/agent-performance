@@ -47,7 +47,8 @@ export async function toolOpportunityStep(store,provider,now=new Date()){
  const pending=(await store.pool.query("SELECT id,tool,state FROM agent_tool_projects WHERE state IN ('queued','running','returned') OR (state='reviewed' AND review->>'decision'='revise' AND jsonb_array_length(deliveries)<2) ORDER BY created LIMIT 1")).rows[0];
  if(pending)return {status:'tool_work_outstanding',id:pending.id};
  const id='tool-opportunity-v1-'+Math.floor(now.getTime()/3600000);
- if(await store.operation(id))return {status:'tool_opportunity_checked',replay:true};
+ const previous=await store.operation(id);
+ if(previous)return {status:'tool_opportunity_checked',replay:true,...(previous.result?.reason?{reason:previous.result.reason}:{}),...(previous.result?.failureCode?{failureCode:previous.result.failureCode}:{})};
  const goals=(await store.pool.query("SELECT id,status,objective,success FROM agent_goals ORDER BY updated DESC LIMIT 6")).rows;
  const past=(await store.pool.query("SELECT id,tool,brief,review,left(result,1800) AS result FROM agent_tool_projects ORDER BY updated DESC LIMIT 4")).rows;
  const recent=(await store.pool.query("SELECT seq,kind,left(payload::text,1800) AS evidence FROM agent_events WHERE kind IN ('x_post','work_published','workspace_note','observation') ORDER BY seq DESC LIMIT 6")).rows;

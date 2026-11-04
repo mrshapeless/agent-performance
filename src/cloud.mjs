@@ -113,6 +113,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) {
        const provider=createProvider(),at=now();
        const opportunity=await toolOpportunityStep(store,provider,at);
+       if(opportunity.reason||opportunity.failureCode)console.info('TOOL_OPPORTUNITY_DETAIL',JSON.stringify(opportunity));
        if(!['tool_work_outstanding','tool_opportunity_checked'].includes(opportunity.status)){console.info('TOOL_STEP_STATUS',JSON.stringify(opportunity));return reply(opportunity);}
        return reply(await (env.COGNITION_LEGACY==='true'?cognitionStep:resultDrivenWorkspaceStep)(store,provider,at));
       }
