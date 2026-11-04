@@ -4,7 +4,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
 import {CREATIVE_REVISION} from '../src/creative-revision.mjs';
-import {workspaceStep,publishedVisualHistory,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from '../src/workspace.mjs';
+import {resultDrivenWorkspaceStep,workspaceStep,publishedVisualHistory,selectableCandidates,modules,validateCandidate,validateBroadcast,moduleContext,broadcastContract,candidateContract,candidateSchema,critiqueSchema,validateCritique} from '../src/workspace.mjs';
 import {workspaceState,reconcilePredictions,workspaceEvidence} from '../src/workspace-state.mjs';
 import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 import {studioOperationId} from '../src/studio.mjs';
@@ -338,5 +338,41 @@ test('creative revision sees the same busy tools as semantic validation',async()
   await s.pool.query("INSERT INTO agent_tool_projects(id,tool,brief,state) VALUES('pending-grok','grok','{}','queued')");
   for(let i=0;i<6;i++)await workspaceStep(s,provider,now);
   assert.equal(revisionChecked,true);
+ }finally{await db.close();}
+});
+
+test('production reflection waits for six originals and never calls Gemini on idle polls',async()=>{
+ const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>{calls++;throw Object.assign(Error('billing'),{code:'GEMINI_BILLING_REQUIRED'})}};
+ try{
+  for(let i=0;i<5;i++)await s.transaction(c=>s.append(c,'x_post',{text:'fixture'}));
+  for(let i=0;i<3;i++)assert.equal((await resultDrivenWorkspaceStep(s,provider,new Date(now.getTime()+i*3600000))).status,'workspace_waiting_for_results');
+  assert.equal(calls,0);
+  await s.transaction(c=>s.append(c,'x_post',{text:'sixth'}));
+  assert.equal((await resultDrivenWorkspaceStep(s,provider,now)).status,'module_failed');assert.equal(calls,1);
+  for(let i=0;i<3;i++)assert.equal((await resultDrivenWorkspaceStep(s,provider,new Date(now.getTime()+i*3600000))).status,'workspace_provider_blocked');
+  assert.equal(calls,1);
+ }finally{await db.close();}
+});
+test('production reflection waits for an active image and does not repeat a completed result batch',async()=>{
+ const {s,db}=await fixture();const provider={quote:()=>{throw Error('must not generate')}};
+ try{
+  for(let i=0;i<6;i++)await s.transaction(c=>s.append(c,'x_post',{text:'fixture'}));
+  await db.query("INSERT INTO agent_media_jobs(id,plan_id,plan,state) VALUES('busy','busy',$1,'rendering')",[JSON.stringify({creativeRevision:CREATIVE_REVISION})]);
+  assert.equal((await resultDrivenWorkspaceStep(s,provider,now)).status,'workspace_waiting_for_media');
+  await db.query("UPDATE agent_media_jobs SET state='published'");
+  const id='workspace-v1-'+CREATIVE_REVISION+'-results-1-0-broadcast';await s.begin(id,'step',()=>({maximum:0}));await s.complete(id,0,{action:'workspace_broadcast'});
+  assert.equal((await resultDrivenWorkspaceStep(s,provider,new Date(now.getTime()+86400000))).status,'workspace_results_processed');
+ }finally{await db.close();}
+});
+
+test('reviewed external result triggers reflection without six posts and resumes the same cycle',async()=>{
+ const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>{calls++;throw Object.assign(Error('billing'),{code:'GEMINI_BILLING_REQUIRED'})}};
+ try{
+  await s.transaction(c=>s.append(c,'tool_project_reviewed',{summary:'Verified report'}));
+  assert.equal((await resultDrivenWorkspaceStep(s,provider,now)).status,'module_failed');
+  const before=(await db.query("SELECT id FROM agent_operations WHERE id LIKE '%-results-%-snapshot'")).rows;
+  for(let i=0;i<6;i++)await s.transaction(c=>s.append(c,'x_post',{text:'fixture'}));
+  assert.equal((await resultDrivenWorkspaceStep(s,provider,new Date(now.getTime()+7200000))).status,'workspace_provider_blocked');
+  assert.equal(calls,1);assert.equal((await db.query("SELECT id FROM agent_operations WHERE id LIKE '%-results-%-snapshot'")).rows.length,before.length);
  }finally{await db.close();}
 });

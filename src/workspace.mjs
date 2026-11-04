@@ -151,13 +151,32 @@ export async function publishedVisualHistory(store){
   evidenceLimit:'Published work metadata; construction is the authored intention, descriptions and criticism are model observations. This record alone is neither pixel inspection nor audience approval.'
  }));
 }
-export async function workspaceStep(store,provider,now=new Date()){
+// Production reflection is driven by delivered results, not empty clock slots.
+// Existing operations remain the idempotency ledger across worker restarts.
+export async function resultDrivenWorkspaceStep(store,provider,now=new Date()){
+ const posts=(await store.pool.query("SELECT count(*)::int AS count FROM agent_events WHERE kind='x_post'")).rows[0].count;
+ const batch=Math.floor(posts/6);
+ const tool=(await store.pool.query("SELECT seq FROM agent_events WHERE kind='tool_project_reviewed' ORDER BY seq DESC LIMIT 1")).rows[0]?.seq??0;
+ if(!batch&&!tool)return {status:'workspace_waiting_for_results'};
+ const prefix='workspace-v1-'+CREATIVE_REVISION+'-results-';
+ const open=(await store.pool.query("SELECT id FROM agent_operations o WHERE left(id,length($1))=$1 AND id LIKE '%-snapshot' AND status='complete' AND NOT EXISTS(SELECT 1 FROM agent_operations b WHERE b.id=replace(o.id,'-snapshot','-broadcast')) ORDER BY id LIMIT 1",[prefix])).rows[0];
+ const episode=open?open.id.replace(/-snapshot$/,''):prefix+batch+'-'+tool;
+ const done=await store.operation(episode+'-broadcast');
+ if(done)return {status:'workspace_results_processed',replay:true};
+ const billing=(await store.pool.query("SELECT id FROM agent_operations WHERE left(id,length($1))=$1 AND result->>'failureCode' IN ('GEMINI_BILLING_REQUIRED','GEMINI_HTTP_402','GEMINI_KEY_INVALID','GEMINI_ACCESS_DENIED') LIMIT 1",[episode+'-'])).rows[0];
+ if(billing)return {status:'workspace_provider_blocked'};
+ const busy=(await store.pool.query("SELECT id FROM agent_media_jobs WHERE plan->>'creativeRevision'=$1 AND state NOT IN ('published','rejected','failed','held','superseded') LIMIT 1",[CREATIVE_REVISION])).rows[0];
+ if(busy)return {status:'workspace_waiting_for_media'};
+ return workspaceStep(store,provider,now,{episode});
+}
+
+export async function workspaceStep(store,provider,now=new Date(),options={}){
  await reconcileCreativeRevision(store,now);
  await reconcileAgenda(store);await reconcilePredictions(store,now);
  const studio=await store.latest('studio_revision');if(!studio)return {status:'studio_required'};
  // Resume an existing incomplete cycle across hour boundaries, never discard it.
  const open=(await store.pool.query("SELECT id FROM agent_operations WHERE id LIKE 'workspace-v1-%-snapshot' AND result->>'creativeRevision'=$1 AND status='complete' AND NOT EXISTS (SELECT 1 FROM agent_operations b WHERE b.id=replace(agent_operations.id,'-snapshot','-broadcast')) ORDER BY id LIMIT 1",[CREATIVE_REVISION])).rows[0];
- const episode=open?open.id.replace(/-snapshot$/,''):'workspace-v1-'+CREATIVE_REVISION+'-m20-'+Math.floor(now.getTime()/1200000);
+ const episode=options.episode??(open?open.id.replace(/-snapshot$/,''):'workspace-v1-'+CREATIVE_REVISION+'-m20-'+Math.floor(now.getTime()/1200000));
  const prior=await store.operation(episode+'-broadcast');
  const compatibilityRepair=prior?.result?.failureCode==='GEMINI_HTTP_400';
  const repair=prior?.result?.action==='cognition_failed'&&!prior.result.failureCode;
