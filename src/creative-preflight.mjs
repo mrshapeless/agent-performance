@@ -17,6 +17,17 @@ export function preflightFailureCode(error){
 }
 export async function preflightStep(store,provider,job){
  const plan=job.plan;
+ // Hourly originals already have an independent concept review. Reuse only
+ // the exact selected proposal, verified against its durable draft and review.
+ // Actual pixel inspection and the independent visual audit still follow.
+ if(plan.preparationCycle&&!plan.revisionOf&&job.plan_id?.endsWith('-selected')){
+  const base=job.plan_id.slice(0,-9);
+  const draft=await store.operation(base),review=await store.operation(base+'-review');
+  const verdict=review?.result,selected=draft?.result?.candidates?.[verdict?.selectedIndex];
+  if(draft?.status==='complete'&&review?.status==='complete'&&verdict?.action==='hourly_review_internal'&&verdict.accepted===true&&['standalone','realTurn','distinctFromRecent','noFabricatedExperience','visualEssential','noGenericTableau'].every(k=>verdict[k]===true)&&selected?.visual?.renderPrompt===plan.prompt&&selected.text===plan.text&&selected.visual.alt===plan.alt){
+   return {ready:true,plan,audit:{status:'hourly_concept_review_reused',operationId:base+'-review'}};
+  }
+ }
  if(plan.selectionVersion!=='creative-v2')return {ready:true,plan,audit:{status:'legacy_skipped'}};
  const reviewId=job.id+'-preflight-review',revisionId=job.id+'-preflight-revise';
  let reviewed=await store.operation(reviewId);
