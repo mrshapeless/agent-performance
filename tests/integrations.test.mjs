@@ -79,6 +79,18 @@ test('image request uses agent prompt, non-stored interaction and parses only mo
   return Response.json({status:'completed',steps:[{type:'model_output',content:[{type:'image',mime_type:'image/png',data:Buffer.from('fixture').toString('base64')}]}],usage:{total_input_tokens:10,total_output_tokens:1120,total_thought_tokens:20}});
  });const r=await image.generate('agent authored');assert.equal(r.bytes.toString(),'fixture');assert.equal(r.costMicrodollars,34215);
 });
+test('image refusal diagnostics classify provider fields without logging input or keys',async()=>{
+ const original=console.error,logs=[];console.error=(...args)=>logs.push(args);
+ try{
+  const image=new AppearanceImage({GEMINI_API_KEY:'secret-key'},async(url,opts)=>{
+   assert.equal(opts.headers['Api-Revision'],'2026-05-20');
+   return Response.json({error:{message:'Invalid generation_config max_output_tokens. private-scene secret-key'}},{status:400});
+  });
+  await assert.rejects(image.generate('private-scene'),/IMAGE_HTTP_400/);
+  assert.match(JSON.stringify(logs),/OUTPUT_TOKEN_LIMIT/);
+  assert.doesNotMatch(JSON.stringify(logs),/private-scene|secret-key/);
+ }finally{console.error=original}
+});
 test('appearance brief is agent authored, replay-safe; asset is committed with its public record',async()=>{
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const client={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};

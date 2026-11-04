@@ -27,7 +27,7 @@ export class MediaProviders {
  constructor(env,fetcher=fetch){this.env=env;this.fetcher=fetcher;}
  imageQuote(prompt){return new AppearanceImage(this.env,this.fetcher).quote(prompt);}
  references(ids){return loadReferences(ids,this.fetcher);}
- image(prompt,ratio,refs=[]){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?referenceImageInstruction+' Your chosen work: '+prompt:prompt,ratio,refs);}
+ image(prompt,ratio,refs=[]){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?referenceImageInstruction+' STYLE-ONLY REFERENCES: do not import any person, face, costume, location or object from the reference images. Render only the cast and subjects explicitly requested in the following commission. If no person is requested, no person or body part may appear. Your chosen work: '+prompt:prompt,ratio,refs);}
  collage(layout,sources,ratio){return composeCollage(layout,sources,ratio);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
