@@ -315,7 +315,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
    else{
     const answer=await provider.generate(auditSystem,auditPrompt,asset,schema,[...refs,...recentPixels.images,...(auditIdentity?[auditIdentity]:[])]);audit=answer.value;
     if(!['publish','reject'].includes(audit?.action)||!['supported','partly','not_supported'].includes(audit.visualLanguageResult)||!['summary','referenceComparison'].every(k=>typeof audit[k]==='string'&&audit[k].trim()&&audit[k].length<=1200))throw Error('INVALID_VISUAL_AUDIT');
-    audit={...audit,recentPublishedComparison:{ids:recentPixels.ids,requested:recentPixels.requested},evidenceProvenance:'independent_visual_audit',decision:passesQuality({...audit,decision:audit.action})?'publish':'reject',action:'media_review',text:job.data.review.text,alt:job.data.review.alt,assetId:job.data.assetId,experimentId:job.plan_id,intent:'experiment',mime:asset.mime};
+    audit={...audit,recentPublishedComparison:{ids:recentPixels.ids,requested:recentPixels.requested},evidenceProvenance:'independent_visual_audit',decision:passesQuality({...audit,decision:audit.action})&&(!job.plan.preparationCycle||audit.commissionResult==='supported')&&(!auditIdentity||audit.identityResult==='supported')?'publish':'reject',action:'media_review',text:job.data.review.text,alt:job.data.review.alt,assetId:job.data.assetId,experimentId:job.plan_id,intent:'experiment',mime:asset.mime};
     await store.complete(op,answer.costMicrodollars,audit);
    }
    const reviewed={styleAudit:audit,artistReview:job.data.artistReview??job.data.review,review:{...job.data.review,...audit},publicationPolicy:VISUAL_CONTRACT};

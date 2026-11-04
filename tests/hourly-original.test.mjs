@@ -64,6 +64,8 @@ test('image failure, missing pixel gate and expired upload never fall back to te
  try{
   await run();await run();assert.equal((await run()).status,'hourly_media_pending');
   await makeReady(db,{styleAudit:{decision:'publish'}});assert.equal((await run()).status,'hourly_editorial_blocked');
+  await makeReady(db);await db.query("UPDATE agent_media_jobs SET data=jsonb_set(data,'{styleAudit}',(data->'styleAudit')-'commissionResult')");
+  assert.equal((await run()).status,'hourly_commission_inspection_pending');assert.equal(posts,0);
   await makeReady(db,{expiresAt:Date.now()-1});assert.equal((await run()).status,'hourly_editorial_blocked');
   await db.query("UPDATE agent_media_jobs SET state='failed'");assert.equal((await run()).status,'hourly_editorial_blocked');
   assert.equal(posts,0);
