@@ -60,7 +60,7 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
    // Legacy rejected commissions get one migration into this durable cadence.
    const nextAt=new Date(new Date(parent.created).getTime()+3600000);
    if(parent.plan?.preparationCycle&&now<nextAt)return {status:'hourly_editorial_cooldown',nextAt:nextAt.toISOString()};
-   cycle=rootCycle+'-replacement-'+createHash('sha256').update(parent.id).digest('hex').slice(0,16);
+   cycle=rootCycle+'-r-'+createHash('sha256').update(parent.id).digest('hex').slice(0,16);
    const inspection=terminal.data?.styleAudit??terminal.data?.review??terminal.data?.preflight;
    rejectionFeedback={previousCaption:parent.plan.text,previousRenderer:parent.plan.renderer,inspection};
   }
