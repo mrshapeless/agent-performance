@@ -107,7 +107,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
         return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});
       }
       if (setup) { const appearance=await setupAppearance(store,createProvider(),env); if(appearance.phase!=='appearance')return reply(appearance); const banner=await setupBanner(store,createProvider(),env); return reply(banner.phase==='banner' ? await accountSetup(store,createProvider(),env,now()) : banner); }
-      if (social) return reply(await socialStep(store,createProvider(),env,now()));
+      if (social) {const result=await socialStep(store,createProvider(),env,now());console.info('SOCIAL_STEP_STATUS',JSON.stringify({status:result.status,failureCode:result.failureCode,nextAt:result.nextAt}));return reply(result);}
       if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
       if (!tick && request.method === 'GET') return reply({ ...await store.status(), accounts:await accountStatus(store,env), enabled:env.AGENT_ENABLED==='true' });
       if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) return reply(await (env.COGNITION_LEGACY==='true'?cognitionStep:resultDrivenWorkspaceStep)(store,createProvider(),now()));
