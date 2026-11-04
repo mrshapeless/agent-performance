@@ -7,8 +7,15 @@ export class AppearanceImage {
   async generate(prompt,ratio='1:1',references=[]){
     prompt=renderDirection+'\nSCENE: '+prompt+'\n'+captureInstruction;
     if(!['1:1','21:9','16:9','9:16'].includes(ratio))throw Error('IMAGE_INVALID_RATIO');
-    const r=await this.fetcher('https://generativelanguage.googleapis.com/v1beta/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':this.key},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:'gemini-nano-banana-2.1',store:false,input:references.length?[{type:'text',text:prompt},...references.map(a=>({type:'image',mime_type:a.mime,data:Buffer.from(a.bytes).toString('base64')}))]:prompt,response_format:{type:'image',aspect_ratio:ratio,image_size:'1K',mime_type:'image/jpeg'},generation_config:{max_output_tokens:8192}})});
-    if(!r.ok)throw Error('IMAGE_HTTP_'+r.status);const data=await r.json();
+    const r=await this.fetcher('https://generativelanguage.googleapis.com/v1beta/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':this.key,'Api-Revision':'2026-05-20'},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:'gemini-nano-banana-2.1',store:false,input:references.length?[{type:'text',text:prompt},...references.map(a=>({type:'image',mime_type:a.mime,data:Buffer.from(a.bytes).toString('base64')}))]:prompt,response_format:{type:'image',aspect_ratio:ratio,image_size:'1K',mime_type:'image/jpeg'},generation_config:{max_output_tokens:8192}})});
+    if(!r.ok){
+      const body=await r.json().catch(()=>null);let e=body;
+      for(let i=0;i<4;i++){if(Array.isArray(e)){e=e[0];continue;}if(typeof e==='string'){try{e=JSON.parse(e);continue;}catch{break;}}break;}
+      const message=String(e?.error?.message??e?.message??'');
+      const reason=/model.*not found|unknown model|unsupported model/i.test(message)?'MODEL_UNAVAILABLE':/max_output_tokens|token limit/i.test(message)?'OUTPUT_TOKEN_LIMIT':/store|storage/i.test(message)?'STORAGE_OPTION':/mime_type|mime type/i.test(message)?'MIME_OPTION':/response_format/i.test(message)?'RESPONSE_FORMAT':/generation_config/i.test(message)?'GENERATION_CONFIG':/invalid.*image|image.*invalid/i.test(message)?'INVALID_REFERENCE_IMAGE':/billing|payment|credit/i.test(message)?'BILLING':/API.?key/i.test(message)?'KEY':/safety|policy|blocked/i.test(message)?'CONTENT_BLOCKED':'UNCLASSIFIED';
+      console.error('IMAGE_REQUEST_REJECTED',JSON.stringify({httpStatus:r.status,reason}));
+      throw Error('IMAGE_HTTP_'+r.status);
+    }const data=await r.json();
     if(data.status!=='completed')throw Error('IMAGE_INCOMPLETE');
     const images=(data.steps??[]).filter(s=>s.type==='model_output').flatMap(s=>s.content??[]).filter(p=>p.type==='image');
     if(images.length!==1||!['image/jpeg','image/png','image/webp'].includes(images[0].mime_type)||typeof images[0].data!=='string')throw Error('IMAGE_INVALID');

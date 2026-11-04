@@ -110,6 +110,16 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
  await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
+  // Operator-requested diagnosis of a confirmed HTTP 400 (no accepted image).
+  // Exactly one new operation; never retry timeout/unknown/accepted generation.
+  await c.query(`UPDATE agent_media_jobs j SET state='queued',
+    data=data || '{"imageApiRecovery20261104":true}'::jsonb,updated=now()
+    WHERE id='media-hourly-hourly-visual-editorial-2026-11-04-v12-18729-replacement-d2142d9230252a5a-0-selected'
+    AND state='failed' AND data->>'error'='IMAGE_HTTP_400'
+    AND NOT(data ? 'imageApiRecovery20261104') AND NOT(data ? 'assetId')
+    AND (lease_until IS NULL OR lease_until<now())
+    AND EXISTS(SELECT 1 FROM agent_operations o WHERE o.id=j.id||'-render'
+      AND o.status='complete' AND o.result->>'errorCode'='IMAGE_HTTP_400')`);
   // Recover the one inspected ready image wrongly selected under the obsolete
   // visual-contract literal. Never re-upload, and never touch any publish attempt.
   await c.query(`UPDATE agent_media_jobs j SET state='ready',
@@ -219,7 +229,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     await store.complete(op,maximum,{action:'character_frame_internal',predictionId:prediction.id,identityAssetId:CHARACTER_ASSET,summary:'Opening-frame request accepted; no finished film or publication yet.'});
     await patch(store,job,'processing',{phase:'character_first_frame',predictionId:prediction.id,identityAssetId:CHARACTER_ASSET});return {status:'character_frame_started'};
    }
-   op=job.id+'-render';maximum=job.plan.medium==='video'?services.videoQuote():job.plan.renderer==='character'?services.characterQuote():services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0);
+   op=job.id+(job.data.imageApiRecovery20261104?'-render-api-recovery':'-render');maximum=job.plan.medium==='video'?services.videoQuote():job.plan.renderer==='character'?services.characterQuote():services.imageQuote(job.plan.prompt)+(job.plan.referenceIds?500000:0);
    const req=await store.begin(op,'step',()=>({maximum,budgetProvider:job.plan.medium==='video'||job.plan.renderer==='character'?'replicate':null}));
    if(req.replay){
     if(req.status==='complete'&&req.result?.assetId){await patch(store,job,'rendered',{assetId:req.result.assetId});return {status:'recovered_render'};}
