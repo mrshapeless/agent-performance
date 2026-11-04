@@ -41,8 +41,14 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
  const cycle=`hourly-${CREATIVE_REVISION}-${rows[0]?.seq??'first'}`;
  const window=await originalPublicationWindow(store.pool.query.bind(store.pool),now);
  let chosen,planId,selectedCandidates;
- for(let attempt=0;attempt<2;attempt++){
-  planId=`x-plan-${cycle}-${attempt}`;
+ for(let attempt=0;attempt<3;attempt++){
+  // One durable recovery after the operator reported payment. Do not turn
+  // editorial rejection or an uncertain operation into an automatic retry.
+  if(attempt===2){
+   const prior=await Promise.all([0,1].map(i=>store.operation(`x-plan-${cycle}-${i}`)));
+   if(!prior.every(p=>p?.status==='complete'&&p.result?.action==='hourly_planning_failed'&&p.result?.failureCode==='GEMINI_HTTP_402'))break;
+  }
+  planId=`x-plan-${cycle}-${attempt===2?'billing-recovery-1':attempt}`;
   let plan=await store.operation(planId);
   if(!plan){
    const previous=attempt?await store.operation(`x-plan-${cycle}-0-review`):null;

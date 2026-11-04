@@ -88,3 +88,19 @@ for(const matching of [true,false])test('pixel revision reconciles only its own 
   assert.equal((await db.query("SELECT state FROM agent_media_jobs WHERE id='child'")).rows[0].state,matching?'published':'ready');
  }finally{await db.close();}
 });
+
+test('paid billing recovery retries once, persists success and never loops on continued 402',async()=>{
+ for(const recovered of [true,false]){
+  const {s,db}=await fixture();let calls=0;
+  const provider={quote:()=>1,generate:async()=>{calls++;if(calls<=2||!recovered)throw Error('Gemini HTTP 402');return {costMicrodollars:1,value:calls===3?{candidates}:accepted}}};
+  const run=()=>hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>{throw Error('must not publish without media')}},board);
+  try{
+   assert.equal((await run()).status,'hourly_planning_failed');
+   assert.equal((await run()).status,'hourly_planning_failed');
+   assert.equal((await run()).status,recovered?'hourly_prepared':'hourly_planning_failed');
+   for(let i=0;i<4;i++)await run();
+   assert.equal(calls,recovered?4:3);
+   assert.equal((await run()).status,recovered?'hourly_media_pending':'hourly_editorial_blocked');
+  }finally{await db.close();}
+ }
+});
