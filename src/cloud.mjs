@@ -1,4 +1,4 @@
-import {toolProjectAPI} from './tool-projects.mjs';
+import {toolProjectAPI,toolOpportunityStep} from './tool-projects.mjs';
 import {atelierHandler,atelierStep} from './atelier.mjs';
 import {workStep,publicWorks} from './works.mjs';
 import {roomHandler} from './room.mjs';
@@ -110,7 +110,12 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if (social) {const result=await socialStep(store,createProvider(),env,now());console.info('SOCIAL_STEP_STATUS',JSON.stringify({status:result.status,failureCode:result.failureCode,nextAt:result.nextAt}));return reply(result);}
       if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
       if (!tick && request.method === 'GET') return reply({ ...await store.status(), accounts:await accountStatus(store,env), enabled:env.AGENT_ENABLED==='true' });
-      if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) return reply(await (env.COGNITION_LEGACY==='true'?cognitionStep:resultDrivenWorkspaceStep)(store,createProvider(),now()));
+      if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) {
+       const provider=createProvider(),at=now();
+       const opportunity=await toolOpportunityStep(store,provider,at);
+       if(!['tool_work_outstanding','tool_opportunity_checked'].includes(opportunity.status)){console.info('TOOL_STEP_STATUS',JSON.stringify(opportunity));return reply(opportunity);}
+       return reply(await (env.COGNITION_LEGACY==='true'?cognitionStep:resultDrivenWorkspaceStep)(store,provider,at));
+      }
       // A one-time capability transition must not wait behind an already completed hourly tick.
       if(tick && await store.latest('observation') && !(await store.latest('reflect'))?.text?.includes('experience-v1')) id='experience-v1';
       return reply(await cloudRun(store, createProvider(), kind, id));

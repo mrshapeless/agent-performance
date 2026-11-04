@@ -49,3 +49,21 @@ test('tool result returns to memory only after agent review; duplicate return ca
   assert.equal(second.status,'reviewed');assert.equal(second.replay,undefined);
  }finally{await db.close();}
 });
+
+test('production tick selects external work without posts or workspace success, then does not duplicate it',async()=>{
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
+ try{await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});await s.transaction(c=>s.append(c,'studio_revision',{summary:'Active studio'}));
+ const provider={quote:()=>1,generate:async()=>{calls++;return {costMicrodollars:1,value:{decision:'queue',reason:'Concrete unanswered interaction question',tool:'grok',question:'What makes a pause meaningful?',brief:'Compare three public interactive works with links and test implications.',success:'Three checked sources and one falsifiable next experiment.',why:'Choose interaction before building.'}}}};
+ const h=createHandler({env:{CRON_SECRET:'s'.repeat(40),AGENT_ENABLED:'true',VERCEL_ENV:'production'},openStore:async()=>s,createProvider:()=>provider,now:()=>new Date('2026-11-04T20:00:00Z')});
+ const response=await h(new Request('https://example.test/api/tick',{headers:{authorization:'Bearer '+'s'.repeat(40)}}));assert.equal(response.status,200);assert.equal((await response.json()).status,'tool_project_queued');assert.equal(calls,1);
+ const {toolOpportunityStep}=await import('../src/tool-projects.mjs');assert.equal((await toolOpportunityStep(s,provider,new Date('2026-11-04T23:00:00Z'))).status,'tool_work_outstanding');assert.equal(calls,1);assert.equal((await db.query('SELECT * FROM agent_tool_projects')).rows.length,1);
+ }finally{await db.close();}
+});
+
+test('empty opportunity check is bounded per hour and can honestly defer without an artificial task',async()=>{
+ const {toolOpportunityStep}=await import('../src/tool-projects.mjs');const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
+ try{await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});const provider={quote:()=>1,generate:async()=>{calls++;return {costMicrodollars:1,value:{decision:'wait',reason:'Awaiting observations of the published interaction.',tool:'none',question:'',brief:'',success:'',why:''}}}};
+ for(let m=0;m<4;m++)await toolOpportunityStep(s,provider,new Date(`2026-11-04T20:0${m}:00Z`));assert.equal(calls,1);assert.equal((await db.query('SELECT * FROM agent_tool_projects')).rows.length,0);await toolOpportunityStep(s,provider,new Date('2026-11-04T21:00:00Z'));assert.equal(calls,2);
+ }finally{await db.close();}
+});
