@@ -98,7 +98,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if (observation) { const observed=await observe(store,env,now());let threads;try{threads=await syncReplyThreads(store,env,now());}catch(e){threads={status:'deferred',error:['DAILY_ALLOWANCE_EXHAUSTED','UNRESOLVED_OPERATION'].includes(e.message)?e.message:'THREAD_SYNC_UNAVAILABLE'};}return reply({...observed,threads}); }
       // Public X replies stay off; this worker may only draft in the private queue.
       if (audience) {const result=await audienceStep(store,createProvider(),{...env,X_REPLIES_ENABLED:'false'},now());return reply(result.status==='no_messages'?await manualDraftStep(store,createProvider(),env):result);}
-      if (media) return reply(await mediaStep(store,createProvider(),env));
+      if (media) {const result=await mediaStep(store,createProvider(),env);console.info('MEDIA_STEP_STATUS',JSON.stringify({status:result.status,phase:result.phase,ready:result.ready}));return reply(result);}
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
         if((await store.operation(id))?.result?.purpose==='collage_source')return reply({error:'NOT_FOUND'},404);
