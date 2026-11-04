@@ -104,3 +104,34 @@ test('paid billing recovery retries once, persists success and never loops on co
   }finally{await db.close();}
  }
 });
+
+test('terminal pixel rejection starts a new learned commission only after hourly cooldown',async()=>{
+ const {s,db}=await fixture();let calls=0,posts=0;const prompts=[];
+ const provider={quote:()=>1,generate:async(system,prompt)=>{prompts.push(prompt);return {costMicrodollars:1,value:++calls%2?{candidates}:accepted}}};
+ let now=new Date();const run=()=>hourlyOriginalStep(s,provider,env,now,{post:async()=>{posts++;return {id:'new',url:'https://example.test/new'}}},board);
+ try{
+  await run();await run();await run();
+  const parent=(await db.query('SELECT * FROM agent_media_jobs')).rows[0];
+  await db.query("UPDATE agent_media_jobs SET state='rejected',data=$1 WHERE id=$2",[JSON.stringify({review:{visualLanguageResult:'partly',referenceComparison:'Too much crisp surface detail; simplify the whole frame.'}}),parent.id]);
+  for(let i=0;i<4;i++)assert.equal((await run()).status,'hourly_editorial_cooldown');
+  assert.equal(calls,2);assert.equal(posts,0);
+  now=new Date(new Date(parent.created).getTime()+3600001);
+  assert.equal((await run()).status,'hourly_prepared');assert.match(prompts.at(-1),/Too much crisp surface detail/);
+  assert.equal((await run()).status,'hourly_reviewed');assert.equal((await run()).status,'hourly_media_pending');
+  assert.equal((await run()).status,'hourly_media_pending');assert.equal(calls,4);
+  const jobs=(await db.query('SELECT * FROM agent_media_jobs ORDER BY created')).rows;assert.equal(jobs.length,2);assert.notEqual(jobs[0].plan_id,jobs[1].plan_id);
+  await makeReady(db);await db.query("UPDATE agent_media_jobs SET state='rejected' WHERE id=$1",[parent.id]);
+  assert.equal((await run()).status,'published');assert.equal(posts,1);
+ }finally{await db.close()}
+});
+
+test('rejected revision cannot restart while an operation outcome is unknown',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
+ const run=()=>hourlyOriginalStep(s,provider,env,new Date(Date.now()+7200000),{},board);
+ try{
+  await run();await run();await run();await db.query("UPDATE agent_media_jobs SET state='rejected'");
+  await s.begin('x-publish-uncertain','step',()=>({maximum:1}));
+  assert.equal((await run()).status,'hourly_recovery_pending');assert.equal(calls,2);
+ }finally{await db.close()}
+});

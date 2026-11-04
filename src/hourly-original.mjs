@@ -5,6 +5,7 @@ import {originalPublicationWindow} from './original-cadence.mjs';
 import {enqueueMedia,readyMedia,finishMedia,validateMediaPlan} from './media.mjs';
 import {visualDirection} from './visual-contract.mjs';
 import {mediaCapabilities} from './media-providers.mjs';
+import {createHash} from 'node:crypto';
 
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const string={type:'string'},boolean={type:'boolean'};
@@ -38,7 +39,32 @@ export function acceptedHourlyReview(v){
 export async function hourlyOriginalStep(store,provider,env,now,x,board=currentMemeEvidence(now)){
  const rows=(await store.pool.query("SELECT seq,payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 12")).rows;
  const recent=rows.map(r=>({...((typeof r.payload==='string')?JSON.parse(r.payload):r.payload),created:r.created}));
- const cycle=`hourly-${CREATIVE_REVISION}-${rows[0]?.seq??'first'}`;
+ const rootCycle=`hourly-${CREATIVE_REVISION}-${rows[0]?.seq??'first'}`;
+ // A rejected asset is terminal, not a permanent lock on all future originals.
+ // Resume the durable current commission; only confirmed editorial rejection
+ // can start a different one. Failed/unknown provider or X outcomes stay held.
+ const parent=(await store.pool.query("SELECT * FROM agent_media_jobs WHERE plan_id LIKE $1 AND NOT(plan ? 'revisionOf') ORDER BY created DESC,id DESC LIMIT 1",['x-plan-'+rootCycle+'%'])).rows[0];
+ let cycle=parent?.plan?.preparationCycle??rootCycle, rejectionFeedback=null;
+ if(parent){
+  let terminal=parent;
+  if(parent.data?.revisionJobId){
+   const child=(await store.pool.query('SELECT * FROM agent_media_jobs WHERE id=$1',[parent.data.revisionJobId])).rows[0];
+   if(!child||child.plan?.revisionOf!==parent.id)return mediaBlocked(store,parent.plan_id,'INVALID_MEDIA_REVISION');
+   terminal=child;
+  }
+  if(terminal.state==='rejected'){
+   await mediaBlocked(store,parent.plan_id,'MEDIA_REJECTED');
+   const pending=(await store.pool.query("SELECT id FROM agent_operations WHERE status='pending' LIMIT 1")).rows.length;
+   if(pending)return {status:'hourly_recovery_pending'};
+   // One fresh commission per hour, never a minute-by-minute regeneration loop.
+   // Legacy rejected commissions get one migration into this durable cadence.
+   const nextAt=new Date(new Date(parent.created).getTime()+3600000);
+   if(parent.plan?.preparationCycle&&now<nextAt)return {status:'hourly_editorial_cooldown',nextAt:nextAt.toISOString()};
+   cycle=rootCycle+'-replacement-'+createHash('sha256').update(parent.id).digest('hex').slice(0,16);
+   const inspection=terminal.data?.styleAudit??terminal.data?.review??terminal.data?.preflight;
+   rejectionFeedback={previousCaption:parent.plan.text,previousRenderer:parent.plan.renderer,inspection};
+  }
+ }
  const window=await originalPublicationWindow(store.pool.query.bind(store.pool),now);
  let chosen,planId,selectedCandidates;
  for(let attempt=0;attempt<3;attempt++){
@@ -52,7 +78,7 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
   let plan=await store.operation(planId);
   if(!plan){
    const previous=attempt?await store.operation(`x-plan-${cycle}-0-review`):null;
-   const prompt=hourlyDirection+' Return three candidates with private decision summaries. '+JSON.stringify({memeEvidence:board,availableRenderers:mediaCapabilities(env),recent,previousReview:previous?.result??null});
+   const prompt=hourlyDirection+' Return three candidates with private decision summaries. A rejected commission is evidence to learn from: choose a genuinely different construction that addresses its observed failures, not the same scene with stronger adjectives. '+JSON.stringify({memeEvidence:board,availableRenderers:mediaCapabilities(env),recent,rejectionFeedback,previousReview:previous?.result??null});
    const req=await store.begin(planId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
    if(req.replay)return {status:req.status};
    let cost=req.maximum;
@@ -92,7 +118,7 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
   catch{return mediaBlocked(store,planId,'INVALID_VISUAL_COMMISSION');}
   const saved=await store.begin(planId,'step',()=>({maximum:0}));
   if(saved.replay)return {status:saved.status};
-  await store.complete(planId,0,visualPlan);
+  await store.complete(planId,0,{...visualPlan,preparationCycle:cycle});
  }
  const canonical=await store.operation(planId);
  if(canonical.status!=='complete')return {status:'hourly_preparation_pending'};

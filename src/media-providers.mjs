@@ -1,6 +1,6 @@
 import {renderDirection} from './audience-direction.mjs';
-import {visualDirection} from './visual-contract.mjs';
-import {loadReferences,referenceImageInstruction} from './visual-references.mjs';
+import {visualDirection,captureInstruction} from './visual-contract.mjs';
+import {loadReferences,referenceImageInstruction,referenceCatalog} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
 import {composeCollage} from './collage.mjs';
 
@@ -36,8 +36,8 @@ export class MediaProviders {
   const bytes=Buffer.from(reference?.bytes??[]);
   if(!['image/png','image/jpeg','image/webp'].includes(reference?.mime)||!bytes.length||bytes.length>5_000_000)throw Error('CHARACTER_REFERENCE_MISSING');
   return this.replicate('POST','models/'+CHARACTER_MODEL+'/predictions',{input:{
-   image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64'),CHARACTER_STYLE_REFERENCE],
-   prompt:visualDirection+' '+renderDirection+' The first input defines Alidade identity. The second input is the approved OUT OF FRAME visual treatment: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, center-parted white blunt bob with exposed forehead, NO fringe or bangs, and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Choose framing for this scene rather than the portrait reference. Keep enough facial geometry readable to verify depicted identity; candid three-quarter views are allowed. Do not force a centered full-body or medium portrait. For subject-only observations use single renderer without an identity portrait. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt,
+   image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64'),...referenceCatalog.map(r=>'https://alidade.art/series/'+r.file)],
+   prompt:visualDirection+' '+renderDirection+' The first input defines Alidade identity. The next three inputs are the approved OUT OF FRAME capture references used by inspection: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, center-parted white blunt bob with exposed forehead, NO fringe or bangs, and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Choose framing for this scene rather than the portrait reference. Keep enough facial geometry readable to verify depicted identity; candid three-quarter views are allowed. Do not force a centered full-body or medium portrait. For subject-only observations use single renderer without an identity portrait. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt+' '+captureInstruction,
    aspect_ratio:plan.ratio,output_format:'png'}});
  }
  async archiveCharacter(output){

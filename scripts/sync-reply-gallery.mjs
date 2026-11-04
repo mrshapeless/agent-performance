@@ -23,7 +23,10 @@ for(const file of (await readdir(logs)).filter(f=>/^\d{4}-\d{2}-\d{2}T.*\.json$/
   const bytes=await sharp(source).rotate().resize({width:1600,height:1600,fit:'inside',withoutEnlargement:true}).jpeg({quality:86,mozjpeg:true}).toBuffer();
   const hash=createHash('sha256').update(bytes).digest('hex');if(hashes.has(hash))continue;hashes.add(hash);
   const target=`${output}/reply-${id}.jpg`;await writeFile(target,bytes);media[target]=hash;allowed.add(target);
-  entries.set(id,{id,image:`/gallery/reply-${id}.jpg`,caption:String(r.text??'').slice(0,1000),published:r.reply,created:log.slot+':00:00Z',kind:'reply'});
+  const slot=String(log.slot).replace(/T(\d{2})-(\d{2})$/,'T$1:$2');
+  const created=slot+(slot.length===13?':00:00Z':':00Z');
+  if(!Number.isFinite(Date.parse(created)))throw Error('INVALID_GALLERY_SLOT');
+  entries.set(id,{id,image:`/gallery/reply-${id}.jpg`,caption:String(r.text??'').slice(0,1000),published:r.reply,created,kind:'reply'});
  }
 }
 await writeFile('public/reply-gallery.json',JSON.stringify({works:[...entries.values()]},null,2)+'\n');
