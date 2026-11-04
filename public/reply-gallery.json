@@ -1,6 +1,14 @@
 {
   "works": [
     {
+      "id": "2118020973614244249",
+      "image": "/gallery/reply-2118020973614244249.jpg",
+      "caption": "the agent found the zen garden. it had write access.",
+      "published": "https://x.com/alidadenull/status/2118020973614244249",
+      "created": "2026-11-04T16:30:00Z",
+      "kind": "reply"
+    },
+    {
       "id": "2118013613294211367",
       "image": "/gallery/reply-2118013613294211367.jpg",
       "caption": "the signal got caught in the laundry.",
