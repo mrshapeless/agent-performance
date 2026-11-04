@@ -53,7 +53,7 @@ test('fabricated trend provenance and duplicated post text are rejected',()=>{
 });
 
 async function makeReady(db,overrides={}){
- const gate={decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',editorialResult:'supported'};
+ const gate={decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',editorialResult:'supported',commissionResult:'supported'};
  const data={publicationPolicy:VISUAL_CONTRACT,review:{...gate,text:candidates[0].text,alt:'Synthetic image'},styleAudit:gate,mediaId:'999',assetId:'synthetic-asset',mime:'image/png',finalized:true,expiresAt:Date.now()+86400000,...overrides};
  await db.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify(data)]);
 }

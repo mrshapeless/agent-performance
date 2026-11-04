@@ -132,6 +132,7 @@ export async function hourlyOriginalStep(store,provider,env,now,x,board=currentM
  if(['rejected','failed','held','superseded'].includes(media.state))return mediaBlocked(store,planId,'MEDIA_'+media.state.toUpperCase());
  if(media.state!=='ready')return {status:'hourly_media_pending',nextAt:window.nextAt};
  const approved=await readyMedia(store,media.plan_id);
+ if(approved&&media.plan.preparationCycle&&approved.data?.styleAudit?.commissionResult!=='supported')return {status:'hourly_commission_inspection_pending'};
  const text=approved?.data?.review?.text;
  if(!approved||!approved.data.mediaId||!approved.data.assetId||!approved.data.finalized||!Number.isFinite(Number(approved.data.expiresAt))||Number(approved.data.expiresAt)<=now.getTime()||typeof text!=='string'||!text.trim()||text.length>240||!/^[\x20-\x7e\r\n]+$/.test(text)||/@/.test(text))return mediaBlocked(store,planId,'MEDIA_NOT_PUBLISHABLE');
  // A pixel-driven revision has its own plan ID. Reconciliation must look up
