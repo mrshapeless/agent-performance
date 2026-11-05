@@ -1,5 +1,5 @@
 import {renderDirection} from './audience-direction.mjs';
-import {visualDirection,captureInstruction} from './visual-contract.mjs';
+import {visualDirection,captureInstruction,openMemeDirection,isOpenMeme} from './visual-contract.mjs';
 import {loadReferences,referenceImageInstruction,referenceCatalog} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
 import {composeCollage} from './collage.mjs';
@@ -27,7 +27,7 @@ export class MediaProviders {
  constructor(env,fetcher=fetch){this.env=env;this.fetcher=fetcher;}
  imageQuote(prompt){return new AppearanceImage(this.env,this.fetcher).quote(prompt);}
  references(ids){return loadReferences(ids,this.fetcher);}
- image(prompt,ratio,refs=[]){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?referenceImageInstruction+' STYLE-ONLY REFERENCES: do not import any person, face, costume, location or object from the reference images. Render only the cast and subjects explicitly requested in the following commission. If no person is requested, no person or body part may appear. Your chosen work: '+prompt:prompt,ratio,refs);}
+ image(prompt,ratio,refs=[],plan=null){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?(isOpenMeme(plan)?openMemeDirection:referenceImageInstruction)+' STYLE-ONLY REFERENCES: do not import any person, face, costume, location or object from the reference images. Render only the cast and subjects explicitly requested in the following commission. If no person is requested, no person or body part may appear. Your chosen work: '+prompt:prompt,ratio,refs,plan);}
  collage(layout,sources,ratio){return composeCollage(layout,sources,ratio);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
@@ -37,7 +37,7 @@ export class MediaProviders {
   if(!['image/png','image/jpeg','image/webp'].includes(reference?.mime)||!bytes.length||bytes.length>5_000_000)throw Error('CHARACTER_REFERENCE_MISSING');
   return this.replicate('POST','models/'+CHARACTER_MODEL+'/predictions',{input:{
    image_input:['data:'+reference.mime+';base64,'+bytes.toString('base64'),...referenceCatalog.map(r=>'https://alidade.art/series/'+r.file)],
-   prompt:visualDirection+' '+renderDirection+' The first input defines Alidade identity. The next three inputs are the approved OUT OF FRAME capture references used by inspection: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, center-parted white blunt bob with exposed forehead, NO fringe or bangs, and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Choose framing for this scene rather than the portrait reference. Keep enough facial geometry readable to verify depicted identity; candid three-quarter views are allowed. Do not force a centered full-body or medium portrait. For subject-only observations use single renderer without an identity portrait. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt+' '+captureInstruction,
+   prompt:isOpenMeme(plan)?openMemeDirection+' The FIRST attachment defines approved Alidade facial identity. Other reference styles are optional; do not impose their softness or lighting. Preserve face proportions, brown skin, white blunt bob and recognizable features. Scene: '+plan.prompt:visualDirection+' '+renderDirection+' The first input defines Alidade identity. The next three inputs are the approved OUT OF FRAME capture references used by inspection: match its subdued color, diffuse natural light, soft camcorder capture and relaxed performance, not the older avatar lighting or shiny plastic rendering. Do not copy its beach, clothes or pose. Alidade is the established fictional AI artist. Preserve her recognizable elongated face, facial proportions, brown skin, center-parted white blunt bob with exposed forehead, NO fringe or bangs, and expressive gaze. Preserve the synthetic low-fidelity character of her face; do not replace her with a photoreal stock model. The reference is identity, not a required pose, clothing, background or color palette. Choose framing for this scene rather than the portrait reference. Keep enough facial geometry readable to verify depicted identity; candid three-quarter views are allowed. Do not force a centered full-body or medium portrait. For subject-only observations use single renderer without an identity portrait. Do not change facial proportions when smiling; do not substitute a generic realistic human. Create the following new authored scene: '+plan.prompt+' '+captureInstruction,
    aspect_ratio:plan.ratio,output_format:'png'}});
  }
  async archiveCharacter(output){
@@ -65,7 +65,7 @@ export class MediaProviders {
   if((firstFrame||plan.renderer==='character')&&(!['image/png','image/jpeg','image/webp'].includes(firstFrame?.mime)||!bytes.length||bytes.length>5_000_000))throw Error('VIDEO_FIRST_FRAME_MISSING');
   // Replicate google/veo-3.1-fast schema: `image` is the starting frame URI.
   // Send only the generated opening frame, never private style boards.
-  return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:renderDirection+' '+visualDirection+' SCREENPLAY: '+plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true,...(firstFrame?{image:'data:'+firstFrame.mime+';base64,'+bytes.toString('base64')}:{})}});
+  return this.replicate('POST','models/'+VIDEO_MODEL+'/predictions',{input:{prompt:(isOpenMeme(plan)?openMemeDirection:renderDirection+' '+visualDirection)+' SCREENPLAY: '+plan.prompt,aspect_ratio:plan.ratio,duration:plan.duration,resolution:'720p',generate_audio:true,...(firstFrame?{image:'data:'+firstFrame.mime+';base64,'+bytes.toString('base64')}:{})}});
  }
  videoStatus(id){if(!/^[a-zA-Z0-9_-]+$/.test(id))throw Error('INVALID_PREDICTION');return this.replicate('GET','predictions/'+id);}
  async archiveVideo(id,output){

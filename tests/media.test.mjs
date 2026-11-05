@@ -8,6 +8,21 @@ import {mediaStep,enqueueMedia,validateMediaPlan,readyMedia,recentPublishedPixel
 import {legacySocialStep as socialStep} from '../src/integrations.mjs';
 import {MediaProviders,readMedia,trustedMediaURL} from '../src/media-providers.mjs';
 import {XClient} from '../src/x.mjs';
+import {qualityFor,isOpenMeme} from '../src/visual-contract.mjs';
+
+test('meme renderers permit clean 3D without imposing capture style; identity remains required',async()=>{
+ const plan={stylePolicy:'open_meme',prompt:'Clean polished 3D comic scene',ratio:'1:1'};
+ assert.equal(isOpenMeme({preparationCycle:'existing-hourly'}),true);
+ assert.match(qualityFor(plan),/game-render appearance alone are never rejection reasons/);
+ assert.match(qualityFor({}),/Publication requires supported visual language/);
+ let imagePrompt,characterPrompt;
+ const image=new MediaProviders({GEMINI_API_KEY:'synthetic'},async(_url,req)=>{imagePrompt=JSON.parse(req.body).input;throw Error('INSPECTED_REQUEST');});
+ await assert.rejects(image.image(plan.prompt,plan.ratio,[],plan),/INSPECTED_REQUEST/);
+ assert.match(imagePrompt,/clean polished 3D/);assert.doesNotMatch(imagePrompt,/CAPTURE EXECUTION|Avoid pristine advertising/);
+ const character=new MediaProviders({REPLICATE_API_TOKEN:'synthetic'},async(_url,req)=>{characterPrompt=JSON.parse(req.body).input.prompt;return {ok:true,json:async()=>({id:'fixture'})};});
+ await character.startCharacter(plan,{mime:'image/png',bytes:Buffer.from('face')});
+ assert.match(characterPrompt,/approved Alidade facial identity/);assert.doesNotMatch(characterPrompt,/CAPTURE EXECUTION|match its subdued color/);
+});
 const quality={visualLanguageResult:'supported',referenceComparison:'Soft capture and flat available light match the current reference.',editorialResult:'supported',editorialEvidence:'The visible hesitation and caption together communicate an awkward comic reversal.',integrityResult:'supported',integrityEvidence:'Focal face, hands and object contact remain coherent throughout.'};
 const env={X_ENABLED:'true',GEMINI_API_KEY:'test',REPLICATE_API_TOKEN:'test',BLOB_READ_WRITE_TOKEN:'test'};
 const plan={action:'x_draft',medium:'image',text:'A line becomes a shoreline.',prompt:'An original moving shoreline made of ink.',alt:'A black ink shoreline',ratio:'1:1',summary:'Testing a visual idea.'};

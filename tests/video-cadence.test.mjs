@@ -1,3 +1,4 @@
+import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
 import {reconcileCreativeRevision} from '../src/creative-revision.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -77,7 +78,7 @@ test('social cadence writes a separate screenplay, preserves image commission, q
   assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'creative_preflight');assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'creative_preflight');assert.equal((await mediaStep(s,provider,enabled,services,()=>x)).status,'video_started');assert.equal(starts,1);assert.equal(posts,0);
   const paid=(await s.pool.query("SELECT * FROM agent_operations WHERE budget_provider='replicate'")).rows;assert.equal(paid.length,1);assert.equal(Number(paid[0].amount),4_000_000);
   // Publishing becomes possible only after the existing media worker confirms upload readiness.
-  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=data||$1::jsonb",[JSON.stringify({mediaId:'synthetic-media',assetId:'synthetic-art',expiresAt:now.getTime()+3600000,publicationPolicy:'out-of-frame-editorial-v2',styleAudit:{decision:'publish',visualLanguageResult:'supported',editorialResult:'supported',editorialEvidence:'The visible situation and caption communicate an awkward reversal.',integrityResult:'supported'},review:{decision:'publish',visualLanguageResult:'supported',editorialResult:'supported',editorialEvidence:'The visible situation and caption communicate an awkward reversal.',integrityResult:'supported',text:'A completed synthetic film.',summary:'Reviewed film',alt:'Moving signs'}})]);
+  await s.pool.query("UPDATE agent_media_jobs SET state='ready',data=data||$1::jsonb",[JSON.stringify({mediaId:'synthetic-media',assetId:'synthetic-art',expiresAt:now.getTime()+3600000,publicationPolicy:VISUAL_CONTRACT,styleAudit:{decision:'publish',visualLanguageResult:'supported',editorialResult:'supported',editorialEvidence:'The visible situation and caption communicate an awkward reversal.',integrityResult:'supported'},review:{decision:'publish',visualLanguageResult:'supported',editorialResult:'supported',editorialEvidence:'The visible situation and caption communicate an awkward reversal.',integrityResult:'supported',text:'A completed synthetic film.',summary:'Reviewed film',alt:'Moving signs'}})]);
   assert.equal((await socialStep(s,provider,enabled,now,()=>x)).status,'published');assert.equal(posts,1);assert.equal(starts,1);assert.equal(calls,2);
   task=(await s.pool.query("SELECT * FROM agent_agenda WHERE id='original-image'")).rows[0];assert.equal(task.status,'commissioned');
  }finally{await db.close();}

@@ -39,7 +39,7 @@ export async function collageSourceStep(store,services,job){
   const prompt='Generate only this independent source picture for a later pixel collage. Do not depict a mounted print, a workspace, a collage layout or additional layers unless this source itself explicitly asks for them. Do not harmonize it with an imagined final scene. Source instruction: '+layer.prompt;
   const maximum=services.imageQuote(prompt)+500000,req=await store.begin(id,'step',()=>({maximum}));if(req.replay)return {ready:false};
   let cost=maximum;
-  try{const refs=job.plan.referenceIds?await services.references(job.plan.referenceIds):[];if(job.data.referenceHashes&&(refs.length!==job.data.referenceHashes.length||refs.some((r,i)=>r.hash!==job.data.referenceHashes[i]?.hash)))throw Error('REFERENCE_CHANGED');const asset=await services.image(prompt,'1:1',refs);cost=asset.costMicrodollars;await store.complete(id,cost,{action:'collage_layer',purpose:'collage_source',layerId:layer.id,manifestHash,assetId:id},asset);return {ready:false,layerId:layer.id};}
+  try{const refs=job.plan.referenceIds?await services.references(job.plan.referenceIds):[];if(job.data.referenceHashes&&(refs.length!==job.data.referenceHashes.length||refs.some((r,i)=>r.hash!==job.data.referenceHashes[i]?.hash)))throw Error('REFERENCE_CHANGED');const asset=await services.image(prompt,'1:1',refs,job.plan);cost=asset.costMicrodollars;await store.complete(id,cost,{action:'collage_layer',purpose:'collage_source',layerId:layer.id,manifestHash,assetId:id},asset);return {ready:false,layerId:layer.id};}
   catch(error){throw ownedError(error,id,cost);}
  }
  return {ready:true,sources,manifestHash};
