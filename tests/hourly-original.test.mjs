@@ -8,7 +8,7 @@ import {socialStep,reconcileX} from '../src/integrations.mjs';
 import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
 import {validateResearch} from '../src/meme-evidence.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'synthetic'};
-const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
+const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',recognitionTokens:['Synthetic image construction'],angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
 const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',evidenceType:'current_conversation',departure:'different premise'}));
 const accepted={sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
 async function fixture(){
@@ -83,6 +83,7 @@ test('research context reuses the transaction connection in a single-connection 
 test('source-free fallback, mismatched items, single-author trends and stale sources fail closed',()=>{
  assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,evidenceType:'original_experiment',sourceUrl:''}))},board),/UNSUPPORTED_MEME_SOURCE/);
  assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,researchItemId:'invented'}))},board),/UNSUPPORTED_MEME_SOURCE/);
+ assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,visual:{...c.visual,renderPrompt:'A generic butter knife in a block of butter'}}))},board),/UNSUPPORTED_MEME_SOURCE/);
  assert.throws(()=>validateResearch({...board,formats:board.formats.map(f=>({...f,evidenceType:'observed_format'}))}),/INSUFFICIENT_MEME_EVIDENCE/);
  assert.throws(()=>validateResearch({...board,formats:board.formats.map(f=>({...f,sources:f.sources.map(s=>({...s,observedAt:'2000-01-01'}))}))}),/INVALID_RESEARCH_SOURCE/);
 });

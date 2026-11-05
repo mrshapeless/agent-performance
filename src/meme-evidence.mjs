@@ -4,7 +4,7 @@ export function validateResearch(board,now=new Date()) {
   if(!board?.id||!Number.isFinite(age)||age<0||age>=24*3600000||!Array.isArray(board.formats)||!board.formats.length)throw Error('RESEARCH_REQUIRED');
   const ids=new Set();
   for(const f of board.formats){
-    if(!f.id||ids.has(f.id)||!['gaming','internet_culture'].includes(f.niche)||!['observed_format','current_conversation'].includes(f.evidenceType)||!f.topic||!f.recognition||!f.angle||!Array.isArray(f.sources)||!f.sources.length)throw Error('INVALID_RESEARCH');
+    if(!f.id||ids.has(f.id)||!['gaming','internet_culture'].includes(f.niche)||!['observed_format','current_conversation'].includes(f.evidenceType)||!f.topic||!f.recognition||!f.angle||!Array.isArray(f.recognitionTokens)||!f.recognitionTokens.length||f.recognitionTokens.some(t=>typeof t!=='string'||t.trim().length<3)||!Array.isArray(f.sources)||!f.sources.length)throw Error('INVALID_RESEARCH');
     ids.add(f.id);
     for(const s of f.sources){
       const observed=now-Date.parse(s.observedAt),published=now-Date.parse(s.publishedAt);
