@@ -71,6 +71,15 @@ test('missing and expired research block before any paid preparation or publicat
  }finally{await db.close();}
 });
 
+test('research context reuses the transaction connection in a single-connection production pool',async()=>{
+ const {s,db}=await fixture();const original=s.pool;let leased=false;
+ s.pool={query:async(...args)=>{assert.equal(leased,false,'must not acquire a second connection inside begin');return original.query(...args);},connect:async()=>{const c=await original.connect();leased=true;return {query:c.query,release(){leased=false;c.release();}};}};
+ try{
+  const req=await s.begin('research-pool-test','step',(_identity,_recent,context)=>{assert.equal(context.external.memeEvidence.id,board.id);return {maximum:0};});
+  assert.equal(req.replay,false);
+ }finally{await db.close();}
+});
+
 test('source-free fallback, mismatched items, single-author trends and stale sources fail closed',()=>{
  assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,evidenceType:'original_experiment',sourceUrl:''}))},board),/UNSUPPORTED_MEME_SOURCE/);
  assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,researchItemId:'invented'}))},board),/UNSUPPORTED_MEME_SOURCE/);
@@ -175,3 +184,4 @@ test('planning rejection resumes after five minutes instead of pinning cycle for
 test('repeated rejected media consumes at most three recovery preparations per hour',async()=>{const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};const now=new Date();const run=()=>hourlyOriginalStep(s,provider,env,now,{},board);try{await run();await run();await run();for(let i=0;i<3;i++){await db.query("UPDATE agent_media_jobs SET state='rejected',updated=$1",[new Date(now.getTime()-6*60000).toISOString()]);assert.equal((await run()).status,'hourly_prepared');await run();await run();}await db.query("UPDATE agent_media_jobs SET state='rejected',updated=$1",[new Date(now.getTime()-6*60000).toISOString()]);const before=calls;assert.equal((await run()).status,'hourly_preparation_limit');assert.equal((await run()).status,'hourly_preparation_limit');assert.equal(calls,before);}finally{await db.close();}});
 
 test('malformed model drafts restart bounded preparation; provider failures do not',async()=>{for(const malformed of [true,false]){const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>{calls++;if(!malformed)throw Error('Gemini HTTP 403');return {costMicrodollars:1,value:{candidates:[]}}}};let now=new Date();const run=()=>hourlyOriginalStep(s,provider,env,now,{},board);try{await run();await run();await run();assert.equal(calls,2);const errors=(await db.query("SELECT payload FROM agent_events WHERE kind='hourly_planning_failed'")).rows;assert.equal((typeof errors[0].payload==='string'?JSON.parse(errors[0].payload):errors[0].payload).failureCode,malformed?'INVALID_HOURLY_CANDIDATES':'GEMINI_HTTP_403');now=new Date(Date.now()+6*60000);assert.equal((await run()).status,malformed?'hourly_planning_failed':'hourly_editorial_blocked');assert.equal(calls,malformed?3:2);}finally{await db.close();}}});
+

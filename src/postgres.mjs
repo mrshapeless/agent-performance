@@ -60,7 +60,7 @@ export class PostgresStore {
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
       const observations=(await client.query("SELECT payload FROM agent_events WHERE kind='observation' ORDER BY seq DESC LIMIT 1")).rows[0];
-      const external={...(observations?JSON.parse(observations.payload):{}),memeEvidence:await loadMemeResearch(this)};
+      const external={...(observations?JSON.parse(observations.payload):{}),memeEvidence:await loadMemeResearch(new PostgresStore(client))};
       const studioRow=(await client.query("SELECT payload FROM agent_events WHERE kind='studio_revision' ORDER BY seq DESC LIMIT 1")).rows[0];
       const studio=studioRow?JSON.parse(studioRow.payload):null;
       const projectHistory=planningHistory((await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse(),reviews);
