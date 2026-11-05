@@ -1,5 +1,5 @@
 import {originalPublicationWindow} from './original-cadence.mjs';
-import {currentMemeEvidence} from './meme-evidence.mjs';
+import {loadMemeResearch} from './meme-evidence.mjs';
 import {creativeMemory} from './atelier.mjs';
 import {publicWorkspace,canonicalMediaReviews,decisionHealth} from './workspace-state.mjs';
 import {agenda,lessons} from './memory.mjs';
@@ -60,7 +60,7 @@ export class PostgresStore {
       const strategyRow = (await client.query("SELECT seq,payload FROM agent_events WHERE kind='reflect' ORDER BY seq DESC LIMIT 1")).rows[0];
       const since = (await client.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind IN ('draft_text','wait') AND seq > $1", [strategyRow?.seq ?? 0])).rows[0].n;
       const observations=(await client.query("SELECT payload FROM agent_events WHERE kind='observation' ORDER BY seq DESC LIMIT 1")).rows[0];
-      const external={...(observations?JSON.parse(observations.payload):{}),memeEvidence:currentMemeEvidence()};
+      const external={...(observations?JSON.parse(observations.payload):{}),memeEvidence:await loadMemeResearch(this)};
       const studioRow=(await client.query("SELECT payload FROM agent_events WHERE kind='studio_revision' ORDER BY seq DESC LIMIT 1")).rows[0];
       const studio=studioRow?JSON.parse(studioRow.payload):null;
       const projectHistory=planningHistory((await client.query("SELECT seq,kind,payload FROM agent_events WHERE kind IN ('x_post','x_draft','draft_text','dialogue','art_image','art_video','media_review','media_failed','studio_revision') ORDER BY seq DESC LIMIT 60")).rows.reverse(),reviews);
@@ -125,6 +125,7 @@ export class PostgresStore {
   }
   async publicRuntime() {
     const state = await this.status();
+    const research=await loadMemeResearch(this);
     const cognitionHealth=decisionHealth((await this.pool.query("SELECT DISTINCT ON(kind) seq,kind,created,payload FROM agent_events WHERE kind IN ('workspace_broadcast','cognition_failed') ORDER BY kind,seq DESC")).rows);
     const last = (await this.pool.query("SELECT created FROM agent_events WHERE kind='operation_completed' ORDER BY seq DESC LIMIT 1")).rows[0];
     const revision = (await this.pool.query("SELECT COUNT(*)::int AS n FROM agent_events WHERE kind='reflect'")).rows[0].n;
@@ -134,7 +135,7 @@ export class PostgresStore {
     const mediaJobs=(await this.pool.query("SELECT id,state,created,updated,data->>'error' AS error FROM agent_media_jobs ORDER BY created DESC LIMIT 5")).rows;
     const decision=await this.latest('cognitive_decision');
     const publicDecision=decision?Object.fromEntries(['action','choice','text','summary','projectId','taskId','evidence'].filter(k=>k in decision).map(k=>[k,decision[k]])):null;
-    return { workspace:await publicWorkspace(this), cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
+    return { research:{status:research.status,observedAt:research.observedAt??null,itemCount:research.formats.length,fingerprint:createHash('sha256').update(JSON.stringify(research.formats)).digest('hex'),refreshDue:research.refreshDue??true}, workspace:await publicWorkspace(this), cognition: {lastDecision:publicDecision,lastFailure:await this.latest('cognition_failed'),tasks:(await agenda(this)).map(({id,project_id,status,objective,next_step,version})=>({id,projectId:project_id,status,objective,nextStep:next_step,version})),lessons:(await lessons(this)).map(({id,claim,conditions,status})=>({id,claim,conditions,status}))}, portraitAttempt:portraitAttempt?{status:portraitAttempt.status,action:portraitAttempt.result?.action??null,errorCode:portraitAttempt.result?.errorCode??null}:null, experiments:await this.publicExperiments(), studio:await this.latest('studio_revision'), mediaJobs, appearance: appearance ? {assetId:appearance.assetId,alt:appearance.text}:null, unresolved: state.unresolved, pendingSince: started,
       cognitionHealth, blocked: cognitionHealth.status==='failed'||cognitionHealth.status==='stale'||(!!started && Date.now() - Date.parse(started) > 120_000),
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
@@ -142,7 +143,7 @@ export class PostgresStore {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','workspace_broadcast','workspace_outcome','workspace_note','work_started','work_progress','work_published','work_failed','hourly_planning_failed','hourly_review_failed','hourly_editorial_blocked') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','workspace_broadcast','workspace_outcome','workspace_note','work_started','work_progress','work_published','work_failed','hourly_planning_failed','hourly_review_failed','hourly_editorial_blocked','meme_research_required') ORDER BY seq DESC LIMIT 50)
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

@@ -267,7 +267,7 @@ export async function reconcileX(store,x,now=new Date()){
  const match=posts.find(p=>normalize(media?p.text.replace(/\s+https:\/\/t\.co\/\S+$/,''):p.text)===normalize(media?.data.review?.text??plan.result.text) && (!media||(p.attachments?.media_keys??[]).some(k=>k.endsWith('_'+media.data.mediaId))) && (!plan.result.replyTo || (p.referenced_tweets??p.referenced_posts??[]).some(r=>r.type==='replied_to'&&r.id===plan.result.replyTo)));
  if(match){
   const url='https://x.com/i/web/status/'+match.id;
-  await store.complete(row.id,amount,{action:plan.result.replyTo?'x_reply':'x_post',text:media?.data.review?.text??plan.result.text,summary:'Recovered publication by matching the authenticated account timeline.',agendaId:plan.result.agendaId??null,agendaVersion:plan.result.agendaVersion??null,projectId:plan.result.projectId??null,postId:match.id,url,...(media?{assetId:media.data.assetId,mime:media.plan.medium==='video'?'video/mp4':'image/jpeg',alt:media.data.review.alt}:{})});
+  await store.complete(row.id,amount,{action:plan.result.replyTo?'x_reply':'x_post',text:media?.data.review?.text??plan.result.text,...(plan.result.research?{research:plan.result.research,creativeRevision:plan.result.creativeRevision}:{}),summary:'Recovered publication by matching the authenticated account timeline.',agendaId:plan.result.agendaId??null,agendaVersion:plan.result.agendaVersion??null,projectId:plan.result.projectId??null,postId:match.id,url,...(media?{assetId:media.data.assetId,mime:media.plan.medium==='video'?'video/mp4':'image/jpeg',alt:media.data.review.alt}:{})});
   if(media)await finishMedia(store,media.plan_id);
   return {status:'reconciled_published',url};
  }

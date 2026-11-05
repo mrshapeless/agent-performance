@@ -6,14 +6,16 @@ import {PostgresStore} from '../src/postgres.mjs';
 import {hourlyOriginalStep,validateHourlyCandidates} from '../src/hourly-original.mjs';
 import {socialStep,reconcileX} from '../src/integrations.mjs';
 import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
+import {validateResearch} from '../src/meme-evidence.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'synthetic'};
-const board={status:'refresh_needed',formats:[]};
-const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'',evidenceType:'original_experiment',departure:'different premise'}));
-const accepted={visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
+const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
+const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',evidenceType:'current_conversation',departure:'different premise'}));
+const accepted={sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
 async function fixture(){
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
  const s=new PostgresStore({query:c.query,connect:async()=>c});await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Fixture'});
+ await s.transaction(c=>s.append(c,'meme_research_internal',board));
  return {s,db};
 }
 test('hourly production entry prepares without a commission, independently reviews, waits, then publishes once',async()=>{
@@ -25,7 +27,7 @@ test('hourly production entry prepares without a commission, independently revie
   const now=new Date();const run=()=>socialStep(s,provider,env,now,()=>x);
   assert.equal((await run()).status,'hourly_prepared');assert.equal((await run()).status,'hourly_reviewed');assert.equal((await run()).status,'hourly_media_pending');assert.equal(posts,0);await makeReady(db);assert.equal((await run()).status,'hourly_ready');
   await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[new Date(Date.now()-121*60000).toISOString()]);
-  assert.equal((await run()).status,'published');assert.equal(posts,1);
+  assert.equal((await run()).status,'published');assert.equal(posts,1);assert.equal((await s.latest('x_post')).research.sourceUrl,'https://example.test/game');
   // Next cycle starts preparation rather than delivering missed slots.
   await run();assert.equal(posts,1);
  }finally{await db.close();}
@@ -57,6 +59,35 @@ async function makeReady(db,overrides={}){
  const data={publicationPolicy:VISUAL_CONTRACT,review:{...gate,text:candidates[0].text,alt:'Synthetic image'},styleAudit:gate,mediaId:'999',assetId:'synthetic-asset',mime:'image/png',finalized:true,expiresAt:Date.now()+86400000,...overrides};
  await db.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify(data)]);
 }
+
+test('missing and expired research block before any paid preparation or publication',async()=>{
+ const {s,db}=await fixture();let paid=0,posts=0;
+ const provider={quote:()=>{paid++;return 1;},generate:async()=>{throw Error('must not generate');}};
+ try{
+  for(const evidence of [{status:'refresh_needed',formats:[]},{...board,observedAt:new Date(Date.now()-86400001).toISOString()}]){
+   assert.equal((await hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>posts++},evidence)).status,'meme_research_required');
+  }
+  assert.equal(paid,0);assert.equal(posts,0);
+ }finally{await db.close();}
+});
+
+test('source-free fallback, mismatched items, single-author trends and stale sources fail closed',()=>{
+ assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,evidenceType:'original_experiment',sourceUrl:''}))},board),/UNSUPPORTED_MEME_SOURCE/);
+ assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,researchItemId:'invented'}))},board),/UNSUPPORTED_MEME_SOURCE/);
+ assert.throws(()=>validateResearch({...board,formats:board.formats.map(f=>({...f,evidenceType:'observed_format'}))}),/INSUFFICIENT_MEME_EVIDENCE/);
+ assert.throws(()=>validateResearch({...board,formats:board.formats.map(f=>({...f,sources:f.sources.map(s=>({...s,observedAt:'2000-01-01'}))}))}),/INVALID_RESEARCH_SOURCE/);
+});
+
+test('research expiring after pixel approval cannot publish a stale commission',async()=>{
+ const {s,db}=await fixture();let calls=0,posts=0;
+ const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
+ try{
+  for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);
+  await makeReady(db,{expiresAt:Date.now()+3*86400000});
+  assert.equal((await hourlyOriginalStep(s,provider,env,new Date(Date.now()+86400001),{post:async()=>posts++},board)).status,'meme_research_required');
+  assert.equal(posts,0);
+ }finally{await db.close();}
+});
 test('image failure, missing pixel gate and expired upload never fall back to text',async()=>{
  const {s,db}=await fixture();let calls=0,posts=0;
  const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};

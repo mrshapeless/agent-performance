@@ -22,7 +22,7 @@ test('reconcile only the confirmed 402; retry once, preserve unknown writes and 
  const client=()=>({post:async text=>{calls++;assert.equal(text,'original');return {id:'123',url:'https://x.com/i/web/status/123'}}});
  assert.equal((await socialStep(s,null,env,now,client)).status,'published');await socialStep(s,null,env,now,client);assert.equal(calls,1);
  await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[now.toISOString()]);
- const later=new Date('2026-10-21T21:00:00Z');await s.begin('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),'step',()=>({maximum:1}));await s.complete('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),1,stampCreativePlan({action:'x_draft',text:'next',summary:'choice'}));
+ const later=new Date('2026-10-21T21:21:00Z');await s.begin('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),'step',()=>({maximum:1}));await s.complete('x-plan-'+CREATIVE_REVISION+'-'+Math.floor(later.getTime()/1800000),1,stampCreativePlan({action:'x_draft',text:'next',summary:'choice'}));
  const rejected=()=>({post:async()=>{throw Error('X_HTTP_402')}});
  assert.equal((await socialStep(s,null,env,later,rejected)).status,'payment_required');assert.equal((await s.status()).unresolved,0);
  const timeout=()=>({post:async()=>{calls++;throw Error('timeout')}});
