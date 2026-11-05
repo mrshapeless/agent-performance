@@ -1,7 +1,7 @@
-// Prepare immediately after the last confirmed original; publish one hour later.
+// Prepare immediately after the last confirmed original; publish two hours later.
 // A late worker never creates catch-up slots. Atomic store gate also uses this.
 export function originalDelayMinutes(postId) {
-  return 60;
+  return 120;
 }
 export async function originalPublicationWindow(query, now = new Date()) {
   const last = (await query("SELECT seq,payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 1")).rows[0];

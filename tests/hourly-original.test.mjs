@@ -24,7 +24,7 @@ test('hourly production entry prepares without a commission, independently revie
   await s.transaction(c=>s.append(c,'x_post',{postId:'old',text:'Unrelated previous original'}));
   const now=new Date();const run=()=>socialStep(s,provider,env,now,()=>x);
   assert.equal((await run()).status,'hourly_prepared');assert.equal((await run()).status,'hourly_reviewed');assert.equal((await run()).status,'hourly_media_pending');assert.equal(posts,0);await makeReady(db);assert.equal((await run()).status,'hourly_ready');
-  await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[new Date(Date.now()-61*60000).toISOString()]);
+  await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[new Date(Date.now()-121*60000).toISOString()]);
   assert.equal((await run()).status,'published');assert.equal(posts,1);
   // Next cycle starts preparation rather than delivering missed slots.
   await run();assert.equal(posts,1);
