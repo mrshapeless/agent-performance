@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {PGlite} from '@electric-sql/pglite';
 import {readFile} from 'node:fs/promises';
 import {PostgresStore} from '../src/postgres.mjs';
-import {hourlyOriginalStep,validateHourlyCandidates} from '../src/hourly-original.mjs';
+import {hourlyOriginalStep,validateHourlyCandidates,acceptedHourlyReview} from '../src/hourly-original.mjs';
 import {socialStep,reconcileX} from '../src/integrations.mjs';
 import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
 import {validateResearch} from '../src/meme-evidence.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'synthetic'};
 const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',recognitionTokens:['Synthetic image construction'],angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
 const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',evidenceType:'current_conversation',departure:'different premise'}));
-const accepted={sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
+const accepted={topicEssential:true,visiblePremise:true,purposefulCast:true,naturalCaption:true,sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
 async function fixture(){
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
@@ -186,3 +186,12 @@ test('repeated rejected media consumes at most three recovery preparations per h
 
 test('malformed model drafts restart bounded preparation; provider failures do not',async()=>{for(const malformed of [true,false]){const {s,db}=await fixture();let calls=0;const provider={quote:()=>1,generate:async()=>{calls++;if(!malformed)throw Error('Gemini HTTP 403');return {costMicrodollars:1,value:{candidates:[]}}}};let now=new Date();const run=()=>hourlyOriginalStep(s,provider,env,now,{},board);try{await run();await run();await run();assert.equal(calls,2);const errors=(await db.query("SELECT payload FROM agent_events WHERE kind='hourly_planning_failed'")).rows;assert.equal((typeof errors[0].payload==='string'?JSON.parse(errors[0].payload):errors[0].payload).failureCode,malformed?'INVALID_HOURLY_CANDIDATES':'GEMINI_HTTP_403');now=new Date(Date.now()+6*60000);assert.equal((await run()).status,malformed?'hourly_planning_failed':'hourly_editorial_blocked');assert.equal(calls,malformed?3:2);}finally{await db.close();}}});
 
+
+test('specific-topic editorial vetoes cannot be compensated by other passing checks',()=>{
+ assert.equal(acceptedHourlyReview(accepted),true);
+ for(const key of ["topicEssential","visiblePremise","purposefulCast","naturalCaption"]){
+  assert.equal(acceptedHourlyReview({...accepted,[key]:false}),false,key);
+  const incomplete={...accepted};delete incomplete[key];
+  assert.throws(()=>acceptedHourlyReview(incomplete),/INVALID_HOURLY_REVIEW/,key);
+ }
+});

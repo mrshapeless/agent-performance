@@ -19,6 +19,9 @@ test('meme renderers permit clean 3D without imposing capture style; identity re
  const image=new MediaProviders({GEMINI_API_KEY:'synthetic'},async(_url,req)=>{imagePrompt=JSON.parse(req.body).input;throw Error('INSPECTED_REQUEST');});
  await assert.rejects(image.image(plan.prompt,plan.ratio,[],plan),/INSPECTED_REQUEST/);
  assert.match(imagePrompt,/clean polished 3D/);assert.doesNotMatch(imagePrompt,/CAPTURE EXECUTION|Avoid pristine advertising/);
+ assert.match(imagePrompt,/Apply a substitution test/);
+ assert.match(imagePrompt,/no interchangeable extras/);
+ assert.match(qualityFor(plan),/caption-image contradiction fails editorialResult/);
  const character=new MediaProviders({REPLICATE_API_TOKEN:'synthetic'},async(_url,req)=>{characterPrompt=JSON.parse(req.body).input.prompt;return {ok:true,json:async()=>({id:'fixture'})};});
  await character.startCharacter(plan,{mime:'image/png',bytes:Buffer.from('face')});
  assert.match(characterPrompt,/approved Alidade facial identity/);assert.doesNotMatch(characterPrompt,/CAPTURE EXECUTION|match its subdued color/);
