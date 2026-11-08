@@ -9,8 +9,8 @@ import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
 import {validateResearch} from '../src/meme-evidence.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'synthetic'};
 const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',recognitionTokens:['Synthetic image construction'],angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
-const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',contextObservation:'Synthetic source premise',originalIdea:'Changed relationship '+i,visibleRecognition:'Visible synthetic convention',captionContribution:'Caption changes interpretation',audience:'Synthetic game players',shareHypothesis:'Shared experience; untested',evidenceType:'current_conversation',departure:'different premise'}));
-const accepted={independentIdea:true,recognizableWithoutCaption:true,captionAddsMeaning:true,ideaEvidence:'A self-contained original situation for this audience.',recognitionEvidence:'Visible convention survives without the caption.',captionEvidence:'Caption supplies a distinct interpretation of the image.',topicEssential:true,visiblePremise:true,purposefulCast:true,naturalCaption:true,sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
+const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({medium:"image",duration:4,stylePolicy:"open_meme",attentionHook:"First visible relationship",development:"Second detail changes initial reading",payoff:"Final visual discovery resolves the relationship",retentionHypothesis:"Saves and qualitative responses, not measured completion",formatReason:"Two related discoveries in one image",visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',contextObservation:'Synthetic source premise',originalIdea:'Changed relationship '+i,visibleRecognition:'Visible synthetic convention',captionContribution:'Caption changes interpretation',audience:'Synthetic game players',shareHypothesis:'Shared experience; untested',evidenceType:'current_conversation',departure:'different premise'}));
+const accepted={sustainedInterest:true,earnedPayoff:true,formatServesIdea:true,attentionEvidence:"Specific opening, development and final discovery.",independentIdea:true,recognizableWithoutCaption:true,captionAddsMeaning:true,ideaEvidence:'A self-contained original situation for this audience.',recognitionEvidence:'Visible convention survives without the caption.',captionEvidence:'Caption supplies a distinct interpretation of the image.',topicEssential:true,visiblePremise:true,purposefulCast:true,naturalCaption:true,sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
 async function fixture(){
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
@@ -55,7 +55,7 @@ test('fabricated trend provenance and duplicated post text are rejected',()=>{
 });
 
 async function makeReady(db,overrides={}){
- const gate={decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',editorialResult:'supported',commissionResult:'supported'};
+ const gate={attentionResult:'supported',attentionEvidence:'Opening and discovery supported by synthetic fixture.',decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',editorialResult:'supported',commissionResult:'supported'};
  const data={publicationPolicy:VISUAL_CONTRACT,review:{...gate,text:candidates[0].text,alt:'Synthetic image'},styleAudit:gate,mediaId:'999',assetId:'synthetic-asset',mime:'image/png',finalized:true,expiresAt:Date.now()+86400000,...overrides};
  await db.query("UPDATE agent_media_jobs SET state='ready',data=$1",[JSON.stringify(data)]);
 }
@@ -189,14 +189,14 @@ test('malformed model drafts restart bounded preparation; provider failures do n
 
 test('specific-topic editorial vetoes cannot be compensated by other passing checks',()=>{
  assert.equal(acceptedHourlyReview(accepted),true);
- for(const key of ["topicEssential","visiblePremise","purposefulCast","naturalCaption","independentIdea","recognizableWithoutCaption","captionAddsMeaning"]){
+ for(const key of ["sustainedInterest","earnedPayoff","formatServesIdea","topicEssential","visiblePremise","purposefulCast","naturalCaption","independentIdea","recognizableWithoutCaption","captionAddsMeaning"]){
   assert.equal(acceptedHourlyReview({...accepted,[key]:false}),false,key);
   const incomplete={...accepted};delete incomplete[key];
   assert.throws(()=>acceptedHourlyReview(incomplete),/INVALID_HOURLY_REVIEW/,key);
  }
 });
 
-test("independent editorial evidence is mandatory",()=>{for(const key of ["ideaEvidence","recognitionEvidence","captionEvidence"]){assert.throws(()=>acceptedHourlyReview({...accepted,[key]:""}),/INVALID_HOURLY_REVIEW/);}});
+test("independent editorial evidence is mandatory",()=>{for(const key of ["attentionEvidence","ideaEvidence","recognitionEvidence","captionEvidence"]){assert.throws(()=>acceptedHourlyReview({...accepted,[key]:""}),/INVALID_HOURLY_REVIEW/);}});
 
 test("source URL alone cannot substitute for an original contribution",()=>{for(const key of ["contextObservation","originalIdea","visibleRecognition","captionContribution","audience","shareHypothesis"]){assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,[key]:""}))},board),/MISSING_HOURLY_MECHANISM/);}});
 
@@ -219,4 +219,35 @@ test('original pixel contract does not require adapting a source joke',async()=>
  assert.doesNotMatch(prompt,/TOPIC-SPECIFIC EDITORIAL CONTRACT/);
  const reply=qualityFor({stylePolicy:'open_meme'});
  assert.doesNotMatch(reply,/OWN ORIGINAL PUBLICATION/);
+});
+
+test('own video commission preserves medium, duration and viewing contract',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ const films=candidates.map(c=>({...c,medium:'video',duration:8,stylePolicy:'reference',visual:{...c.visual,ratio:'16:9'}}));
+ const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates:films}:accepted})};
+ try{for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,{...env,REPLICATE_API_TOKEN:'synthetic',BLOB_READ_WRITE_TOKEN:'synthetic'},new Date(),{},board);
+ const job=(await db.query('SELECT plan FROM agent_media_jobs')).rows[0].plan;
+ assert.equal(job.medium,'video');assert.equal(job.duration,8);assert.equal(job.stylePolicy,'reference');assert.equal(job.research.payoff,films[0].payoff);
+ }finally{await db.close();}
+});
+test('own publication blocks missing, uncertain and rejected viewing-value audit',async()=>{
+ for(const attentionResult of [undefined,'uncertain','not_supported']){
+ const {s,db}=await fixture();let calls=0,posts=0;const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
+ try{for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);
+ await makeReady(db,{styleAudit:{decision:'publish',visualLanguageResult:'supported',integrityResult:'supported',editorialResult:'supported',commissionResult:'supported',attentionResult,attentionEvidence:'The scene remains static with no meaningful discovery.'}});
+ assert.equal((await hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>posts++},board)).status,'hourly_commission_inspection_pending');assert.equal(posts,0);
+ }finally{await db.close();}}
+});
+test('meaningless progression cannot pass concept review or reach rendering',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:{...accepted,sustainedInterest:false,earnedPayoff:false}})};
+ try{for(let i=0;i<6;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);assert.equal((await db.query('SELECT id FROM agent_media_jobs')).rows.length,0);}finally{await db.close();}
+});
+test('new original cycle cannot select an old approved waiting meme',async()=>{
+ const {s,db}=await fixture();let calls=0,posts=0;const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
+ try{for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);await makeReady(db);
+ await db.query("UPDATE agent_media_jobs SET plan_id=replace(plan_id,'attention-payoff-2026-11-09-v17','independent-original-2026-11-09-v16'),plan=jsonb_set(plan,'{preparationCycle}',to_jsonb(replace(plan->>'preparationCycle','attention-payoff-2026-11-09-v17','independent-original-2026-11-09-v16')))");
+ await db.query("UPDATE agent_operations SET id=replace(id,'attention-payoff-2026-11-09-v17','independent-original-2026-11-09-v16') WHERE id LIKE '%attention-payoff-2026-11-09-v17%'");
+ assert.equal((await hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>posts++},board)).status,'hourly_prepared');assert.equal(posts,0);
+ }finally{await db.close();}
 });
