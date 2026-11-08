@@ -9,8 +9,8 @@ import {VISUAL_CONTRACT} from '../src/visual-contract.mjs';
 import {validateResearch} from '../src/meme-evidence.mjs';
 const env={X_ENABLED:'true',GEMINI_API_KEY:'synthetic'};
 const board={id:'synthetic-research',status:'observed_not_causal',observedAt:new Date().toISOString(),formats:[{id:'game',niche:'gaming',topic:'Synthetic game',evidenceType:'current_conversation',recognition:'Synthetic launch',recognitionTokens:['Synthetic image construction'],angle:'Specific reversal',sources:[{url:'https://example.test/game',author:'Fixture',observedAt:new Date().toISOString(),publishedAt:new Date().toISOString(),inspected:true,observation:'Synthetic launch announcement'}]}]};
-const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',sourcePremise:'Synthetic source premise',newTurn:'Changed relationship '+i,visibleRecognition:'Visible synthetic convention',captionContribution:'Caption changes interpretation',audience:'Synthetic game players',shareHypothesis:'Shared experience; untested',evidenceType:'current_conversation',departure:'different premise'}));
-const accepted={sourceTransformed:true,recognizableWithoutCaption:true,captionAddsMeaning:true,sourceComparison:'Source premise changes into a different relationship.',recognitionEvidence:'Visible convention survives without the caption.',captionEvidence:'Caption supplies a distinct interpretation of the image.',topicEssential:true,visiblePremise:true,purposefulCast:true,naturalCaption:true,sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
+const candidates=['My taste is impeccable. My bookmarks have requested a second opinion.','The algorithm knows me so well it keeps recommending a different personality.','Minimalism is going well. I have three folders of things to remove.'].map((text,i)=>({visual:{concept:'Synthetic '+i,visualMechanism:'Visual reversal '+i,composition:'Frame '+i,viewerExperience:'Discovery '+i,renderPrompt:'Synthetic image construction '+i,personalStake:'A particular choice',alt:'Synthetic image',ratio:'1:1',renderer:'single'},text,mechanism:'synthetic test reversal',setup:'assertion',turn:'contradiction',sourceUrl:'https://example.test/game',researchItemId:'game',recognizableElement:'Synthetic launch',contribution:'Specific reversal',contextObservation:'Synthetic source premise',originalIdea:'Changed relationship '+i,visibleRecognition:'Visible synthetic convention',captionContribution:'Caption changes interpretation',audience:'Synthetic game players',shareHypothesis:'Shared experience; untested',evidenceType:'current_conversation',departure:'different premise'}));
+const accepted={independentIdea:true,recognizableWithoutCaption:true,captionAddsMeaning:true,ideaEvidence:'A self-contained original situation for this audience.',recognitionEvidence:'Visible convention survives without the caption.',captionEvidence:'Caption supplies a distinct interpretation of the image.',topicEssential:true,visiblePremise:true,purposefulCast:true,naturalCaption:true,sourceGrounded:true,recognitionPreserved:true,contributionSpecific:true,visualEssential:true,noGenericTableau:true,selectedIndex:0,standalone:true,realTurn:true,distinctFromRecent:true,noFabricatedExperience:true,reason:'Specific reversal in actual words.'};
 async function fixture(){
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
@@ -189,19 +189,34 @@ test('malformed model drafts restart bounded preparation; provider failures do n
 
 test('specific-topic editorial vetoes cannot be compensated by other passing checks',()=>{
  assert.equal(acceptedHourlyReview(accepted),true);
- for(const key of ["topicEssential","visiblePremise","purposefulCast","naturalCaption","sourceTransformed","recognizableWithoutCaption","captionAddsMeaning"]){
+ for(const key of ["topicEssential","visiblePremise","purposefulCast","naturalCaption","independentIdea","recognizableWithoutCaption","captionAddsMeaning"]){
   assert.equal(acceptedHourlyReview({...accepted,[key]:false}),false,key);
   const incomplete={...accepted};delete incomplete[key];
   assert.throws(()=>acceptedHourlyReview(incomplete),/INVALID_HOURLY_REVIEW/,key);
  }
 });
 
-test("independent editorial evidence is mandatory",()=>{for(const key of ["sourceComparison","recognitionEvidence","captionEvidence"]){assert.throws(()=>acceptedHourlyReview({...accepted,[key]:""}),/INVALID_HOURLY_REVIEW/);}});
+test("independent editorial evidence is mandatory",()=>{for(const key of ["ideaEvidence","recognitionEvidence","captionEvidence"]){assert.throws(()=>acceptedHourlyReview({...accepted,[key]:""}),/INVALID_HOURLY_REVIEW/);}});
 
-test("source URL alone cannot substitute for an original contribution",()=>{for(const key of ["sourcePremise","newTurn","visibleRecognition","captionContribution","audience","shareHypothesis"]){assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,[key]:""}))},board),/MISSING_HOURLY_MECHANISM/);}});
+test("source URL alone cannot substitute for an original contribution",()=>{for(const key of ["contextObservation","originalIdea","visibleRecognition","captionContribution","audience","shareHypothesis"]){assert.throws(()=>validateHourlyCandidates({candidates:candidates.map(c=>({...c,[key]:""}))},board),/MISSING_HOURLY_MECHANISM/);}});
 
-test('source transformation rejection blocks the complete publication pipeline',async()=>{
+test('dependent proposal rejection blocks the complete publication pipeline',async()=>{
  const {s,db}=await fixture();let posts=0,calls=0;
- const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:{...accepted,sourceTransformed:false,sourceComparison:'The picture faithfully restates the source complaint; no added relationship.'}})};
+ const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:{...accepted,independentIdea:false,ideaEvidence:'The proposal requires an unseen parent post to make sense.'}})};
  try{for(let i=0;i<6;i++)await hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>posts++},board);assert.equal(posts,0);assert.equal((await db.query('SELECT id FROM agent_media_jobs')).rows.length,0);}finally{await db.close();}
+});
+
+test('standalone originals need context evidence but no source joke or transformation',()=>{
+ const originals=candidates.map(c=>({...c,contextObservation:'Players discuss an ordinary factual mechanic, no joke or meme.',originalIdea:'An independently imagined situation using that mechanic.'}));
+ assert.equal(validateHourlyCandidates({candidates:originals},board).length,3);
+ assert.equal(acceptedHourlyReview({...accepted,ideaEvidence:'The premise stands on its own; the source only verifies the factual context.'}),true);
+});
+
+test('original pixel contract does not require adapting a source joke',async()=>{
+ const {qualityFor}=await import('../src/visual-contract.mjs');
+ const prompt=qualityFor({stylePolicy:'open_meme',research:{editorialContract:'independent-original',originalIdea:'Standalone idea'}});
+ assert.match(prompt,/No parent post, quote or pre-existing meme is required/);
+ assert.doesNotMatch(prompt,/TOPIC-SPECIFIC EDITORIAL CONTRACT/);
+ const reply=qualityFor({stylePolicy:'open_meme'});
+ assert.doesNotMatch(reply,/OWN ORIGINAL PUBLICATION/);
 });
