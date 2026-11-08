@@ -68,22 +68,24 @@ test('empty opportunity check is bounded per hour and can honestly defer without
  }finally{await db.close();}
 });
 
-test('retired Cursor work preserves history, stops blocking Grok, and cannot restart',async()=>{
- const {validateToolBrief,retireCursorProjects,toolBriefSchema}=await import('../src/tool-projects.mjs');
- assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok']);
- assert.throws(()=>validateToolBrief({tool:'cursor',question:'q',brief:'b',success:'s',why:'w'}),/INVALID_TOOL_BRIEF/);
+
+test('restored Cursor executes new briefs but abandoned history cannot restart',async()=>{
+ const {validateToolBrief,toolBriefSchema}=await import('../src/tool-projects.mjs');
+ assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok','cursor']);
+ const brief={tool:'cursor',question:'What changes when a visitor scrubs time?',brief:'Build a small timing study.',success:'Scrubbing visibly changes the frame.',why:'Test timing.'};
+ assert.equal(validateToolBrief(brief).tool,'cursor');
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const store={pool:{query:(q,a)=>db.query(q,a)}};
  try{
-  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result) VALUES('old','cursor','{}','running','saved partial report')");
-  assert.equal((await retireCursorProjects(store)).rows.length,1);
-  assert.equal((await retireCursorProjects(store)).rows.length,0);
-  const row=(await db.query("SELECT * FROM agent_tool_projects WHERE id='old'")).rows[0];
-  assert.equal(row.state,'reviewed');assert.equal(row.review.decision,'abandon');assert.equal(row.result,'saved partial report');
-  for(const action of ['start','revise','result','review']){
-   const r=await toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action,id:'old',result:'fake'})}),store,{});
-   assert.equal(r.status,409);assert.equal((await r.json()).error,'TOOL_RETIRED');
-  }
-  assert.equal(await enqueueToolProject(store.pool,'new',{tool:'grok',question:'q',brief:'b',success:'s',why:'w'}),'new');
+  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review) VALUES('old','cursor','{}','reviewed','saved partial report',$1)",[JSON.stringify({decision:'abandon'})]);
+  const call=(action,id)=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action,id,result:'fake'})}),store,{});
+  for(const action of ['start','revise','result','review']){const r=await call(action,'old');assert.equal(r.status,409);assert.equal((await r.json()).error,'PROJECT_ABANDONED');}
+  assert.equal(await enqueueToolProject(store.pool,'new',brief),'new');
+  assert.equal(await enqueueToolProject(store.pool,'duplicate',brief),'new');
+  assert.equal((await (await call('start','new')).json()).claimed,true);
+  assert.equal((await call('start','new')).status,409);
+  await toolProjectAPI(new Request('https://example.org/api/tool-projects'),store,{});
+  const rows=(await db.query('SELECT * FROM agent_tool_projects ORDER BY id')).rows;
+  assert.equal(rows.find(r=>r.id==='new').state,'running');assert.equal(rows.find(r=>r.id==='old').result,'saved partial report');
  }finally{await db.close();}
 });
