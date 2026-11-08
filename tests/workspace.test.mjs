@@ -329,7 +329,7 @@ test('creative revision sees the same busy tools as semantic validation',async()
   if(schema===critiqueSchema){const c=critique();c.assessments[0].materiallyRepeated=true;return {costMicrodollars:1,value:c};}
   if(p.startsWith('Revise this executable')){
    revisionChecked=true;assert.ok(!schema.properties.action.enum.includes('research'));
-   assert.ok(schema.properties.action.enum.includes('prototype'));
+   assert.ok(!schema.properties.action.enum.includes('prototype'));
    return {costMicrodollars:1,value:{...candidate(),proposal:'A materially revised synthetic work.'}};
   }
   return {costMicrodollars:1,value:candidate()};

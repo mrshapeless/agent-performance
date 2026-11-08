@@ -24,7 +24,7 @@ test('tool result returns to memory only after agent review; duplicate return ca
  const s=new PostgresStore({query:c.query,connect:async()=>c});
  try{
   await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});
-  const brief={tool:'cursor',question:'Can a pause change a scene?',brief:'Make a small browser scene.',success:'Pause visibly changes the scene.',why:'Explore attention.'};
+  const brief={tool:'grok',question:'Can a pause change a scene?',brief:'Make a small browser scene.',success:'Pause visibly changes the scene.',why:'Explore attention.'};
   assert.equal(await s.transaction(c=>enqueueToolProject(c,'test-one',brief)),'test-one');
   assert.equal(await s.transaction(c=>enqueueToolProject(c,'test-two',brief)),'test-one');
   const call=b=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify(b)}),s,{quote:()=>1,generate:async()=>({costMicrodollars:1,value:{decision:'revise',reason:'The report does not establish the pause interaction.',nextStep:'Verify the interaction and return actual observations.'}})});
@@ -65,5 +65,25 @@ test('empty opportunity check is bounded per hour and can honestly defer without
  const {toolOpportunityStep}=await import('../src/tool-projects.mjs');const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
  try{await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});const provider={quote:()=>1,generate:async()=>{calls++;return {costMicrodollars:1,value:{decision:'wait',reason:'Awaiting observations of the published interaction.',tool:'none',question:'',brief:'',success:'',why:''}}}};
  for(let m=0;m<4;m++)await toolOpportunityStep(s,provider,new Date(`2026-11-04T20:0${m}:00Z`));assert.equal(calls,1);assert.equal((await db.query('SELECT * FROM agent_tool_projects')).rows.length,0);await toolOpportunityStep(s,provider,new Date('2026-11-04T21:00:00Z'));assert.equal(calls,2);
+ }finally{await db.close();}
+});
+
+test('retired Cursor work preserves history, stops blocking Grok, and cannot restart',async()=>{
+ const {validateToolBrief,retireCursorProjects,toolBriefSchema}=await import('../src/tool-projects.mjs');
+ assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok']);
+ assert.throws(()=>validateToolBrief({tool:'cursor',question:'q',brief:'b',success:'s',why:'w'}),/INVALID_TOOL_BRIEF/);
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const store={pool:{query:(q,a)=>db.query(q,a)}};
+ try{
+  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result) VALUES('old','cursor','{}','running','saved partial report')");
+  assert.equal((await retireCursorProjects(store)).rows.length,1);
+  assert.equal((await retireCursorProjects(store)).rows.length,0);
+  const row=(await db.query("SELECT * FROM agent_tool_projects WHERE id='old'")).rows[0];
+  assert.equal(row.state,'reviewed');assert.equal(row.review.decision,'abandon');assert.equal(row.result,'saved partial report');
+  for(const action of ['start','revise','result','review']){
+   const r=await toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action,id:'old',result:'fake'})}),store,{});
+   assert.equal(r.status,409);assert.equal((await r.json()).error,'TOOL_RETIRED');
+  }
+  assert.equal(await enqueueToolProject(store.pool,'new',{tool:'grok',question:'q',brief:'b',success:'s',why:'w'}),'new');
  }finally{await db.close();}
 });
