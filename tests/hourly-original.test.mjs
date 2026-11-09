@@ -18,13 +18,24 @@ async function fixture(){
  await s.transaction(c=>s.append(c,'meme_research_internal',board));
  return {s,db};
 }
-test('hourly production entry prepares without a commission, independently reviews, waits, then publishes once',async()=>{
+test('production artist transition cannot publish a ready legacy image or spend on a replacement',async()=>{
+ const {s,db}=await fixture();let calls=0;
+ try {
+  const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
+  for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);
+  await makeReady(db);
+  const result=await socialStep(s,{quote:()=>{throw Error('must not spend');},generate:()=>{throw Error('must not generate');}},env,new Date(),()=>({post:()=>{throw Error('must not publish legacy');}}));
+  assert.ok(['artist_release_required','artist_direction_required'].includes(result.status));
+  assert.equal(await s.latest('x_post'),null);
+ } finally {await db.close();}
+});
+test('legacy hourly generator independently reviews, waits, then publishes once when called explicitly',async()=>{
  const {s,db}=await fixture();let calls=0,posts=0;
  const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
  const x={post:async (text,reply,media)=>{posts++;assert.equal(media,'999');assert.equal(text,candidates[0].text);return {id:'123',url:'https://example.test/123'}}};
  try{
   await s.transaction(c=>s.append(c,'x_post',{postId:'old',text:'Unrelated previous original'}));
-  const now=new Date();const run=()=>socialStep(s,provider,env,now,()=>x);
+  const now=new Date();const run=()=>hourlyOriginalStep(s,provider,env,now,x,board);
   assert.equal((await run()).status,'hourly_prepared');assert.equal((await run()).status,'hourly_reviewed');assert.equal((await run()).status,'hourly_media_pending');assert.equal(posts,0);await makeReady(db);assert.equal((await run()).status,'hourly_ready');
   await db.query("UPDATE agent_events SET created=$1 WHERE kind='x_post'",[new Date(Date.now()-121*60000).toISOString()]);
   assert.equal((await run()).status,'published');assert.equal(posts,1);assert.equal((await s.latest('x_post')).research.sourceUrl,'https://example.test/game');
@@ -251,3 +262,4 @@ test('new original cycle cannot select an old approved waiting meme',async()=>{
  assert.equal((await hourlyOriginalStep(s,provider,env,new Date(),{post:async()=>posts++},board)).status,'hourly_prepared');assert.equal(posts,0);
  }finally{await db.close();}
 });
+

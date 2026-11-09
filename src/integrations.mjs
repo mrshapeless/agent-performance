@@ -1,3 +1,4 @@
+import {artistReleaseStep} from './artist-direction.mjs';
 import {hourlyOriginalStep} from './hourly-original.mjs';
 import {originalPublicationWindow} from './original-cadence.mjs';
 import {CREATIVE_REVISION,stampCreativePlan,isCurrentCreativePlan,reconcileCreativeRevision} from './creative-revision.mjs';
@@ -281,5 +282,5 @@ export async function socialStep(store,provider,env,now=new Date(),makeClient=xC
   const recovery=await reconcileX(store,x,now);
   if(recovery)return recovery;
   await reconcileCreativeRevision(store,now);
-  return hourlyOriginalStep(store,provider,env,now,x);
+  return artistReleaseStep(store);
 }
