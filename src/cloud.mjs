@@ -89,7 +89,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     let store;
     try {
       store = await openStore();
-      if(atelier)return await atelierHandler(request,store,request.method==='POST'?createProvider():null);
+      if(atelier)return await atelierHandler(request,store,request.method==='POST'?createProvider():null,env);
       if(toolProjects)return await toolProjectAPI(request,store,request.method==='POST'?createProvider():null);
        if(atelierWorker)return reply(await atelierStep(store,createProvider()));
       if(works){const id=url.searchParams.get('id');if(id&&!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return reply({error:'INVALID_WORK'},400);const items=await publicWorks(store,id);return reply({works:items},id&&!items.length?404:200);}

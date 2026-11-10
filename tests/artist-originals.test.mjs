@@ -115,3 +115,38 @@ test('initial actual pilot inspection is required beyond model approval',()=>fix
  const cursor=await store.latest('artist_project_checkpoint');assert.equal((await requestProjectRevision(store,cursor.projectId)).status,'revision_requested');
  assert.equal((await run()).status,'artist_project_developed');assert.notEqual((await store.latest('artist_project_checkpoint')).projectId,cursor.projectId);
 }));
+
+test('complete prose has an inspected, verified and idempotent browser return path',()=>fixture(async({provider,run,store,x,counts})=>{
+ const {proseHandoff,inspectProseHandoff,returnProsePublication}=await import('../src/artist-projects.mjs');
+ const original=provider.generate,full='An explicitly fictional paragraph. '.repeat(30);
+ provider.generate=async(s,p,a,schema)=>schema.properties.manuscript?{costMicrodollars:1,value:{...draft,medium:'essay',duration:0,manuscript:full}}:original(s,p,a,schema);
+ await run();await run();await run();assert.equal((await run()).status,'artist_format_delivery_required');
+ const cursor=await store.latest('artist_project_checkpoint'),id=cursor.projectId,h=await proseHandoff(store,id);
+ assert.equal(h.manuscript,full);
+ await assert.rejects(returnProsePublication(store,id,'456',x),/INSPECTION/);
+ await assert.rejects(inspectProseHandoff(store,id,'wrong','Inspected all paragraphs'),/INSPECTION/);
+ await inspectProseHandoff(store,id,h.manuscriptHash,'Read the full fictional work; development is visible in the text.',new Date('2026-01-01'));
+ x.verifyFullTextPost=async(postId,text)=>{assert.equal(postId,'456');assert.equal(text,full);return {created_at:'2026-01-02T00:00:00Z'};};
+ assert.equal((await returnProsePublication(store,id,'456',x)).status,'published');
+ assert.equal((await store.latest('x_post')).text,full);assert.equal(counts().posts,0);
+ assert.equal((await returnProsePublication(store,id,'456',x)).replay,true);
+ await run();const next=await store.latest('artist_project_checkpoint');
+ await returnProsePublication(store,id,'456',x);assert.equal((await store.latest('artist_project_checkpoint')).projectId,next.projectId);
+}));
+
+test('unsupported prose claims fail despite concept approval and preserve actionable critique',()=>fixture(async({provider,run,store,counts})=>{
+ const original=provider.generate;
+ provider.generate=async(s,p,a,schema)=>schema.properties.manuscript?{costMicrodollars:1,value:{...draft,medium:'essay',manuscript:'Every synthetic singer needs this technique.'}}:schema===packageReviewSchema?{costMicrodollars:1,value:{...packageVerdict,decision:'revise',claims:[{quote:'Every synthetic singer',kind:'fact',supported:false,evidence:'No source or audio comparison was supplied.'}]}}:original(s,p,a,schema);
+ await run();await run();await run();assert.equal((await run()).status,'artist_prose_revision_required');
+ const c=await store.latest('artist_project_checkpoint');assert.equal(c.critique.claims[0].supported,false);assert.equal(counts().posts,0);
+ const {proseHandoff}=await import('../src/artist-projects.mjs');await assert.rejects(proseHandoff(store,c.projectId),/NOT_AWAITING/);
+ await requestProjectRevision(store,c.projectId);assert.equal((await store.latest('artist_project_checkpoint')).critique.claims[0].supported,false);
+}));
+
+test('long-post readback rejects truncated, wrong-author, reply and attachment substitutions',async()=>{
+ const client=Object.create(XClient.prototype);client.verify=async()=>({id:'42'});
+ const full='Complete paragraph. '.repeat(40),base={id:'123',author_id:'42',text:'Truncated preview',note_tweet:{text:full},created_at:'2026-01-02T00:00:00Z'};
+ let post=base;client.request=async(method)=>{assert.equal(method,'GET');return {data:post};};
+ await client.verifyFullTextPost('123',full);
+ for(const altered of [{...base,note_tweet:undefined},{...base,author_id:'99'},{...base,referenced_tweets:[{type:'replied_to',id:'7'}]},{...base,attachments:{media_keys:['3_99']}},{...base,created_at:'unknown'}]){post=altered;await assert.rejects(client.verifyFullTextPost('123',full),/VERIFICATION/);}
+});

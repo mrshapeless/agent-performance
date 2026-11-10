@@ -3,7 +3,8 @@ import {constitution} from './domain.mjs';
 import {trustedMediaURL} from './media-providers.mjs';
 import {profileSchema,validateProfile,trainTaste,tasteBrief,similarity} from './taste.mjs';
 import {canonicalMediaReviews} from './workspace-state.mjs';
-import {privateArtistProjects,requestProjectRevision} from './artist-projects.mjs';
+import {privateArtistProjects,requestProjectRevision,proseHandoff,inspectProseHandoff,returnProsePublication} from './artist-projects.mjs';
+import {xClient} from './x.mjs';
 export async function tasteData(query){
  const profiles=(await query('SELECT asset_id,observation,traits,created FROM agent_visual_profiles ORDER BY created DESC LIMIT 200')).rows;
  const feedback=(await query('SELECT asset_id,other_id,verdict FROM agent_taste_feedback ORDER BY updated DESC LIMIT 500')).rows;
@@ -43,11 +44,19 @@ export async function atelierStatus(store){
  const projects=(await store.pool.query('SELECT id,phase,plan,data FROM agent_works ORDER BY updated DESC LIMIT 12')).rows.map(w=>({id:w.id,phase:w.phase,title:w.plan?.title??w.id,assets:w.data?.assets?.length??0,planned:w.plan?.sections?.length??0}));
  return {model,items,projects,artistProjects:await privateArtistProjects(store),artistProject:await store.latest('artist_project_checkpoint'),profileCount:d.profiles.length,feedbackCount:d.feedback.length};
 }
-export async function atelierHandler(request,store,provider){
+export async function atelierHandler(request,store,provider,env={}){
  const reply=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow'}});
  if(request.method==='GET')return reply(await atelierStatus(store));
  let b;try{const raw=await request.text();if(raw.length>4096)throw Error();b=JSON.parse(raw);}catch{return reply({error:'INVALID_INPUT'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b))return reply({error:'INVALID_INPUT'},400);
+ if(['artist_prose_handoff','artist_prose_inspect','artist_prose_return'].includes(b.action)){
+  if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId))return reply({error:'INVALID_PROJECT'},400);
+  try{
+   if(b.action==='artist_prose_handoff')return reply(await proseHandoff(store,b.projectId));
+   if(b.action==='artist_prose_inspect')return reply(await inspectProseHandoff(store,b.projectId,b.manuscriptHash,b.observation));
+   return reply(await returnProsePublication(store,b.projectId,b.postId,xClient(store,env)));
+  }catch(e){const code=/^[A-Z][A-Z0-9_]{1,80}$/.test(e.message)?e.message:'PROSE_HANDOFF_FAILED';return reply({error:code},409);}
+ }
  if(b.action==='artist_revise'){
   if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId))return reply({error:'INVALID_PROJECT'},400);
   const result=await requestProjectRevision(store,b.projectId);return reply(result,result.status==='not_revisable'?409:200);

@@ -47,6 +47,14 @@ export class XClient {
   appendMedia(id,segment,bytes){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');return this.request('POST',`/2/media/upload/${id}/append`,{segment_index:segment,media:Buffer.from(bytes).toString('base64')});}
   async finalizeMedia(id){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');const r=await this.request('POST',`/2/media/upload/${id}/finalize`,{});if(!r.data||r.errors?.length||r.data.id!==id)throw Error('X_INVALID_MEDIA_FINALIZE');return r.data;}
   async mediaStatus(id){if(!/^\d+$/.test(id))throw Error('X_INVALID_MEDIA_ID');const r=await this.request('GET','/2/media/upload?command=STATUS&media_id='+id);if(!r.data||r.errors?.length)throw Error('X_INVALID_MEDIA_STATUS');return r.data;}
+  async verifyFullTextPost(id,text){
+    if(!/^\d{1,30}$/.test(id))throw Error('X_INVALID_POST_ID');
+    const account=await this.verify();
+    const r=await this.request('GET','/2/tweets/'+id+'?tweet.fields=author_id,created_at,referenced_tweets,attachments,note_tweet');
+    const p=r.data;
+    if(r.errors?.length||p?.id!==id||p?.author_id!==account.id||(p.note_tweet?.text??p.text)!==text||!Number.isFinite(Date.parse(p.created_at))||p.referenced_tweets?.length||p.attachments?.media_keys?.length)throw Error('X_PUBLICATION_VERIFICATION_FAILED');
+    return p;
+  }
   async verifyPost(id,text,mediaId){
     if(!/^\d+$/.test(id))throw Error('X_INVALID_POST_ID');
     const account=await this.verify();

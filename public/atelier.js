@@ -13,6 +13,19 @@ async function loadAtelier(){
    const current=studioNode('section');current.append(studioNode('h3','Current authored project'),studioNode('p',(d.artistProject.title||d.artistProject.projectId)+' / '+d.artistProject.state));
    if(d.artistProject.nextAction)current.append(studioNode('p',d.artistProject.nextAction));
    if(d.artistProject.requirements)current.append(studioNode('p','Needed: '+d.artistProject.requirements.join(', ')));
+   if(d.artistProject.state==='execution_required'&&d.artistProject.requirements?.includes('production_and_delivery_for_essay')){
+    const handoff=studioNode('button','Open complete manuscript');current.append(handoff);
+    handoff.onclick=async()=>{handoff.disabled=true;try{
+     const h=await atelierAPI({action:'artist_prose_handoff',projectId:d.artistProject.projectId});
+     const box=studioNode('section');box.append(studioNode('h4',h.title),studioNode('p',h.instructions));
+     const body=studioNode('pre',h.manuscript);body.style.whiteSpace='pre-wrap';box.append(body);
+     const download=studioNode('button','Download exact manuscript');download.onclick=()=>{const url=URL.createObjectURL(new Blob([h.manuscript],{type:'text/plain;charset=utf-8'}));const a=studioNode('a');a.href=url;a.download='artist-manuscript.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};box.append(download);
+     const label=studioNode('label','Complete-work inspection (claims, development, actual reading): '),observation=studioNode('textarea');observation.maxLength=2500;label.append(observation);box.append(label);
+     const inspect=studioNode('button','Record manuscript inspection'),status=studioNode('p');inspect.onclick=async()=>{inspect.disabled=true;try{await atelierAPI({action:'artist_prose_inspect',projectId:h.projectId,manuscriptHash:h.manuscriptHash,observation:observation.value});status.textContent='Inspection recorded for this exact manuscript. Publication still requires capability and interval checks.';}catch(e){status.textContent=e.message;}finally{inspect.disabled=false;}};box.append(inspect);
+     const urlLabel=studioNode('label','Published X URL: '),urlInput=studioNode('input');urlInput.type='url';urlLabel.append(urlInput);box.append(urlLabel);
+     const verify=studioNode('button','Verify published full text');verify.onclick=async()=>{const match=/^https:\/\/x\.com\/(?:[A-Za-z0-9_]+\/status|i\/web\/status)\/(\d{1,30})$/.exec(urlInput.value.trim());if(!match){status.textContent='Enter the exact published X URL.';return;}verify.disabled=true;try{await atelierAPI({action:'artist_prose_return',projectId:h.projectId,postId:match[1]});await loadAtelier();}catch(e){status.textContent=e.message;verify.disabled=false;}};box.append(verify,status);current.append(box);
+    }catch(e){$('atelierStatus').textContent=e.message;handoff.disabled=false;}};
+   }
    if(['blocked','execution_required','editorial_revision_required','pilot_inspection_required'].includes(d.artistProject.state)){
     const revise=studioNode('button','Revise this project');revise.onclick=async()=>{revise.disabled=true;try{await atelierAPI({action:'artist_revise',projectId:d.artistProject.projectId});await loadAtelier();}catch(e){$('atelierStatus').textContent=e.message;revise.disabled=false;}};current.append(revise);
    }

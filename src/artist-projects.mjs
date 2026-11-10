@@ -94,6 +94,62 @@ export async function privateArtistProjects(store){
   return rows.map(r=>({id:r.id,status:r.status,result:r.result}));
 }
 
+export async function reviewCompleteProse(store,provider,manuscript){
+  const id='artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+manuscript).digest('hex');
+  const op=await store.operation(id);
+  if(op)return op.status!=='complete'?{status:'artist_prose_review_pending'}:op.result?.action==='artist_prose_review_internal'?{accepted:op.result.accepted,review:op.result.review}:{status:'artist_prose_review_failed'};
+  const prompt='Independently read ONLY the full public essay below, without the author intention, generation prompt or prior approval. Identify what develops in the actual writing. Review every factual/generalizing/technical or process claim: no sources, stems, before/after recordings or production evidence have been attached. Such claims needing evidence are unsupported. Personal artistic preferences may be argued as preferences, not universal laws. In particular claims about most virtual voices, all Vocaloid production, mandatory bassline arrangements, or consonant/pitch behavior require evidence; rhetorical confidence is not evidence. Reject generic synthetic-vulnerability manifestos and imaginary studio experience. Do not rewrite. Use visibleEvidence locations as paragraph/quotation. propOnly and captionRescuesImage should be false for standalone prose; completeInDeliveredForm is false if writing depends on unheard audio or an absent companion image. A model verdict is not audience evidence. Full essay: '+JSON.stringify(manuscript);
+  const req=await store.begin(id,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
+  if(req.replay)return {status:'artist_prose_review_pending'};
+  let cost=req.maximum;
+  try{const r=await provider.generate(constitution,prompt,null,packageReviewSchema);cost=r.costMicrodollars;const accepted=acceptsPackage(r.value);await store.complete(id,cost,{action:'artist_prose_review_internal',accepted,review:r.value});return {accepted,review:r.value};}
+  catch{await store.complete(id,cost,{action:'artist_review_failed',failureCode:'PROSE_REVIEW_FAILED'});return {status:'artist_prose_review_failed'};}
+}
+
+// Browser delivery is an explicit executor for complete prose, never a short-post
+// fallback. Its receipt reads X; this module has no X write operation.
+export async function proseHandoff(store,projectId){
+  const current=await store.latest('artist_project_checkpoint');
+  if(current?.projectId!==projectId||current.state!=='execution_required')throw Error('PROJECT_NOT_AWAITING_EXECUTION');
+  const material=await store.operation(current.materialId);
+  const draft=material?.result?.draft;
+  const review=await store.operation(current.materialId+'-review');
+  if(material?.status!=='complete'||material.result.action!=='artist_draft_internal'||draft?.medium!=='essay'||!bounded(draft.manuscript,12000)||review?.result?.action!=='artist_concept_review'||review.result.accepted!==true)throw Error('COMPLETE_PROSE_REQUIRED');
+  const manuscriptHash=createHash('sha256').update(draft.manuscript).digest('hex');
+  const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+draft.manuscript).digest('hex'));
+  if(independent?.result?.action!=='artist_prose_review_internal'||independent.result.accepted!==true)throw Error('INDEPENDENT_PROSE_REVIEW_REQUIRED');
+  return {projectId,materialId:current.materialId,title:draft.title,manuscript:draft.manuscript,manuscriptHash,executor:'browser_x_long_post',instructions:'Read and inspect the complete manuscript. Check native long-post capability, latest originals, the 120-minute interval and campaign spacing before one Post click. Preserve the exact entire text. Verify any uncertain submission in the profile; never resend it. Return its URL here for independent account/full-text verification. No automatic publication or paid upgrade.'};
+}
+
+export async function inspectProseHandoff(store,projectId,hash,observation,now=new Date()){
+  const h=await proseHandoff(store,projectId);
+  if(hash!==h.manuscriptHash||!bounded(observation,2500))throw Error('EXACT_MANUSCRIPT_INSPECTION_REQUIRED');
+  await record(store,projectId+'-prose-inspection-'+hash,{action:'artist_prose_inspected_internal',projectId,materialId:h.materialId,manuscriptHash:hash,observation,reviewedAt:now.toISOString()});
+  return {status:'inspected',manuscriptHash:hash};
+}
+
+export async function returnProsePublication(store,projectId,postId,x){
+  if(!/^\d{1,30}$/.test(postId??''))throw Error('INVALID_POST_ID');
+  const receiptId='artist-external-post-'+postId;
+  const existing=await store.operation(receiptId);
+  if(existing?.result?.action==='x_post'){
+    if(existing.result.projectId!==projectId)throw Error('PUBLICATION_ALREADY_ASSIGNED');
+    if((await store.latest('artist_project_checkpoint'))?.projectId===projectId)await projectCheckpoint(store,projectId,'published',{url:existing.result.url});
+    return {status:'published',url:existing.result.url,replay:true};
+  }
+  const h=await proseHandoff(store,projectId);
+  const inspection=await store.operation(projectId+'-prose-inspection-'+h.manuscriptHash);
+  if(inspection?.result?.action!=='artist_prose_inspected_internal')throw Error('EXACT_MANUSCRIPT_INSPECTION_REQUIRED');
+  const p=await x.verifyFullTextPost(postId,h.manuscript);
+  if(Date.parse(p.created_at)<Date.parse(inspection.result.reviewedAt))throw Error('PUBLICATION_PREDATES_INSPECTION');
+  const url='https://x.com/i/web/status/'+postId;
+  await record(store,receiptId,{action:'x_post',postId,url,text:h.manuscript,projectId,artistWorkVersion:PROJECT_POLICY,medium:'essay',manuscriptHash:h.manuscriptHash,publishedAt:p.created_at,delivery:'browser_verified_full_text',summary:'Complete prose independently read back from the expected X account. No audience outcome inferred.'});
+  const saved=await store.operation(receiptId);
+  if(saved?.result?.projectId!==projectId)throw Error('PUBLICATION_ALREADY_ASSIGNED');
+  if((await store.latest('artist_project_checkpoint'))?.projectId===projectId)await projectCheckpoint(store,projectId,'published',{title:h.title,url});
+  return {status:'published',url};
+}
+
 export async function requestProjectRevision(store,id){
   const current=await store.latest('artist_project_checkpoint');
   if(current?.projectId!==id||!['blocked','execution_required','editorial_revision_required','pilot_inspection_required'].includes(current.state))return {status:'not_revisable'};

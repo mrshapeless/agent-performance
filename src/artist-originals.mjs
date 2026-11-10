@@ -5,7 +5,7 @@ import {loadArtistCampaign,campaignWindow} from './artist-campaign.mjs';
 import {CREATIVE_REVISION} from './creative-revision.mjs';
 import {validateMediaPlan,enqueueMedia,readyMedia,finishMedia} from './media.mjs';
 import {originalPublicationWindow} from './original-cadence.mjs';
-import {PROJECT_POLICY,projectCursor,projectCheckpoint,reviewDeliveredPackage,projectDirection,pilotInspectionComplete} from './artist-projects.mjs';
+import {PROJECT_POLICY,projectCursor,projectCheckpoint,reviewDeliveredPackage,reviewCompleteProse,projectDirection,pilotInspectionComplete} from './artist-projects.mjs';
 
 export const ARTIST_LOOP=PROJECT_POLICY;
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
@@ -75,6 +75,14 @@ export async function artistOriginalStep(store,provider,env,now,x,direction=load
   if(review.result?.action!=='artist_concept_review')return {status:'artist_review_failed'};
   if(!review.result.accepted)continue;
   if(!draft.result.supported){
+   if(draft.result.draft.medium==='essay'){
+    const independent=await reviewCompleteProse(store,provider,draft.result.draft.manuscript);
+    if(independent.status)return independent;
+    if(!independent.accepted){
+     await projectCheckpoint(store,baseRoot,'editorial_revision_required',{title:draft.result.draft.title,materialId:id,critique:independent.review,nextAction:'Revise the complete prose against the independent reader critique. Unsupported factual or production claims need actual evidence or removal; no companion-portrait substitution.'});
+     return {status:'artist_prose_revision_required',projectId:baseRoot};
+    }
+   }
    await projectCheckpoint(store,baseRoot,'execution_required',{title:draft.result.draft.title,requirements:draft.result.requirements,materialId:id,nextAction:'Produce and deliver the complete saved work in its required format. Do not shorten it or generate a replacement postcard.'});
    return {status:'artist_format_delivery_required',projectId:baseRoot,requirements:draft.result.requirements};
   }
