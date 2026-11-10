@@ -13,6 +13,15 @@ async function loadAtelier(){
    const current=studioNode('section');current.append(studioNode('h3','Current authored project'),studioNode('p',(d.artistProject.title||d.artistProject.projectId)+' / '+d.artistProject.state));
    if(d.artistProject.nextAction)current.append(studioNode('p',d.artistProject.nextAction));
    if(d.artistProject.requirements)current.append(studioNode('p','Needed: '+d.artistProject.requirements.join(', ')));
+   if(d.artistProject.state==='execution_required'&&d.artistProject.requirements?.includes('complete_manuscript_delivery')){
+    const label=studioNode('label','Complete image for independent pixel and full-text review: '),file=studioNode('input');file.type='file';file.accept='image/png,image/jpeg,image/webp';label.append(file);current.append(label);
+    const submit=studioNode('button','Import image and review complete work'),result=studioNode('pre');result.style.whiteSpace='pre-wrap';current.append(submit,result);
+    submit.onclick=async()=>{const selected=file.files[0];if(!selected||selected.size>3150000){result.textContent='Choose one PNG, JPEG or WebP up to 3.15 MB.';return;}submit.disabled=true;try{
+     const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(selected);});
+     const review=await atelierAPI({action:'artist_image_import',projectId:d.artistProject.projectId,base64});result.textContent=JSON.stringify(review,null,2);
+     if(review.accepted===true)imageDeliveryControls(current,review,selected);
+    }catch(e){result.textContent=e.message;}finally{submit.disabled=false;}};
+   }
    if(d.artistProject.state==='execution_required'&&d.artistProject.requirements?.includes('production_and_delivery_for_essay')){
     const handoff=studioNode('button','Open complete manuscript');current.append(handoff);
     handoff.onclick=async()=>{handoff.disabled=true;try{
@@ -48,6 +57,14 @@ async function loadAtelier(){
    $('atelierItems').append(card);
   }
  }catch(e){$('atelierStatus').textContent=e.message;}finally{atelierLoading=false;$('atelierRefresh').disabled=false;}
+}
+function imageDeliveryControls(parent,h,file){
+ const box=studioNode('section'),image=studioNode('img');image.src=URL.createObjectURL(file);image.onload=()=>URL.revokeObjectURL(image.src);image.style.maxWidth='100%';image.alt='Exact imported work';
+ const text=studioNode('pre',h.manuscript);text.style.whiteSpace='pre-wrap';box.append(image,text,studioNode('p','Inspect this exact complete work. Before publishing once in native X, verify long-post capability, the latest original and 120-minute campaign spacing. An uncertain send must be checked in the profile before any retry. Import and model acceptance are not publication or audience evidence.'));
+ const label=studioNode('label','Actual pixel and complete-text inspection: '),observation=studioNode('textarea');observation.maxLength=2500;label.append(observation);box.append(label);
+ const inspect=studioNode('button','Record complete image inspection'),status=studioNode('p');inspect.onclick=async()=>{inspect.disabled=true;try{await atelierAPI({action:'artist_image_inspect',projectId:h.projectId,assetId:h.assetId,manuscriptHash:h.manuscriptHash,observation:observation.value});status.textContent='Exact image and manuscript inspection recorded.';}catch(e){status.textContent=e.message;}finally{inspect.disabled=false;}};box.append(inspect);
+ const urlLabel=studioNode('label','Published X URL: '),input=studioNode('input');input.type='url';urlLabel.append(input);box.append(urlLabel);
+ const verify=studioNode('button','Verify published full text and image');verify.onclick=async()=>{const m=/^https:\/\/x\.com\/(?:[A-Za-z0-9_]+\/status|i\/web\/status)\/(\d{1,30})$/.exec(input.value.trim());if(!m){status.textContent='Enter the exact published X URL.';return;}verify.disabled=true;try{await atelierAPI({action:'artist_image_return',projectId:h.projectId,assetId:h.assetId,postId:m[1]});await loadAtelier();}catch(e){status.textContent=e.message;verify.disabled=false;}};box.append(verify,status);parent.append(box);
 }
 async function saveTaste(body){try{await atelierAPI(body);comparisonAsset=null;await loadAtelier();}catch(e){$('atelierStatus').textContent=e.message;}}
 $('atelierRefresh').onclick=loadAtelier;

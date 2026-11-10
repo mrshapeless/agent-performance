@@ -10,8 +10,9 @@ const secret = 'a'.repeat(40);
 
 test('public asset endpoint hides intermediate collage sources but serves final art',async()=>{
   let reads=0;
-  const handler=createHandler({env:{},openStore:async()=>({operation:async id=>id==='part'?{result:{purpose:'collage_source'}}:null,asset:async()=>{reads++;return {mime:'image/png',bytes:Buffer.from('synthetic final pixels')};}}),createProvider:()=>assert.fail('read only')});
+  const handler=createHandler({env:{},openStore:async()=>({operation:async id=>id==='part'?{result:{purpose:'collage_source'}}:id==='imported'?{result:{purpose:'private_artist_image'}}:null,asset:async()=>{reads++;return {mime:'image/png',bytes:Buffer.from('synthetic final pixels')};}}),createProvider:()=>assert.fail('read only')});
   assert.equal((await handler(new Request('https://example.org/api/asset?id=part'))).status,404);assert.equal(reads,0);
+  assert.equal((await handler(new Request('https://example.org/api/asset?id=imported'))).status,404);assert.equal(reads,0);
   const final=await handler(new Request('https://example.org/api/asset?id=final'));assert.equal(final.status,200);assert.equal(await final.text(),'synthetic final pixels');assert.equal(reads,1);
   assert.equal((await handler(new Request('https://example.org/api/asset?id=media-'+ 'a'.repeat(100)))).status,200);
   assert.equal((await handler(new Request('https://example.org/api/asset?id='+ 'a'.repeat(161)))).status,400);

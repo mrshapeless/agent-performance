@@ -3,7 +3,7 @@ import {constitution} from './domain.mjs';
 import {trustedMediaURL} from './media-providers.mjs';
 import {profileSchema,validateProfile,trainTaste,tasteBrief,similarity} from './taste.mjs';
 import {canonicalMediaReviews} from './workspace-state.mjs';
-import {privateArtistProjects,requestProjectRevision,proseHandoff,inspectProseHandoff,returnProsePublication} from './artist-projects.mjs';
+import {privateArtistProjects,requestProjectRevision,proseHandoff,inspectProseHandoff,returnProsePublication,importImagePackage,inspectImageHandoff,returnImagePublication} from './artist-projects.mjs';
 import {xClient} from './x.mjs';
 export async function tasteData(query){
  const profiles=(await query('SELECT asset_id,observation,traits,created FROM agent_visual_profiles ORDER BY created DESC LIMIT 200')).rows;
@@ -47,8 +47,18 @@ export async function atelierStatus(store){
 export async function atelierHandler(request,store,provider,env={}){
  const reply=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow'}});
  if(request.method==='GET')return reply(await atelierStatus(store));
- let b;try{const raw=await request.text();if(raw.length>4096)throw Error();b=JSON.parse(raw);}catch{return reply({error:'INVALID_INPUT'},400);}
+ let b;try{const raw=await request.text();if(raw.length>4250000)throw Error();b=JSON.parse(raw);if(b?.action!=='artist_image_import'&&raw.length>4096)throw Error();}catch{return reply({error:'INVALID_INPUT'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b))return reply({error:'INVALID_INPUT'},400);
+ if(b.action==='artist_image_import'){
+  if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId))return reply({error:'INVALID_PROJECT'},400);
+  try{return reply(await importImagePackage(store,provider,env,b.projectId,b.base64));}
+  catch(e){return reply({error:/^[A-Z][A-Z0-9_]{1,80}$/.test(e.message)?e.message:'IMAGE_IMPORT_FAILED'},409);}
+ }
+ if(['artist_image_inspect','artist_image_return'].includes(b.action)){
+  if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId)||!/^artist-import-[a-f0-9]{64}$/.test(b.assetId??''))return reply({error:'INVALID_PROJECT'},400);
+  try{return reply(b.action==='artist_image_inspect'?await inspectImageHandoff(store,b.projectId,b.assetId,b.manuscriptHash,b.observation):await returnImagePublication(store,b.projectId,b.assetId,b.postId,xClient(store,env)));}
+  catch(e){return reply({error:/^[A-Z][A-Z0-9_]{1,80}$/.test(e.message)?e.message:'IMAGE_HANDOFF_FAILED'},409);}
+ }
  if(['artist_prose_handoff','artist_prose_inspect','artist_prose_return'].includes(b.action)){
   if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId))return reply({error:'INVALID_PROJECT'},400);
   try{

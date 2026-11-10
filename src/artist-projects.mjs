@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {constitution} from './domain.mjs';
 import {MediaProviders} from './media-providers.mjs';
 import {readFileSync} from 'node:fs';
+import sharp from 'sharp';
 
 export const PROJECT_POLICY='artist-projects-2026-11-10-v2';
 export function pilotInspectionComplete(path=new URL('../private/artist-pilot.json',import.meta.url)){
@@ -122,6 +123,74 @@ export async function proseHandoff(store,projectId){
   const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+draft.manuscript).digest('hex'));
   if(independent?.result?.action!=='artist_prose_review_internal'||independent.result.accepted!==true)throw Error('INDEPENDENT_PROSE_REVIEW_REQUIRED');
   return {projectId,materialId:current.materialId,title:draft.title,manuscript:draft.manuscript,manuscriptHash,executor:'browser_x_long_post',instructions:'Read and inspect the complete manuscript. Check native long-post capability, latest originals, the 120-minute interval and campaign spacing before one Post click. Preserve the exact entire text. Verify any uncertain submission in the profile; never resend it. Return its URL here for independent account/full-text verification. No automatic publication or paid upgrade.'};
+}
+
+// External images remain private until a verified publication receipt exists.
+// Importing is not acceptance: the reader sees pixels and complete text only.
+export async function imageManuscript(store,projectId){
+  const current=await store.latest('artist_project_checkpoint');
+  if(current?.projectId!==projectId||current.state!=='execution_required')throw Error('PROJECT_NOT_AWAITING_EXECUTION');
+  const material=await store.operation(current.materialId),draft=material?.result?.draft;
+  const concept=await store.operation(current.materialId+'-review');
+  if(material?.status!=='complete'||material.result.action!=='artist_draft_internal'||draft?.medium!=='image'||!bounded(draft.manuscript,12000)||concept?.result?.accepted!==true)throw Error('COMPLETE_IMAGE_MANUSCRIPT_REQUIRED');
+  const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\nimage\n'+draft.manuscript).digest('hex'));
+  if(independent?.result?.action!=='artist_prose_review_internal'||independent.result.accepted!==true)throw Error('INDEPENDENT_PROSE_REVIEW_REQUIRED');
+  return {projectId,materialId:current.materialId,title:draft.title,manuscript:draft.manuscript,manuscriptHash:createHash('sha256').update(draft.manuscript).digest('hex')};
+}
+
+export async function importImagePackage(store,provider,env,projectId,base64){
+  const h=await imageManuscript(store,projectId);
+  if(typeof base64!=='string'||base64.length>4200000||! /^[A-Za-z0-9+/]+={0,2}$/.test(base64))throw Error('INVALID_IMAGE');
+  const bytes=Buffer.from(base64,'base64');
+  if(bytes.toString('base64')!==base64)throw Error('INVALID_IMAGE');
+  const meta=await sharp(bytes,{limitInputPixels:16000000}).metadata();
+  if(!['png','jpeg','webp'].includes(meta.format)||meta.pages>1||meta.width<256||meta.height<256)throw Error('INVALID_IMAGE');
+  // Decode completely before persisting, without changing the submitted pixels.
+  await sharp(bytes,{limitInputPixels:16000000}).raw().toBuffer();
+  const imageHash=createHash('sha256').update(bytes).digest('hex');
+  const assetId='artist-import-'+createHash('sha256').update(JSON.stringify([projectId,h.manuscriptHash,imageHash])).digest('hex');
+  const req=await store.begin(assetId,'step',()=>({maximum:0}));
+  if(!req.replay)await store.complete(assetId,0,{action:'artist_image_import_internal',purpose:'private_artist_image',...h,imageHash,assetId},{mime:'image/'+(meta.format==='jpeg'?'jpeg':meta.format),bytes});
+  const review=await reviewDeliveredPackage(store,provider,env,{data:{assetId}},h.manuscript);
+  const saved=await store.operation('artist-package-'+createHash('sha256').update(JSON.stringify([PROJECT_POLICY,assetId,h.manuscript])).digest('hex'));
+  if(review.accepted===false)await projectCheckpoint(store,projectId,'editorial_revision_required',{title:h.title,materialId:h.materialId,assetId,critique:saved?.result?.review,nextAction:'Revise the actual image and complete text in response to independent pixel inspection.'});
+  return {...h,assetId,imageHash,...review,review:saved?.result?.review};
+}
+
+export async function imageHandoff(store,projectId,assetId){
+  const h=await imageManuscript(store,projectId),imported=await store.operation(assetId);
+  const v=imported?.result;
+  if(imported?.status!=='complete'||v?.action!=='artist_image_import_internal'||v.projectId!==projectId||v.manuscriptHash!==h.manuscriptHash||v.materialId!==h.materialId)throw Error('EXACT_IMAGE_REQUIRED');
+  const review=await store.operation('artist-package-'+createHash('sha256').update(JSON.stringify([PROJECT_POLICY,assetId,h.manuscript])).digest('hex'));
+  if(review?.result?.action!=='artist_package_review_internal'||review.result.accepted!==true)throw Error('INDEPENDENT_PACKAGE_REVIEW_REQUIRED');
+  return {...h,assetId,imageHash:v.imageHash};
+}
+export async function inspectImageHandoff(store,projectId,assetId,hash,observation,now=new Date()){
+  const h=await imageHandoff(store,projectId,assetId);
+  if(hash!==h.manuscriptHash||!bounded(observation,2500))throw Error('EXACT_PACKAGE_INSPECTION_REQUIRED');
+  await record(store,assetId+'-inspection',{action:'artist_image_inspected_internal',...h,observation,reviewedAt:now.toISOString()});
+  return {status:'inspected',...h};
+}
+export async function returnImagePublication(store,projectId,assetId,postId,x){
+  if(!/^\d{1,30}$/.test(postId??''))throw Error('INVALID_POST_ID');
+  const receiptId='artist-external-post-'+postId,existing=await store.operation(receiptId);
+  if(existing?.result?.action==='x_post'){
+    if(existing.result.projectId!==projectId||existing.result.assetId!==assetId)throw Error('PUBLICATION_ALREADY_ASSIGNED');
+    if((await store.latest('artist_project_checkpoint'))?.projectId===projectId)await projectCheckpoint(store,projectId,'published',{url:existing.result.url});
+    return {status:'published',url:existing.result.url,replay:true};
+  }
+  const h=await imageHandoff(store,projectId,assetId),inspection=await store.operation(assetId+'-inspection');
+  if(inspection?.result?.action!=='artist_image_inspected_internal')throw Error('EXACT_PACKAGE_INSPECTION_REQUIRED');
+  const asset=await store.asset(assetId);
+  if(!asset?.bytes||createHash('sha256').update(asset.bytes).digest('hex')!==h.imageHash)throw Error('EXACT_IMAGE_REQUIRED');
+  const p=await x.verifyImageFullTextPost(postId,h.manuscript,asset.bytes);
+  if(Date.parse(p.created_at)<Date.parse(inspection.result.reviewedAt))throw Error('PUBLICATION_PREDATES_INSPECTION');
+  const url='https://x.com/i/web/status/'+postId;
+  await record(store,receiptId,{action:'x_post',postId,url,text:h.manuscript,projectId,assetId,imageHash:h.imageHash,manuscriptHash:h.manuscriptHash,medium:'image',artistWorkVersion:PROJECT_POLICY,publishedAt:p.created_at,mediaKey:p.verifiedMediaKey,delivery:'browser_verified_complete_image',summary:'Complete text and recompression-tolerant image readback verified. Audience response remains unknown.'});
+  const saved=await store.operation(receiptId);
+  if(saved?.result?.projectId!==projectId||saved.result.assetId!==assetId)throw Error('PUBLICATION_ALREADY_ASSIGNED');
+  if((await store.latest('artist_project_checkpoint'))?.projectId===projectId)await projectCheckpoint(store,projectId,'published',{title:h.title,url});
+  return {status:'published',url};
 }
 
 export async function inspectProseHandoff(store,projectId,hash,observation,now=new Date()){

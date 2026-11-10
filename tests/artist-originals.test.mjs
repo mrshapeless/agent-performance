@@ -194,3 +194,43 @@ test('exhausted concept attempts remain inspectable and reach the next writer on
  provider.generate=async(s,p,a,schema)=>{if(schema.properties.manuscript)writerPrompt=p;return original(s,p,a,schema);};
  await run();assert.match(writerPrompt,/Unsupported room-acoustic claim in actual text/);
 }));
+
+test('external image package binds pixels, complete text, inspection and idempotent readback',()=>fixture(async({provider,run,store})=>{
+ const sharp=(await import('sharp')).default;
+ const {importImagePackage,inspectImageHandoff,returnImagePublication}=await import('../src/artist-projects.mjs');
+ const original=provider.generate,full='A fictional reflection crosses the paper. '.repeat(10);
+ provider.generate=async(s,p,a,schema)=>schema.properties.manuscript?{costMicrodollars:1,value:{...draft,manuscript:full}}:original(s,p,a,schema);
+ for(let i=0;i<4;i++)await run();
+ const project=(await store.latest('artist_project_checkpoint')).projectId;
+ const bytes=await sharp({create:{width:300,height:300,channels:3,background:'#987654'}}).png().toBuffer();
+ const h=await importImagePackage(store,provider,env,project,bytes.toString('base64'));
+ assert.equal(h.accepted,true);assert.equal(h.manuscript,full);
+ assert.equal((await store.operation(h.assetId)).result.purpose,'private_artist_image');
+ const x={verifyImageFullTextPost:async(id,text,image)=>{assert.equal(text,full);assert.deepEqual(Buffer.from(image),bytes);return {created_at:new Date(Date.now()+1000).toISOString(),verifiedMediaKey:'3_1'};}};
+ await assert.rejects(returnImagePublication(store,project,h.assetId,'987',x),/INSPECTION_REQUIRED/);
+ await assert.rejects(inspectImageHandoff(store,project,h.assetId,'wrong','Actual pixels'),/INSPECTION_REQUIRED/);
+ await inspectImageHandoff(store,project,h.assetId,h.manuscriptHash,'Actual square synthetic color field inspected with complete text.');
+ assert.equal((await returnImagePublication(store,project,h.assetId,'987',x)).status,'published');
+ assert.equal((await returnImagePublication(store,project,h.assetId,'987',x)).replay,true);
+ assert.equal((await store.latest('x_post')).assetId,h.assetId);
+}));
+
+test('image readback tolerates recompression but rejects substitutions and unexpected media hosts',async()=>{
+ const sharp=(await import('sharp')).default;
+ const {matchesPublishedImage}=await import('../src/x.mjs');
+ const bytes=await sharp({create:{width:320,height:256,channels:3,background:'#987654'}}).png().toBuffer();
+ const compressed=await sharp(bytes).jpeg({quality:90}).toBuffer();
+ const changed=await sharp({create:{width:320,height:256,channels:3,background:'#1122ff'}}).png().toBuffer();
+ assert.equal(await matchesPublishedImage(bytes,compressed),true);
+ assert.equal(await matchesPublishedImage(bytes,changed),false);
+ const client=Object.create(XClient.prototype);client.verify=async()=>({id:'42'});
+ const p={id:'123',author_id:'42',text:'Preview',note_tweet:{text:'Full exact text'},created_at:'2026-01-02T00:00:00Z',attachments:{media_keys:['3_1']}};
+ let result={data:p,includes:{media:[{media_key:'3_1',type:'photo',url:'https://pbs.twimg.com/media/synthetic.jpg'}]}};
+ client.request=async()=>result;client.fetcher=async()=>new Response(compressed);
+ await client.verifyImageFullTextPost('123','Full exact text',bytes);
+ for(const altered of [{...p,note_tweet:undefined},{...p,author_id:'99'},{...p,attachments:{media_keys:['3_2']}},{...p,referenced_tweets:[{type:'replied_to'}]}]){
+  result={...result,data:altered};await assert.rejects(client.verifyImageFullTextPost('123','Full exact text',bytes));
+ }
+ result={data:p,includes:{media:[{media_key:'3_1',type:'photo',url:'https://example.com/private'}]}};
+ await assert.rejects(client.verifyImageFullTextPost('123','Full exact text',bytes),/IMAGE_VERIFICATION_FAILED/);
+});

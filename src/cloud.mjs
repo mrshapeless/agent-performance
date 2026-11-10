@@ -103,7 +103,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       if (media) {const result=await mediaStep(store,createProvider(),env);console.info('MEDIA_STEP_STATUS',JSON.stringify({status:result.status,phase:result.phase,ready:result.ready,stage:result.stage,failureCode:result.failureCode,checks:result.checks}));return reply(result);}
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,160}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
-        if((await store.operation(id))?.result?.purpose==='collage_source')return reply({error:'NOT_FOUND'},404);
+        if(['collage_source','private_artist_image'].includes((await store.operation(id))?.result?.purpose))return reply({error:'NOT_FOUND'},404);
         const asset=await store.asset(id);if(!asset)return reply({error:'NOT_FOUND'},404);
         if(asset.url)return Response.redirect(trustedMediaURL(asset.url,true),302);
         return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});

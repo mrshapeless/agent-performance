@@ -1,4 +1,16 @@
 import {oauthAccess} from './oauth.mjs';
+import sharp from 'sharp';
+export async function matchesPublishedImage(expected,actual){
+  const options={limitInputPixels:16000000};
+  const a=await sharp(expected,options).metadata(),b=await sharp(actual,options).metadata();
+  if(a.pages>1||b.pages>1||Math.abs(a.width/a.height-b.width/b.height)>0.005)return false;
+  const pixels=bytes=>sharp(bytes,options).rotate().resize(256,256,{fit:'fill'}).removeAlpha().toColourspace('srgb').raw().toBuffer();
+  const [x,y]=await Promise.all([pixels(expected),pixels(actual)]);
+  if(x.length!==y.length)return false;
+  let total=0,large=0;for(let i=0;i<x.length;i++){const d=Math.abs(x[i]-y[i]);total+=d;if(d>25)large++;}
+  // Conservative recompression tolerance; crops and substantial edits fail closed.
+  return total/x.length<4&&large/x.length<0.01;
+}
 export function xClient(store,env){return new XClient(env,fetch,env.X_CLIENT_ID&&env.X_CLIENT_SECRET?rejected=>oauthAccess(store,env,fetch,rejected):null)}
 import { createHmac, randomBytes } from 'node:crypto';
 const enc = value => encodeURIComponent(value).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
@@ -54,6 +66,23 @@ export class XClient {
     const p=r.data;
     if(r.errors?.length||p?.id!==id||p?.author_id!==account.id||(p.note_tweet?.text??p.text)!==text||!Number.isFinite(Date.parse(p.created_at))||p.referenced_tweets?.length||p.attachments?.media_keys?.length)throw Error('X_PUBLICATION_VERIFICATION_FAILED');
     return p;
+  }
+  async verifyImageFullTextPost(id,text,bytes){
+    if(!/^\d{1,30}$/.test(id))throw Error('X_INVALID_POST_ID');
+    const account=await this.verify();
+    const r=await this.request('GET','/2/tweets/'+id+'?tweet.fields=author_id,created_at,referenced_tweets,attachments,note_tweet&expansions=attachments.media_keys&media.fields=type,url');
+    const p=r.data,keys=p?.attachments?.media_keys;
+    if(r.errors?.length||p?.id!==id||p.author_id!==account.id||(p.note_tweet?.text??p.text)!==text||!Number.isFinite(Date.parse(p.created_at))||p.referenced_tweets?.length||keys?.length!==1)throw Error('X_PUBLICATION_VERIFICATION_FAILED');
+    const media=r.includes?.media?.filter(m=>m.media_key===keys[0]);
+    if(media?.length!==1||media[0].type!=='photo')throw Error('X_IMAGE_VERIFICATION_FAILED');
+    const url=new URL(media[0].url);
+    if(url.protocol!=='https:'||url.hostname!=='pbs.twimg.com'||url.port||url.username||url.password||!url.pathname.startsWith('/media/'))throw Error('X_IMAGE_VERIFICATION_FAILED');
+    url.searchParams.set('name','orig');
+    const response=await this.fetcher(url.href,{redirect:'error',signal:AbortSignal.timeout(20000)});
+    if(!response.ok)throw Error('X_IMAGE_UNAVAILABLE');
+    const chunks=[];let size=0;for await(const chunk of response.body){size+=chunk.length;if(size>14000000)throw Error('X_IMAGE_TOO_LARGE');chunks.push(Buffer.from(chunk));}
+    if(!await matchesPublishedImage(bytes,Buffer.concat(chunks)))throw Error('X_IMAGE_MISMATCH');
+    return {...p,verifiedMediaKey:keys[0]};
   }
   async verifyPost(id,text,mediaId){
     if(!/^\d+$/.test(id))throw Error('X_INVALID_POST_ID');
