@@ -91,7 +91,7 @@ export async function reviewDeliveredPackage(store,provider,env,job,manuscript,s
 }
 
 export async function privateArtistProjects(store){
-  const rows=(await store.pool.query("SELECT id,status,result FROM agent_operations WHERE id LIKE 'artist-project-%' OR (id LIKE 'x-plan-artist-project-%' AND result->>'action' IN ('artist_draft_internal','artist_format_required_internal')) ORDER BY day DESC,id LIMIT 60")).rows;
+  const rows=(await store.pool.query("SELECT id,status,result FROM agent_operations WHERE id LIKE 'artist-project-%' OR (id LIKE 'x-plan-artist-project-%' AND result->>'action' IN ('artist_draft_internal','artist_format_required_internal','artist_concept_review')) ORDER BY day DESC,id LIMIT 60")).rows;
   return rows.map(r=>({id:r.id,status:r.status,result:r.result}));
 }
 
@@ -156,7 +156,18 @@ export async function returnProsePublication(store,projectId,postId,x){
 export async function requestProjectRevision(store,id){
   const current=await store.latest('artist_project_checkpoint');
   if(current?.projectId!==id||!['blocked','execution_required','editorial_revision_required','pilot_inspection_required'].includes(current.state))return {status:'not_revisable'};
-  await projectCheckpoint(store,id,'revision_requested',{title:current.title,previousState:current.state,nextAction:current.nextAction,critique:current.critique??null});
+  let critique=current.critique??null;
+  if(!critique&&current.failureCode==='CONCEPT_ATTEMPTS_EXHAUSTED'){
+    const block=await store.latest('artist_publication_blocked');
+    const cycle=block?.root===id?block.cycle:id;
+    const attempts=[];
+    for(let attempt=0;attempt<2;attempt++){
+      const review=await store.operation('x-plan-'+cycle+'-'+attempt+'-review');
+      if(review?.status==='complete'&&review.result?.action==='artist_concept_review'&&review.result.accepted===false)attempts.push({attempt,review:review.result});
+    }
+    if(attempts.length)critique={reason:'Concept attempts rejected; address their actual saved evidence before proposing new material.',attempts};
+  }
+  await projectCheckpoint(store,id,'revision_requested',{title:current.title,previousState:current.state,nextAction:current.nextAction,critique});
   return {status:'revision_requested'};
 }
 

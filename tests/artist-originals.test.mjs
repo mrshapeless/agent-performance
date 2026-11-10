@@ -181,3 +181,16 @@ test('long image manuscript receives independent claim review before execution h
  const checkpoint=await store.latest('artist_project_checkpoint');assert.equal(checkpoint.state,'editorial_revision_required');assert.equal(checkpoint.critique.claims[0].supported,false);
  await run();assert.equal(reads,1);assert.equal(counts().posts,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM agent_media_jobs')).rows[0].n,0);
 }));
+
+test('exhausted concept attempts remain inspectable and reach the next writer on revision',()=>fixture(async({provider,run,store})=>{
+ const original=provider.generate;
+ provider.generate=async(s,p,a,schema)=>schema.properties.accepted?{costMicrodollars:1,value:{...verdict,accepted:false,honestClaims:false,reason:'Unsupported room-acoustic claim in actual text.'}}:original(s,p,a,schema);
+ for(let i=0;i<6;i++)await run();
+ const checkpoint=await store.latest('artist_project_checkpoint');assert.equal(checkpoint.failureCode,'CONCEPT_ATTEMPTS_EXHAUSTED');
+ const rows=await privateArtistProjects(store);assert.equal(rows.filter(r=>r.result?.action==='artist_concept_review').length,2);
+ await requestProjectRevision(store,checkpoint.projectId);
+ const revision=await store.latest('artist_project_checkpoint');assert.equal(revision.critique.attempts.length,2);
+ await run();let writerPrompt;
+ provider.generate=async(s,p,a,schema)=>{if(schema.properties.manuscript)writerPrompt=p;return original(s,p,a,schema);};
+ await run();assert.match(writerPrompt,/Unsupported room-acoustic claim in actual text/);
+}));
