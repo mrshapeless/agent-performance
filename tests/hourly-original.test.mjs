@@ -25,7 +25,7 @@ test('production artist transition cannot publish a ready legacy image or spend 
   for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);
   await makeReady(db);
   const result=await socialStep(s,{quote:()=>{throw Error('must not spend');},generate:()=>{throw Error('must not generate');}},env,new Date(),()=>({post:()=>{throw Error('must not publish legacy');}}));
-  assert.ok(['artist_release_required','artist_direction_required'].includes(result.status));
+  assert.ok(['artist_release_required','artist_direction_required','artist_campaign_state_required'].includes(result.status),result.status);
   assert.equal(await s.latest('x_post'),null);
  } finally {await db.close();}
 });

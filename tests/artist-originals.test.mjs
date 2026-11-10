@@ -182,6 +182,27 @@ test('long image manuscript receives independent claim review before execution h
  await run();assert.equal(reads,1);assert.equal(counts().posts,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM agent_media_jobs')).rows[0].n,0);
 }));
 
+test('a rejected revision is shelved automatically and a different idea reaches the writer',()=>fixture(async({store,provider,run,counts})=>{
+ const {projectCheckpoint}=await import('../src/artist-projects.mjs');
+ await run();const first=await store.latest('artist_project_checkpoint');
+ await projectCheckpoint(store,first.projectId,'editorial_revision_required',{title:'Synthetic first idea',critique:{reason:'Missing evidence'},nextAction:'Revise'});
+ assert.equal((await requestProjectRevision(store,first.projectId)).status,'revision_requested');
+ await run();const second=await store.latest('artist_project_checkpoint');
+ await projectCheckpoint(store,second.projectId,'editorial_revision_required',{title:'Synthetic revised idea',critique:{reason:'Still missing evidence'},nextAction:'Revise'});
+ const original=provider.generate;let planner,writer;
+ provider.generate=async(s,p,a,schema)=>{if(schema===projectSchema)planner=p;if(schema.properties.manuscript)writer=p;return original(s,p,a,schema);};
+ await run();const third=await store.latest('artist_project_checkpoint');
+ assert.notEqual(third.projectId,second.projectId);
+ const next=(await store.operation(third.projectId+'-intention')).result;
+ assert.equal(next.revisionContext,null);assert.equal(next.switchContext.shelved.state,'shelved');
+ assert.equal(next.switchContext.shelved.critique.reason,'Still missing evidence');
+ assert.equal(next.switchContext.shelved.previousRevision.critique.reason,'Missing evidence');
+ assert.match(planner,/Do not rename, paraphrase or continue/);
+ await run();assert.match(writer,/Choose a genuinely different artistic question/);
+ assert.equal(counts().posts,0);
+ assert.equal((await requestProjectRevision(store,second.projectId)).status,'not_revisable');
+}));
+
 test('exhausted concept attempts remain inspectable and reach the next writer on revision',()=>fixture(async({provider,run,store})=>{
  const original=provider.generate;
  provider.generate=async(s,p,a,schema)=>schema.properties.accepted?{costMicrodollars:1,value:{...verdict,accepted:false,honestClaims:false,reason:'Unsupported room-acoustic claim in actual text.'}}:original(s,p,a,schema);

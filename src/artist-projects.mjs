@@ -22,15 +22,21 @@ async function record(store,id,value){
 // A durable project cursor is independent of the last X post and its cadence.
 // Full manuscripts and unmet production needs remain in the authenticated studio.
 export async function projectCursor(store,provider,direction,now){
-  const checkpoint=await store.latest('artist_project_checkpoint');
+  let checkpoint=await store.latest('artist_project_checkpoint');
+  // A rejected revision must not become an endless chain of renamed projects.
+  if(checkpoint?.state==='editorial_revision_required'||(checkpoint?.state==='blocked'&&['CONCEPT_ATTEMPTS_EXHAUSTED','READER_PACKAGE_REJECTED'].includes(checkpoint.failureCode))){
+    const prior=(await store.operation(checkpoint.projectId+'-intention'))?.result?.revisionContext;
+    if(prior){await requestProjectRevision(store,checkpoint.projectId);checkpoint=await store.latest('artist_project_checkpoint');}
+  }
   let id=checkpoint?.policy===PROJECT_POLICY?checkpoint.projectId:'artist-project-'+PROJECT_POLICY+'-first';
-  if(checkpoint?.policy===PROJECT_POLICY&&['published','deferred_complete','revision_requested'].includes(checkpoint.state)){
+  if(checkpoint?.policy===PROJECT_POLICY&&['published','deferred_complete','revision_requested','shelved'].includes(checkpoint.state)){
     id='artist-project-'+PROJECT_POLICY+'-'+createHash('sha256').update(id).digest('hex').slice(0,16);
   }
   let op=await store.operation(id+'-intention');
   if(!op){
     const recent=(await store.pool.query("SELECT payload FROM agent_events WHERE kind='artist_project_checkpoint' ORDER BY seq DESC LIMIT 6")).rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
-    const prompt=projectDirection+' '+JSON.stringify({artistBrief:direction.brief,previousProjects:recent});
+    const switchContext=checkpoint?.state==='shelved'?{instruction:'Choose a genuinely different artistic question and construction. Do not rename, paraphrase or continue the shelved topic. Prefer a work whose required evidence and production can actually be completed with available materials. Preserve editorial standards; do not invent evidence.',shelved:checkpoint}:null;
+    const prompt=projectDirection+' '+JSON.stringify({artistBrief:direction.brief,previousProjects:recent,switchContext});
     const req=await store.begin(id+'-intention','step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
     if(req.replay)return {status:'artist_project_pending'};
     let cost=req.maximum;
@@ -39,7 +45,7 @@ export async function projectCursor(store,provider,direction,now){
       const v=r.value;
       if(!['develop','defer'].includes(v?.decision)||!['title','question','reasonToExist','development','neededEvidence'].every(k=>bounded(v[k],2000))||!Number.isInteger(v.nextReviewHours)||v.nextReviewHours<1||v.nextReviewHours>24)throw Error('INVALID_PROJECT');
       const revisionContext=checkpoint?.state==='revision_requested'?{projectId:checkpoint.projectId,critique:checkpoint.critique??null,nextAction:checkpoint.nextAction??null}:null;
-      await store.complete(id+'-intention',cost,{action:'artist_project_internal',policy:PROJECT_POLICY,projectId:id,...v,revisionContext,nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()});
+      await store.complete(id+'-intention',cost,{action:'artist_project_internal',policy:PROJECT_POLICY,projectId:id,...v,revisionContext,switchContext,nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()});
       await projectCheckpoint(store,id,'intention',{title:v.title,...(v.decision==='defer'?{nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()}:{})});
       return {status:'artist_project_developed'};
     }catch(e){await store.complete(id+'-intention',cost,{action:'artist_preparation_failed',failureCode:e.code??'INVALID_PROJECT'});return {status:'artist_preparation_failed'};}
@@ -235,6 +241,13 @@ export async function requestProjectRevision(store,id){
       if(review?.status==='complete'&&review.result?.action==='artist_concept_review'&&review.result.accepted===false)attempts.push({attempt,review:review.result});
     }
     if(attempts.length)critique={reason:'Concept attempts rejected; address their actual saved evidence before proposing new material.',attempts};
+  }
+  const intention=(await store.operation(id+'-intention'))?.result;
+  const previous=intention?.revisionContext;
+  const rejected=!!critique||['CONCEPT_ATTEMPTS_EXHAUSTED','READER_PACKAGE_REJECTED'].includes(current.failureCode);
+  if(rejected&&previous){
+    await projectCheckpoint(store,id,'shelved',{title:current.title,question:intention.question,previousState:current.state,critique,previousRevision:previous,neededEvidence:intention.neededEvidence,nextAction:'Keep this material and critique private. Choose a different independent idea; do not resume this rejected line automatically.'});
+    return {status:'shelved'};
   }
   await projectCheckpoint(store,id,'revision_requested',{title:current.title,previousState:current.state,nextAction:current.nextAction,critique});
   return {status:'revision_requested'};
