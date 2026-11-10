@@ -52,7 +52,7 @@ export class XClient {
     const account=await this.verify();
     const r=await this.request('GET','/2/tweets/'+id+'?tweet.fields=author_id,attachments');
     const p=r.data;
-    if(r.errors?.length||p?.author_id!==account.id||p?.text?.replace(/\s+https:\/\/t\.co\/\S+$/,'')!==text||!(p.attachments?.media_keys??[]).some(k=>k.endsWith('_'+mediaId)))throw Error('X_PUBLICATION_VERIFICATION_FAILED');
+    if(r.errors?.length||p?.id!==id||p?.author_id!==account.id||p?.text?.replace(/\s+https:\/\/t\.co\/\S+$/,'')!==text||p.attachments?.media_keys?.length!==1||!p.attachments.media_keys[0].endsWith('_'+mediaId))throw Error('X_PUBLICATION_VERIFICATION_FAILED');
     return p;
   }
   async post(text,replyTo=null,mediaId=null){if(typeof text!=='string'||!text.trim()||Buffer.byteLength(text,'utf8')>280)throw Error('X_INVALID_TEXT');if(mediaId&&!/^\d+$/.test(mediaId))throw Error('X_INVALID_MEDIA_ID');try{await this.verify();}catch(error){error.phase='verify';throw error;}const r=await this.request('POST','/2/tweets',{text,...(replyTo?{reply:{in_reply_to_tweet_id:replyTo}}:{}),...(mediaId?{media:{media_ids:[mediaId]}}:{})});if(!/^\d+$/.test(r.data?.id??''))throw Error('X_UNCERTAIN_RESULT');return {id:r.data.id,url:'https://x.com/i/web/status/'+r.data.id};}

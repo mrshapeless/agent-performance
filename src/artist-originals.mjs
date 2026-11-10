@@ -86,11 +86,13 @@ export async function artistOriginalStep(store,provider,env,now,x,direction=load
  if(!native.due)return native;
  if(!window.due)return {status:'artist_ready',nextAt:window.nextAt};
  // Include native/manual originals and quotes. Replies do not consume this interval.
+ const observation=await store.latest('artist_account_observation');
+ if(observation?.nextAt&&now.getTime()<Date.parse(observation.nextAt))return {status:'artist_ready',nextAt:observation.nextAt};
  const actual=await x.recentPosts(now.getTime()-121*60000);
  const originals=actual.filter(p=>!(p.referenced_tweets??[]).some(r=>r.type==='replied_to'||r.type==='retweeted'));
  if(originals.some(p=>!Number.isFinite(Date.parse(p.created_at))))return {status:'artist_timeline_verification_required'};
  const latest=Math.max(0,...originals.map(p=>Date.parse(p.created_at)));
- if(now.getTime()<latest+7200000)return {status:'artist_ready',nextAt:new Date(latest+7200000).toISOString()};
+ if(now.getTime()<latest+7200000){const nextAt=new Date(latest+7200000).toISOString();await record(store,'artist-account-observation-'+latest,{action:'artist_account_observation',nextAt,observedAt:now.toISOString(),summary:'Observed recent account original; wait without repeating timeline reads.'});return {status:'artist_ready',nextAt};}
  const deliveryId=media.plan_id;
  await record(store,deliveryId,{...media.plan,text:v.manuscript});
  let publishId=deliveryId.replace(/^x-plan-/,'x-publish-');
