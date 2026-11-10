@@ -150,3 +150,10 @@ test('long-post readback rejects truncated, wrong-author, reply and attachment s
  await client.verifyFullTextPost('123',full);
  for(const altered of [{...base,note_tweet:undefined},{...base,author_id:'99'},{...base,referenced_tweets:[{type:'replied_to',id:'7'}]},{...base,attachments:{media_keys:['3_99']}},{...base,created_at:'unknown'}]){post=altered;await assert.rejects(client.verifyFullTextPost('123',full),/VERIFICATION/);}
 });
+
+test('failed prose review stays an explicit failure without a repeated paid call',()=>fixture(async({store,provider})=>{
+ const {reviewCompleteProse}=await import('../src/artist-projects.mjs');let attempts=0;
+ provider.generate=async()=>{attempts++;throw Error('provider unavailable');};
+ assert.equal((await reviewCompleteProse(store,provider,'Synthetic complete prose')).status,'artist_prose_review_failed');
+ assert.equal((await reviewCompleteProse(store,provider,'Synthetic complete prose')).status,'artist_prose_review_failed');assert.equal(attempts,1);
+}));
