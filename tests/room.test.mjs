@@ -11,7 +11,8 @@ test('public room isolates old inbox, signs sessions, deduplicates, enforces ori
  assert.equal((await roomHandler(post({nickname:'Alidade'}),s,env)).status,400);
  assert.equal((await roomHandler(post({consent:false}),s,env)).status,400);
  assert.equal((await roomHandler(post({}),s,{...env,VERCEL_ENV:'preview'})).status,503);
- const key=randomUUID();const one=await roomHandler(post({requestId:key},{cookie}),s,env);const body=await one.json();assert.equal(one.status,201);
+ for(const value of [null,[],true])assert.equal((await roomHandler(new Request(origin+'/api/room',{method:'POST',headers:{origin},body:JSON.stringify(value)}),s,env)).status,400);
+ const key=randomUUID();const one=await roomHandler(post({requestId:key},{cookie,origin:'https://alidade.art'}),s,env);const body=await one.json();assert.equal(one.status,201);
  assert.equal((await (await roomHandler(post({requestId:key},{cookie}),s,env)).json()).id,body.id);
  const data=await (await roomHandler(get(),s,env)).json();assert.equal(data.messages.length,1);assert.equal(data.messages[0].response_status,null);assert.deepEqual(Object.keys(data.messages[0]).sort(),['badge','created','id','nickname','reply_to','response_status','role','seq','text'].sort());assert.ok(!JSON.stringify(data).includes('private'));
  for(let i=0;i<5;i++)assert.equal((await roomHandler(post({},{cookie}),s,env)).status,201);

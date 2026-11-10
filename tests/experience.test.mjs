@@ -20,7 +20,8 @@ test('web consent and origin gates, private receipt, rate limit, one durable res
  const req=(origin,consent=true)=>new Request('https://agent-performance-mrshapeless.vercel.app/api/inbox',{method:'POST',headers:{origin,'x-forwarded-for':'127.0.0.1'},body:JSON.stringify({text:'Why do you repeat numbered lists?',consent})});
  assert.equal((await webInbox(req('https://other.example'),s,env)).status,403);
  assert.equal((await webInbox(req('https://agent-performance-mrshapeless.vercel.app',false),s,env)).status,400);
- const accepted=await webInbox(req('https://agent-performance-mrshapeless.vercel.app'),s,env),body=await accepted.json();assert.equal(accepted.status,202);
+ for(const value of [null,[],true])assert.equal((await webInbox(new Request('https://alidade.art/api/inbox',{method:'POST',headers:{origin:'https://alidade.art'},body:JSON.stringify(value)}),s,env)).status,400);
+ const accepted=await webInbox(req('https://alidade.art'),s,env),body=await accepted.json();assert.equal(accepted.status,202);
  let calls=0;const provider={quote:()=>100,generate:async(system,prompt)=>{calls++;assert.match(prompt,/Why do you repeat/);return {costMicrodollars:10,value:{action:'reply',text:'I can change the form when the question demands it.',summary:'Addressed the actual criticism.',genuine:true}}}};
  assert.equal((await audienceStep(s,provider,env)).status,'web_replied');assert.equal((await audienceStep(s,provider,env)).status,'no_messages');assert.equal(calls,1);
  const receipt=await webInbox(new Request('https://agent-performance-mrshapeless.vercel.app/api/inbox?id='+body.id),s,env);assert.equal((await receipt.json()).status,'replied');

@@ -89,3 +89,45 @@ test('restored Cursor executes new briefs but abandoned history cannot restart',
   assert.equal(rows.find(r=>r.id==='new').state,'running');assert.equal(rows.find(r=>r.id==='old').result,'saved partial report');
  }finally{await db.close();}
 });
+
+test('malformed bodies cannot reach storage',async()=>{
+ for(const body of [null,[],true,42,'text']){
+  const r=await toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify(body)}),{},{});
+  assert.equal(r.status,400);assert.equal((await r.json()).error,'INVALID_INPUT');
+ }
+ assert.throws(()=>gateToolReview('cursor',null,{}),/INVALID_TOOL_REVIEW/);
+});
+
+test('revision is limited to two requested revisions and never reopens accepted work',async()=>{
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const store={pool:{query:(q,a)=>db.query(q,a)}};
+ const call=id=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action:'revise',id})}),store,{});
+ try{
+  for(const [id,decision,deliveries] of [['accepted','accept',[]],['exhausted','revise',[{},{}]],['allowed','revise',[{}]]])
+   await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review,deliveries) VALUES($1,'grok','{}','reviewed','original',$2,$3)",[id,JSON.stringify({decision}),JSON.stringify(deliveries)]);
+  assert.equal((await call('accepted')).status,409);assert.equal((await call('exhausted')).status,409);
+  assert.equal((await call('missing')).status,404);
+  assert.equal((await call('allowed')).status,200);assert.equal((await call('allowed')).status,409);
+  const rows=(await db.query('SELECT * FROM agent_tool_projects')).rows;
+  assert.equal(rows.find(r=>r.id==='accepted').result,'original');
+  assert.equal(rows.find(r=>r.id==='allowed').deliveries.length,2);
+ }finally{await db.close();}
+});
+
+test('known failed reviews can retry once without replaying uncertain operations',async()=>{
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const c={query:async(q,a)=>{const r=await db.query(q,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
+ const store=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
+ const provider={quote:()=>1,generate:async()=>{calls++;throw Error('synthetic provider failure');}};
+ const call=()=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action:'review',id:'retry-test'})}),store,provider);
+ try{
+  await store.begin('birth','birth',()=>({maximum:0}));await store.complete('birth',0,{name:'Synthetic'});
+  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result) VALUES('retry-test','grok','{}','returned','preserved result')");
+  await store.begin('tool-review-retry-test-v0','step',()=>({maximum:1,prompt:'test'}));
+  assert.equal((await (await call()).json()).replay,true);assert.equal(calls,0);
+  await store.complete('tool-review-retry-test-v0',1,{action:'tool_review_failed'});
+  assert.equal((await (await call()).json()).status,'review_failed');assert.equal(calls,1);
+  assert.equal((await (await call()).json()).replay,true);assert.equal(calls,1);
+  assert.equal((await db.query("SELECT result FROM agent_tool_projects WHERE id='retry-test'")).rows[0].result,'preserved result');
+ }finally{await db.close();}
+});

@@ -1,5 +1,5 @@
 import {createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
-const ORIGIN='https://agent-performance-mrshapeless.vercel.app';
+const ORIGINS=new Set(['https://alidade.art','https://agent-performance-mrshapeless.vercel.app']);
 const uuid=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
 const mac=(value,secret)=>createHmac('sha256',secret).update(value).digest('hex');
 const equal=(a,b)=>typeof a==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
@@ -17,9 +17,10 @@ export async function roomHandler(request,store,env){
  }
  if(request.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
  if(env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true')return reply({error:'Room is temporarily read-only.'},503);
- if(request.headers.get('origin')!==ORIGIN)return reply({error:'INVALID_ORIGIN'},403);
+ if(!ORIGINS.has(request.headers.get('origin')))return reply({error:'INVALID_ORIGIN'},403);
  const raw=await request.text();if(raw.length>3500)return reply({error:'MESSAGE_TOO_LONG'},413);
  let b;try{b=JSON.parse(raw)}catch{return reply({error:'INVALID_MESSAGE'},400)}
+ if(!b||typeof b!=='object'||Array.isArray(b))return reply({error:'INVALID_MESSAGE'},400);
  if(b.action==='hide'){
   if(!env.AGENT_ADMIN_SECRET||!equal(request.headers.get('authorization'),'Bearer '+env.AGENT_ADMIN_SECRET))return reply({error:'UNAUTHORIZED'},401);
   if(!uuid(b.id))return reply({error:'INVALID_ID'},400);

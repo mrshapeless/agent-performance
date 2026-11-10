@@ -46,6 +46,7 @@ export async function atelierHandler(request,store,provider){
  const reply=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow'}});
  if(request.method==='GET')return reply(await atelierStatus(store));
  let b;try{const raw=await request.text();if(raw.length>4096)throw Error();b=JSON.parse(raw);}catch{return reply({error:'INVALID_INPUT'},400);}
+ if(!b||typeof b!=='object'||Array.isArray(b))return reply({error:'INVALID_INPUT'},400);
  if(b.action==='profile')return reply(await atelierStep(store,provider));
  const validId=s=>typeof s==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(s);
  if(b.action!=='feedback'||!validId(b.assetId)||!['like','pass','prefer','clear'].includes(b.verdict)||(b.verdict==='prefer'&&(!validId(b.otherId)||b.otherId===b.assetId)))return reply({error:'INVALID_FEEDBACK'},400);

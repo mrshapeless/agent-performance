@@ -11,11 +11,17 @@ const logs=await realpath(resolve(process.argv[arg+1]));
 const output='public/gallery';await mkdir(output,{recursive:true});
 const media=JSON.parse(await readFile('config/public-media.json','utf8'));
 const allowed=new Set(JSON.parse(await readFile('config/public-files.json','utf8')));
+// Existing public receipts preserve legacy entries whose journals predate explicit flags.
+let previous=[];
+try{previous=JSON.parse(await readFile('public/reply-gallery.json','utf8')).works??[];}catch(error){if(error.code!=='ENOENT')throw error;}
+const published=new Set(previous.map(work=>work.published));
 const entries=new Map();const missing=[];const hashes=new Set();
 for(const file of (await readdir(logs)).filter(f=>/^\d{4}-\d{2}-\d{2}T.*\.json$/.test(f)).sort().reverse()){
  const log=JSON.parse(await readFile(resolve(logs,file),'utf8'));
  for(const r of log.replies??[]){
   if(!r.art||!/^https:\/\/x\.com\/alidadenull\/status\/\d+$/.test(r.reply??''))continue;
+  if(r.confirmed===false||r.mediaVerified===false)continue;
+  if(!(r.confirmed===true&&r.mediaVerified===true)&&!published.has(r.reply))continue;
   if(basename(r.art)!==r.art)throw Error('Artwork must be a journal-local filename');
   let source;try{source=await realpath(resolve(logs,r.art));}catch{missing.push(r.reply);continue;}
   if(relative(logs,source).startsWith('..'))throw Error('Artwork escapes journal directory');

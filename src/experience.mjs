@@ -5,7 +5,7 @@ import {createHmac,randomUUID} from 'node:crypto';
 import {constitution} from './domain.mjs';
 import {xClient} from './x.mjs';
 import {reconcileX} from './integrations.mjs';
-const ORIGIN='https://agent-performance-mrshapeless.vercel.app';
+const ORIGINS=new Set(['https://alidade.art','https://agent-performance-mrshapeless.vercel.app']);
 export const feeds=[['BBC World','https://feeds.bbci.co.uk/news/world/rss.xml'],['BBC Technology','https://feeds.bbci.co.uk/news/technology/rss.xml'],['NASA','https://www.nasa.gov/feed/'],['Colossal','https://www.thisiscolossal.com/feed/'],['Hyperallergic','https://hyperallergic.com/feed/']];
 const clean=s=>s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
 export function parseFeed(xml,source,now=new Date()){
@@ -61,9 +61,10 @@ export async function webInbox(request,store,env){
  }
  if(request.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
  if(env.VERCEL_ENV!=='production'||env.AGENT_ENABLED!=='true')return reply({error:'UNAVAILABLE'},503);
- if(request.headers.get('origin')!==ORIGIN)return reply({error:'INVALID_ORIGIN'},403);
+ if(!ORIGINS.has(request.headers.get('origin')))return reply({error:'INVALID_ORIGIN'},403);
  const raw=await request.text();if(raw.length>2500)return reply({error:'MESSAGE_TOO_LONG'},413);
  let body;try{body=JSON.parse(raw)}catch{return reply({error:'INVALID_MESSAGE'},400)}
+ if(!body||typeof body!=='object'||Array.isArray(body))return reply({error:'INVALID_MESSAGE'},400);
  if(typeof body.text!=='string'||!body.text.trim()||body.text.length>1200||body.consent!==true)return reply({error:'CONSENT_AND_MESSAGE_REQUIRED'},400);
  const ip=request.headers.get('x-vercel-forwarded-for')??request.headers.get('x-forwarded-for');if(!ip||!env.AGENT_ADMIN_SECRET)return reply({error:'UNAVAILABLE'},503);
  const author='web:'+createHmac('sha256',env.AGENT_ADMIN_SECRET).update(ip.split(',')[0]).digest('hex');

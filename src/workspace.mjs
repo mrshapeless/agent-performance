@@ -136,7 +136,7 @@ async function candidateImage(store,evidence){
  const e=evidence.find(e=>e.kind==='media_review'&&e.assetId)??evidence.find(e=>e.kind==='x_post'&&e.assetId);if(!e)return null;
  const a=await store.asset(e.assetId);if(!a?.mime?.startsWith('image/'))return null;
  if(a.bytes)return a;
- if(a.url){const r=await fetch(trustedMediaURL(a.url,true),{signal:AbortSignal.timeout(10000)});if(!r.ok||Number(r.headers.get('content-length'))>3500000)return null;const bytes=Buffer.from(await r.arrayBuffer());if(bytes.length<=3500000)return {mime:a.mime,bytes};}
+ if(a.url){const r=await fetch(trustedMediaURL(a.url,true),{redirect:'error',signal:AbortSignal.timeout(10000)});if(!r.ok||Number(r.headers.get('content-length'))>3500000)return null;const bytes=Buffer.from(await r.arrayBuffer());if(bytes.length<=3500000)return {mime:a.mime,bytes};}
  return null;
 }
 export async function publishedVisualHistory(store){

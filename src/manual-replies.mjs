@@ -96,6 +96,7 @@ export async function manualReplyHandler(request,store,provider,env){
  if(!ORIGINS.has(request.headers.get('origin')))return respond({error:'INVALID_ORIGIN'},403);
  const raw=await request.text();if(raw.length>5000)return respond({error:'TOO_LARGE'},413);
  let body;try{body=JSON.parse(raw)}catch{return respond({error:'INVALID_JSON'},400)}
+ if(!body||typeof body!=='object'||Array.isArray(body))return respond({error:'INVALID_INPUT'},400);
  if(body.action==='sync_home')return respond(await syncHomeTimeline(store,env,body.older===true));
  if(!/^x-\d{1,30}$/.test(body.id??'')||!Number.isInteger(body.version)||body.version<0)return respond({error:'INVALID_ITEM'},400);
  if(body.action==='generate'){
