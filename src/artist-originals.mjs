@@ -75,8 +75,8 @@ export async function artistOriginalStep(store,provider,env,now,x,direction=load
   if(review.result?.action!=='artist_concept_review')return {status:'artist_review_failed'};
   if(!review.result.accepted)continue;
   if(!draft.result.supported){
-   if(draft.result.draft.medium==='essay'){
-    const independent=await reviewCompleteProse(store,provider,draft.result.draft.manuscript);
+   if(draft.result.draft.medium==='essay'||draft.result.requirements.includes('complete_manuscript_delivery')){
+    const independent=await reviewCompleteProse(store,provider,draft.result.draft.manuscript,draft.result.draft.medium);
     if(independent.status)return independent;
     if(!independent.accepted){
      await projectCheckpoint(store,baseRoot,'editorial_revision_required',{title:draft.result.draft.title,materialId:id,critique:independent.review,nextAction:'Revise the complete prose against the independent reader critique. Unsupported factual or production claims need actual evidence or removal; no companion-portrait substitution.'});

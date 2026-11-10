@@ -169,3 +169,15 @@ test('revision critique survives intention generation and reaches the actual man
  provider.generate=async(s,p,a,schema)=>{if(schema.properties.manuscript)writerPrompt=p;return original(s,p,a,schema);};
  await run();assert.match(writerPrompt,/Do not repeat the unsupported synthetic factual claim/);assert.match(writerPrompt,/Remove this claim or obtain evidence/);
 }));
+
+test('long image manuscript receives independent claim review before execution handoff',()=>fixture(async({provider,run,store,counts,db})=>{
+ const original=provider.generate,full='Most virtual singers always ignore the room. '.repeat(10);let reads=0;
+ provider.generate=async(s,p,a,schema)=>{
+  if(schema.properties.manuscript)return {costMicrodollars:1,value:{...draft,medium:'image',manuscript:full}};
+  if(schema===packageReviewSchema){reads++;assert.match(p,/preliminary text-only check/);assert.doesNotMatch(p,/renderPrompt/);return {costMicrodollars:1,value:{...packageVerdict,decision:'revise',claims:[{quote:'Most virtual singers',kind:'fact',supported:false,evidence:'No evidence supports this population-wide claim.'}]}};}
+  return original(s,p,a,schema);
+ };
+ await run();await run();await run();assert.equal((await run()).status,'artist_prose_revision_required');
+ const checkpoint=await store.latest('artist_project_checkpoint');assert.equal(checkpoint.state,'editorial_revision_required');assert.equal(checkpoint.critique.claims[0].supported,false);
+ await run();assert.equal(reads,1);assert.equal(counts().posts,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM agent_media_jobs')).rows[0].n,0);
+}));

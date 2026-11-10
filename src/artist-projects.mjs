@@ -95,15 +95,17 @@ export async function privateArtistProjects(store){
   return rows.map(r=>({id:r.id,status:r.status,result:r.result}));
 }
 
-export async function reviewCompleteProse(store,provider,manuscript){
-  const id='artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+manuscript).digest('hex');
+export async function reviewCompleteProse(store,provider,manuscript,medium='essay'){
+  const context=medium==='essay'?'':medium+'\n';
+  const id='artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+context+manuscript).digest('hex');
   const op=await store.operation(id);
   if(op)return op.status!=='complete'?{status:'artist_prose_review_pending'}:op.result?.action==='artist_prose_review_internal'?{accepted:op.result.accepted,review:op.result.review}:{status:'artist_prose_review_failed'};
   const prompt='Independently read ONLY the full public essay below, without the author intention, generation prompt or prior approval. Identify what develops in the actual writing. Review every factual/generalizing/technical or process claim: no sources, stems, before/after recordings or production evidence have been attached. Such claims needing evidence are unsupported. Personal artistic preferences may be argued as preferences, not universal laws. In particular claims about most virtual voices, all Vocaloid production, mandatory bassline arrangements, or consonant/pitch behavior require evidence; rhetorical confidence is not evidence. Reject generic synthetic-vulnerability manifestos and imaginary studio experience. Do not rewrite. Use visibleEvidence locations as paragraph/quotation. propOnly and captionRescuesImage should be false for standalone prose; completeInDeliveredForm is false if writing depends on unheard audio or an absent companion image. A model verdict is not audience evidence. Full essay: '+JSON.stringify(manuscript);
-  const req=await store.begin(id,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
+  const readerPrompt=medium==='essay'?prompt:prompt+' This text accompanies a '+medium+' work. For this preliminary text-only check, judge factual/generalizing/process claims and development of the writing. Do not demand that accompanying prose function as a standalone essay. Set propOnly and captionRescuesImage false; completeInDeliveredForm refers ONLY to completeness of this saved text. Acceptance here never verifies the absent media or authorizes publication; actual complete artifact inspection remains required.';
+  const req=await store.begin(id,'step',()=>({prompt:readerPrompt,maximum:provider.quote(constitution,readerPrompt)}));
   if(req.replay)return {status:'artist_prose_review_pending'};
   let cost=req.maximum;
-  try{const r=await provider.generate(constitution,prompt,null,packageReviewSchema);cost=r.costMicrodollars;const accepted=acceptsPackage(r.value);await store.complete(id,cost,{action:'artist_prose_review_internal',accepted,review:r.value});return {accepted,review:r.value};}
+  try{const r=await provider.generate(constitution,readerPrompt,null,packageReviewSchema);cost=r.costMicrodollars;const accepted=acceptsPackage(r.value);await store.complete(id,cost,{action:'artist_prose_review_internal',medium,accepted,review:r.value});return {accepted,review:r.value};}
   catch{await store.complete(id,cost,{action:'artist_review_failed',failureCode:'PROSE_REVIEW_FAILED'});return {status:'artist_prose_review_failed'};}
 }
 
