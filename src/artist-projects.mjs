@@ -37,7 +37,8 @@ export async function projectCursor(store,provider,direction,now){
       const r=await provider.generate(constitution,prompt,null,projectSchema);cost=r.costMicrodollars;
       const v=r.value;
       if(!['develop','defer'].includes(v?.decision)||!['title','question','reasonToExist','development','neededEvidence'].every(k=>bounded(v[k],2000))||!Number.isInteger(v.nextReviewHours)||v.nextReviewHours<1||v.nextReviewHours>24)throw Error('INVALID_PROJECT');
-      await store.complete(id+'-intention',cost,{action:'artist_project_internal',policy:PROJECT_POLICY,projectId:id,...v,nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()});
+      const revisionContext=checkpoint?.state==='revision_requested'?{projectId:checkpoint.projectId,critique:checkpoint.critique??null,nextAction:checkpoint.nextAction??null}:null;
+      await store.complete(id+'-intention',cost,{action:'artist_project_internal',policy:PROJECT_POLICY,projectId:id,...v,revisionContext,nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()});
       await projectCheckpoint(store,id,'intention',{title:v.title,...(v.decision==='defer'?{nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()}:{})});
       return {status:'artist_project_developed'};
     }catch(e){await store.complete(id+'-intention',cost,{action:'artist_preparation_failed',failureCode:e.code??'INVALID_PROJECT'});return {status:'artist_preparation_failed'};}

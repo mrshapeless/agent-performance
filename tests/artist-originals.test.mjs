@@ -157,3 +157,15 @@ test('failed prose review stays an explicit failure without a repeated paid call
  assert.equal((await reviewCompleteProse(store,provider,'Synthetic complete prose')).status,'artist_prose_review_failed');
  assert.equal((await reviewCompleteProse(store,provider,'Synthetic complete prose')).status,'artist_prose_review_failed');assert.equal(attempts,1);
 }));
+
+test('revision critique survives intention generation and reaches the actual manuscript writer',()=>fixture(async({store,provider,run})=>{
+ const {projectCheckpoint}=await import('../src/artist-projects.mjs');
+ await run();const first=await store.latest('artist_project_checkpoint');
+ await projectCheckpoint(store,first.projectId,'editorial_revision_required',{title:'Synthetic',critique:{reason:'Do not repeat the unsupported synthetic factual claim.'},nextAction:'Remove this claim or obtain evidence.'});
+ await requestProjectRevision(store,first.projectId);
+ await run();const second=await store.latest('artist_project_checkpoint');
+ const intentionOp=await store.operation(second.projectId+'-intention');assert.equal(intentionOp.result.revisionContext.projectId,first.projectId);
+ const original=provider.generate;let writerPrompt;
+ provider.generate=async(s,p,a,schema)=>{if(schema.properties.manuscript)writerPrompt=p;return original(s,p,a,schema);};
+ await run();assert.match(writerPrompt,/Do not repeat the unsupported synthetic factual claim/);assert.match(writerPrompt,/Remove this claim or obtain evidence/);
+}));
