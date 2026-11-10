@@ -10,7 +10,7 @@ export function loadArtistDirection(path=new URL('../private/artist-direction.js
   } catch {return null;}
 }
 export function publicArtistDirection(direction=loadArtistDirection()) {
-  return {revision:ARTIST_DIRECTION_REVISION,status:direction?'artist_release_required':'artist_direction_required',legacyOriginalsEnabled:false,briefLoaded:!!direction,fingerprint:direction?createHash('sha256').update(direction.brief).digest('hex'):null};
+  return {revision:ARTIST_DIRECTION_REVISION,status:direction?'artist_originals_enabled':'artist_direction_required',legacyOriginalsEnabled:false,publicationAdapter:'independent_visual_work_v1',briefLoaded:!!direction,fingerprint:direction?createHash('sha256').update(direction.brief).digest('hex'):null};
 }
 // The old short-caption generator is not a release adapter. Fail closed while
 // preserving unknown external writes, which socialStep reconciles before here.

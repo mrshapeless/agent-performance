@@ -294,6 +294,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
     await store.complete(op,answer.costMicrodollars,v);
    }
    if(identityRef&&(v.identityResult!=='supported'||typeof v.identityEvidence!=='string'||v.identityEvidence.trim().length<20))return await holdForRevision(store,job,{review:v,holdReason:'CHARACTER_IDENTITY_UNVERIFIED'});
+   if(job.plan.artistWork&&v.text!==job.plan.artistWork.manuscript)return await holdForRevision(store,job,{review:v,holdReason:'AUTHORED_MANUSCRIPT_CHANGED'});
    if(!passesQuality(v))return await holdForRevision(store,job,{review:v});
    await patch(store,job,'approved',{review:v,artistReview:v,publicationPolicy:VISUAL_CONTRACT});return {status:'media_approved'};
   }
