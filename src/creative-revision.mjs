@@ -1,7 +1,7 @@
 // Bump only when an editorial change invalidates unfinished creative intentions.
 export const CREATIVE_REVISION = 'specific-topic-2026-11-06-v14';
 export const stampCreativePlan = plan => ({...plan, creativeRevision: CREATIVE_REVISION});
-export const isCurrentCreativePlan = plan => plan?.creativeRevision === CREATIVE_REVISION;
+export const isCurrentCreativePlan = plan => plan?.creativeRevision === CREATIVE_REVISION&&(!plan.artistWork||plan.artistWork.version==='artist-projects-2026-11-10-v2');
 
 // This is an internal ledger event, not a public creative work. Never erase a
 // provider request or change its accounting while reconsidering its intention.

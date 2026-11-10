@@ -3,6 +3,7 @@ import {constitution} from './domain.mjs';
 import {trustedMediaURL} from './media-providers.mjs';
 import {profileSchema,validateProfile,trainTaste,tasteBrief,similarity} from './taste.mjs';
 import {canonicalMediaReviews} from './workspace-state.mjs';
+import {privateArtistProjects,requestProjectRevision} from './artist-projects.mjs';
 export async function tasteData(query){
  const profiles=(await query('SELECT asset_id,observation,traits,created FROM agent_visual_profiles ORDER BY created DESC LIMIT 200')).rows;
  const feedback=(await query('SELECT asset_id,other_id,verdict FROM agent_taste_feedback ORDER BY updated DESC LIMIT 500')).rows;
@@ -40,13 +41,17 @@ export async function atelierStatus(store){
  const profiles=new Map(d.profiles.map(p=>[p.asset_id,p]));
  const items=jobs.map(j=>{const p=profiles.get(j.data.assetId),near=p?d.profiles.filter(x=>x.asset_id!==p.asset_id).map(x=>({assetId:x.asset_id,similarity:similarity(p,x)})).sort((a,b)=>b.similarity-a.similarity).slice(0,2):[];return {id:j.id,assetId:j.data.assetId,medium:j.plan.medium,state:j.state,caption:j.data.review?.text??j.plan.text,projectId:j.plan.projectId??null,profile:p??null,neighbors:near,feedback:d.feedback.find(f=>f.asset_id===j.data.assetId&&!f.other_id)?.verdict??null};});
  const projects=(await store.pool.query('SELECT id,phase,plan,data FROM agent_works ORDER BY updated DESC LIMIT 12')).rows.map(w=>({id:w.id,phase:w.phase,title:w.plan?.title??w.id,assets:w.data?.assets?.length??0,planned:w.plan?.sections?.length??0}));
- return {model,items,projects,profileCount:d.profiles.length,feedbackCount:d.feedback.length};
+ return {model,items,projects,artistProjects:await privateArtistProjects(store),artistProject:await store.latest('artist_project_checkpoint'),profileCount:d.profiles.length,feedbackCount:d.feedback.length};
 }
 export async function atelierHandler(request,store,provider){
  const reply=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow'}});
  if(request.method==='GET')return reply(await atelierStatus(store));
  let b;try{const raw=await request.text();if(raw.length>4096)throw Error();b=JSON.parse(raw);}catch{return reply({error:'INVALID_INPUT'},400);}
  if(!b||typeof b!=='object'||Array.isArray(b))return reply({error:'INVALID_INPUT'},400);
+ if(b.action==='artist_revise'){
+  if(typeof b.projectId!=='string'||!/^artist-project-[a-zA-Z0-9_-]{1,150}$/.test(b.projectId))return reply({error:'INVALID_PROJECT'},400);
+  const result=await requestProjectRevision(store,b.projectId);return reply(result,result.status==='not_revisable'?409:200);
+ }
  if(b.action==='profile')return reply(await atelierStep(store,provider));
  const validId=s=>typeof s==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(s);
  if(b.action!=='feedback'||!validId(b.assetId)||!['like','pass','prefer','clear'].includes(b.verdict)||(b.verdict==='prefer'&&(!validId(b.otherId)||b.otherId===b.assetId)))return reply({error:'INVALID_FEEDBACK'},400);

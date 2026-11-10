@@ -362,6 +362,7 @@
   "src/artist-campaign.mjs",
   "src/artist-direction.mjs",
   "src/artist-originals.mjs",
+  "src/artist-projects.mjs",
   "src/atelier.mjs",
   "src/audience-direction.mjs",
   "src/broadcast-identity.mjs",

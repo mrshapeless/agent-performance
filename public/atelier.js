@@ -9,6 +9,19 @@ async function loadAtelier(){
  try{const d=await atelierAPI();if(!secret)return;
   $('atelierStatus').textContent=`${d.profileCount} inspected works · ${d.model.samples} operator judgments · ${d.model.status}. ${d.model.validation?'Asset-disjoint validation: '+d.model.validation.samples+' judgments, Brier '+d.model.validation.brier.toFixed(3)+'.':'Not enough independent evidence to measure predictive accuracy.'}`;
   $('atelierItems').replaceChildren();$('atelierProjects').replaceChildren();
+  if(d.artistProject){
+   const current=studioNode('section');current.append(studioNode('h3','Current authored project'),studioNode('p',(d.artistProject.title||d.artistProject.projectId)+' / '+d.artistProject.state));
+   if(d.artistProject.nextAction)current.append(studioNode('p',d.artistProject.nextAction));
+   if(d.artistProject.requirements)current.append(studioNode('p','Needed: '+d.artistProject.requirements.join(', ')));
+   if(['blocked','execution_required','editorial_revision_required','pilot_inspection_required'].includes(d.artistProject.state)){
+    const revise=studioNode('button','Revise this project');revise.onclick=async()=>{revise.disabled=true;try{await atelierAPI({action:'artist_revise',projectId:d.artistProject.projectId});await loadAtelier();}catch(e){$('atelierStatus').textContent=e.message;revise.disabled=false;}};current.append(revise);
+   }
+   for(const p of d.artistProjects||[]){
+    if(!p.id.includes(d.artistProject.projectId))continue;
+    const details=studioNode('details');details.append(studioNode('summary',p.id+' / '+p.status),studioNode('pre',JSON.stringify(p.result,null,2)));current.append(details);
+   }
+   $('atelierProjects').append(current);
+  }
   for(const p of d.projects){const a=studioNode('a',p.title+' / '+p.phase+' / '+p.assets+' of '+p.planned+' images');a.href='/work/'+encodeURIComponent(p.id);$('atelierProjects').append(a,studioNode('br'));}
   for(const item of d.items){const card=studioNode('article');card.className='atelier-card';
    const visual=studioNode(item.medium==='video'?'video':'img');visual.src='/api/asset?id='+encodeURIComponent(item.assetId);if(item.medium==='video'){visual.controls=true;visual.preload='none';}else{visual.alt=item.caption||'Artwork';visual.loading='lazy';}card.append(visual,studioNode('p',item.caption||item.id),studioNode('small',item.state+' · '+(item.feedback||'unrated')));
