@@ -6,7 +6,8 @@ export function workerAuthorized(header,hash) {
  const actual=createHash('sha256').update(header.slice(7)).digest();
  return timingSafeEqual(actual,Buffer.from(hash,'hex'));
 }
-const digest=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
+const digest=v=>createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
 export async function enqueueInference(store,input,operationId=null) {
  if(typeof input.system!=='string'||typeof input.prompt!=='string'||JSON.stringify(input).length>12_000_000)throw Error('INVALID_LOCAL_INPUT');
  const id=digest(input);

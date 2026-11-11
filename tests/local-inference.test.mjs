@@ -19,6 +19,7 @@ test('durable inference deduplicates and fences stale workers',async t=>{
  await assert.rejects(returnInference(s,{id,leaseToken:first.leaseToken,result}),/STALE_LEASE/);
  assert.equal((await returnInference(s,{id,leaseToken:second.leaseToken,result})).replay,false);
  assert.equal((await returnInference(s,{id,leaseToken:second.leaseToken,result})).replay,true);
+ assert.equal((await returnInference(s,{id,leaseToken:second.leaseToken,result:{costMicrodollars:0,value:{answer:'test'}}})).replay,true);
  await assert.rejects(returnInference(s,{id,leaseToken:second.leaseToken,result:{value:{answer:'different'},costMicrodollars:0}}),/RESULT_CONFLICT/);
  assert.equal(await claimInference(s),null);
  const provider=new LocalInference(s);assert.deepEqual(await provider.generate(input.system,input.prompt),result);
