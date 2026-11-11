@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {PostgresStore} from '../src/postgres.mjs';
-import {artistOriginalStep,validateArtistDraft,acceptsArtistReview} from '../src/artist-originals.mjs';
+import {artistOriginalStep,validateArtistDraft,acceptsArtistReview,artistDraftSchema} from '../src/artist-originals.mjs';
 import {campaignWindow} from '../src/artist-campaign.mjs';
 import {VISUAL_CONTRACT,isOpenMeme} from '../src/visual-contract.mjs';
 import {reconcileX} from '../src/integrations.mjs';
@@ -308,4 +308,10 @@ test('image readback tolerates recompression but rejects substitutions and unexp
  }
  result={data:p,includes:{media:[{media_key:'3_1',type:'photo',url:'https://example.com/private'}]}};
  await assert.rejects(client.verifyImageFullTextPost('123','Full exact text',bytes),/IMAGE_VERIFICATION_FAILED/);
+});
+
+test('generation schema carries server text bounds before local repair returns a draft',()=>{
+ for(const k of ['title','intention','development','formatReason','diversityComparison']){assert.equal(artistDraftSchema.properties[k].maxLength,1400); assert.throws(()=>validateArtistDraft({...draft,[k]:'a'.repeat(1401)},env),/INVALID_ARTIST_DRAFT/);}
+ assert.equal(artistDraftSchema.properties.manuscript.maxLength,12000);
+ assert.equal(artistDraftSchema.properties.alt.maxLength,500);
 });

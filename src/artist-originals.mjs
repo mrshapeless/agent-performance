@@ -10,8 +10,9 @@ import {PROJECT_POLICY,projectCursor,projectCheckpoint,reviewDeliveredPackage,re
 export const ARTIST_LOOP=PROJECT_POLICY;
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const string={type:'string'};
+const boundedString=maxLength=>({type:'string',minLength:1,maxLength});
 const visual=object({id:string,concept:string,visualMechanism:string,composition:string,viewerExperience:string,renderPrompt:string,personalStake:string,renderer:{type:'string',enum:['single','character']}});
-export const artistDraftSchema=object({title:string,intention:string,development:string,manuscript:string,formatReason:string,medium:{type:'string',enum:['image','video','song','music_film','essay','process','sequence']},duration:{type:'integer',minimum:0,maximum:3600},ratio:{type:'string',enum:['1:1','16:9','9:16']},alt:string,alternatives:{type:'array',items:visual,minItems:3,maxItems:3},selectedId:string,diversityComparison:string});
+export const artistDraftSchema=object({title:boundedString(1400),intention:boundedString(1400),development:boundedString(1400),manuscript:boundedString(12000),formatReason:boundedString(1400),medium:{type:'string',enum:['image','video','song','music_film','essay','process','sequence']},duration:{type:'integer',minimum:0,maximum:3600},ratio:{type:'string',enum:['1:1','16:9','9:16']},alt:boundedString(500),alternatives:{type:'array',items:visual,minItems:3,maxItems:3},selectedId:string,diversityComparison:boundedString(1400)});
 const checks=['standaloneWork','meaningInArtifact','honestClaims','distinctFromRecent','formatComplete'];
 export const artistReviewSchema=object({accepted:{type:'boolean'},...Object.fromEntries(checks.map(k=>[k,{type:'boolean'}])),evidence:string,reason:string});
 const nonempty=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
