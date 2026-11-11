@@ -7,7 +7,7 @@ import {artistOriginalStep,validateArtistDraft,acceptsArtistReview} from '../src
 import {campaignWindow} from '../src/artist-campaign.mjs';
 import {VISUAL_CONTRACT,isOpenMeme} from '../src/visual-contract.mjs';
 import {reconcileX} from '../src/integrations.mjs';
-import {acceptsPackage,projectSchema,packageReviewSchema,privateArtistProjects,requestProjectRevision,repeatsShelved} from '../src/artist-projects.mjs';
+import {acceptsPackage,projectSchema,packageReviewSchema,privateArtistProjects,requestProjectRevision,repeatsShelved,projectCursor} from '../src/artist-projects.mjs';
 import {isCurrentCreativePlan,CREATIVE_REVISION} from '../src/creative-revision.mjs';
 import {XClient} from '../src/x.mjs';
 const env={GEMINI_API_KEY:'fixture'};
@@ -138,6 +138,30 @@ test('project planner can defer without manufacturing content or claiming a publ
  provider.generate=async()=>({costMicrodollars:1,value:{...intention,decision:'defer'}});
  assert.equal((await run()).status,'artist_project_developed');assert.equal((await run()).status,'artist_project_deferred');
  assert.equal(await store.latest('x_post'),null);assert.equal(counts().posts,0);
+}));
+
+test('idle is capped at two hours and consecutive idle survives rejected proposals and restart',()=>fixture(async({provider,store})=>{
+ const start=new Date('2030-01-01T00:00:00Z');
+ provider.generate=async()=>({costMicrodollars:1,value:{...intention,decision:'defer',nextReviewHours:24}});
+ const step=t=>projectCursor(store,provider,direction,new Date(t));
+ await step(start);
+ assert.equal((await step(start)).nextAt,'2030-01-01T02:00:00.000Z');
+ assert.equal((await step('2030-01-01T02:00:00Z')).status,'artist_project_reconsideration');
+ await step('2030-01-01T02:01:00Z');
+ assert.equal((await step('2030-01-01T02:02:00Z')).status,'artist_consecutive_defer_rejected');
+ await step('2030-01-01T02:03:00Z');
+ assert.equal((await store.latest('artist_defer_policy')).blocked,true);
+ assert.equal(await store.latest('x_post'),null);
+}));
+
+test('legacy stored 24 hour deferral expires from its original start, not deployment time',()=>fixture(async({provider,store})=>{
+ const id='legacy-defer';
+ await store.begin(id+'-intention','step',()=>({maximum:0}));
+ await store.complete(id+'-intention',0,{action:'artist_project_internal',...intention,decision:'defer',nextReviewHours:24,nextReviewAt:'2030-01-02T00:00:00Z'});
+ await store.begin('legacy-checkpoint','step',()=>({maximum:0}));
+ await store.complete('legacy-checkpoint',0,{action:'artist_project_checkpoint',policy:'artist-projects-2026-11-10-v2',projectId:id,state:'intention',nextReviewAt:'2030-01-02T00:00:00Z'});
+ assert.equal((await projectCursor(store,provider,direction,new Date('2030-01-01T03:00:00Z'))).status,'artist_project_reconsideration');
+ assert.equal((await store.latest('artist_defer_policy')).nextReviewAt,'2030-01-01T02:00:00.000Z');
 }));
 
 test('initial actual pilot inspection is required beyond model approval',()=>fixture(async({run,prepare,ready,counts,store})=>{
