@@ -3,6 +3,7 @@ import {constitution} from './domain.mjs';
 import {MediaProviders} from './media-providers.mjs';
 import {readFileSync} from 'node:fs';
 import sharp from 'sharp';
+import {loadArtistCampaign} from './artist-campaign.mjs';
 
 export const PROJECT_POLICY='artist-projects-2026-11-10-v2';
 export function pilotInspectionComplete(path=new URL('../private/artist-pilot.json',import.meta.url)){
@@ -37,7 +38,8 @@ export async function projectCursor(store,provider,direction,now){
     const recent=(await store.pool.query("SELECT payload FROM agent_events WHERE kind='artist_project_checkpoint' ORDER BY seq DESC LIMIT 6")).rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
     const switchContext=checkpoint?.state==='shelved'?{instruction:'Choose a genuinely different artistic question and construction. Do not rename, paraphrase or continue the shelved topic. Prefer a work whose required evidence and production can actually be completed with available materials. Preserve editorial standards; do not invent evidence.',shelved:checkpoint}:null;
     const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 5")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
-    const prompt=projectDirection+' Publication receipts below are authoritative: these works are finished. Do not resume or re-stage them. Only their text/metadata are provided; do not claim you saw their pixels, contact sheets, clips or tests. '+JSON.stringify({artistBrief:direction.brief,previousProjects:recent,published,switchContext});
+    const completedCampaign=loadArtistCampaign();
+    const prompt=projectDirection+' Publication receipts below are authoritative: these works are finished. The native campaign ledger is equally authoritative, even when its posts are absent from the selected x_post records. Do not infer that the completed Room for the Sky film lacks finished audio or requires another listening/production cycle. Do not resume or re-stage published works. Only text/metadata are provided; do not claim you saw their pixels, contact sheets, clips or tests. '+JSON.stringify({artistBrief:direction.brief,previousProjects:recent,published,completedCampaign,switchContext});
     const req=await store.begin(id+'-intention','step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
     if(req.replay)return {status:'artist_project_pending'};
     let cost=req.maximum;
@@ -54,10 +56,10 @@ export async function projectCursor(store,provider,direction,now){
   if(op.status!=='complete')return {status:'artist_project_pending'};
   if(op.result?.action!=='artist_project_internal')return {status:'artist_preparation_failed'};
   if(provider.local){
-    const reviewId=id+'-intention-local-review';let review=await store.operation(reviewId);
+    const reviewId=id+'-intention-local-review-v2';let review=await store.operation(reviewId);
     if(!review){
       const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 8")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
-      const prompt='Independently check a proposed next project against the supplied publication records. Reject any proposal to finish/remake a work already published, claims of viewed tests/pixels/clips without supplied evidence, invented production history, or a return to shelved breathing/hesitation essays. A proposal may request future tests, but must not claim they already happened. Treat actual publication receipts as authoritative over older project states. No candidate pixels are supplied. Judge evidence and state consistency, not artistic self-justification. '+JSON.stringify({candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published});
+      const prompt=projectDirection+' Independently check a proposed next project against the supplied publication records AND native campaign ledger. The native campaign ledger is authoritative even when a native scheduled post has no x_post event. Room for the Sky is complete: reject proposals to revalidate its melody, re-record its song, or finish its film. Absence from a partial event list is not evidence that an asset does not exist. Reject any proposal to finish/remake a work already published, claims of viewed tests/pixels/clips without supplied evidence, invented production history, or a return to shelved breathing/hesitation essays. A proposal may request future tests for a genuinely new work, but must not claim they already happened. Treat actual publication receipts as authoritative over older project states. No candidate pixels are supplied. Judge evidence and state consistency, not artistic self-justification. '+JSON.stringify({candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published,completedCampaign:loadArtistCampaign()});
       const req=await store.begin(reviewId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
       if(req.replay)return {status:'artist_intention_review_pending'};
       const answer=await provider.generate(constitution,prompt,null,object({accepted:{type:'boolean'},evidence:str,reason:str}));

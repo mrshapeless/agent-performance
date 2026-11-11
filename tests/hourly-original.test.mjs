@@ -18,14 +18,14 @@ async function fixture(){
  await s.transaction(c=>s.append(c,'meme_research_internal',board));
  return {s,db};
 }
-test('production artist transition cannot publish a ready legacy image or spend on a replacement',async()=>{
+test('production artist transition cannot publish a ready legacy image; new project planning is separate',async()=>{
  const {s,db}=await fixture();let calls=0;
  try {
   const provider={quote:()=>1,generate:async()=>({costMicrodollars:1,value:++calls%2?{candidates}:accepted})};
   for(let i=0;i<3;i++)await hourlyOriginalStep(s,provider,env,new Date(),{},board);
   await makeReady(db);
-  const result=await socialStep(s,{quote:()=>{throw Error('must not spend');},generate:()=>{throw Error('must not generate');}},env,new Date(),()=>({post:()=>{throw Error('must not publish legacy');}}));
-  assert.ok(['artist_release_required','artist_direction_required','artist_campaign_state_required'].includes(result.status),result.status);
+  const result=await socialStep(s,{quote:()=>0,generate:async()=>({costMicrodollars:0,value:{decision:'defer',title:'Synthetic new project',question:'A new question',reasonToExist:'A new reason',development:'A new development',neededEvidence:'Future evidence',nextReviewHours:1}})},env,new Date(),()=>({post:()=>{throw Error('must not publish legacy');}}));
+  assert.ok(['artist_release_required','artist_direction_required','artist_campaign_state_required','artist_project_developed'].includes(result.status),result.status);
   assert.equal(await s.latest('x_post'),null);
  } finally {await db.close();}
 });

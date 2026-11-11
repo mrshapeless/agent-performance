@@ -41,7 +41,7 @@ export class LocalInference {
  async generate(system,prompt,media=null,schema=null,references=[]) {
   const pixels=[...(media?[media]:[]),...references];
   if(pixels.some(m=>!['image/png','image/jpeg','image/webp'].includes(m.mime)||!m.bytes))throw Error('LOCAL_MEDIA_UNSUPPORTED');
-  const input={system,prompt,schema,role:schema?.properties?.accepted?'critic':null,media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
+  const input={system,prompt,schema,role:schema?.properties?.accepted?'critic':schema?.properties?.question?'planner':null,media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
   return this.waitInput(input);
  }
  async image(prompt,ratio,plan){
