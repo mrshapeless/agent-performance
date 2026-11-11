@@ -89,18 +89,18 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
     let store;
     try {
       store = await openStore();
-      if(atelier)return await atelierHandler(request,store,request.method==='POST'?createProvider():null,env);
-      if(toolProjects)return await toolProjectAPI(request,store,request.method==='POST'?createProvider():null);
-       if(atelierWorker)return reply(await atelierStep(store,createProvider()));
+      if(atelier)return await atelierHandler(request,store,request.method==='POST'?createProvider(store):null,env);
+      if(toolProjects)return await toolProjectAPI(request,store,request.method==='POST'?createProvider(store):null);
+       if(atelierWorker)return reply(await atelierStep(store,createProvider(store)));
       if(works){const id=url.searchParams.get('id');if(id&&!/^[a-zA-Z0-9_-]{1,80}$/.test(id))return reply({error:'INVALID_WORK'},400);const items=await publicWorks(store,id);return reply({works:items},id&&!items.length?404:200);}
-      if(project)return reply(await workStep(store,createProvider(),env));
-      if (manual) return await manualReplyHandler(request,store,request.method==='POST'?createProvider():null,env);
+      if(project)return reply(await workStep(store,createProvider(store),env));
+      if (manual) return await manualReplyHandler(request,store,request.method==='POST'?createProvider(store):null,env);
       if (room) return await roomHandler(request,store,env);
       if (inbox) return await webInbox(request,store,env);
       if (observation) { const observed=await observe(store,env,now());let threads;try{threads=await syncReplyThreads(store,env,now());}catch(e){threads={status:'deferred',error:['DAILY_ALLOWANCE_EXHAUSTED','UNRESOLVED_OPERATION'].includes(e.message)?e.message:'THREAD_SYNC_UNAVAILABLE'};}return reply({...observed,threads}); }
       // Public X replies stay off; this worker may only draft in the private queue.
-      if (audience) {const result=await audienceStep(store,createProvider(),{...env,X_REPLIES_ENABLED:'false'},now());return reply(result.status==='no_messages'?await manualDraftStep(store,createProvider(),env):result);}
-      if (media) {const result=await mediaStep(store,createProvider(),env);console.info('MEDIA_STEP_STATUS',JSON.stringify({status:result.status,phase:result.phase,ready:result.ready,stage:result.stage,failureCode:result.failureCode,checks:result.checks}));return reply(result);}
+      if (audience) {const result=await audienceStep(store,createProvider(store),{...env,X_REPLIES_ENABLED:'false'},now());return reply(result.status==='no_messages'?await manualDraftStep(store,createProvider(store),env):result);}
+      if (media) {const result=await mediaStep(store,createProvider(store),env);console.info('MEDIA_STEP_STATUS',JSON.stringify({status:result.status,phase:result.phase,ready:result.ready,stage:result.stage,failureCode:result.failureCode,checks:result.checks}));return reply(result);}
       if (assetRead) {
         const id=url.searchParams.get('id');if(!/^[a-zA-Z0-9_-]{1,160}$/.test(id??''))return reply({error:'INVALID_ASSET'},400);
         if(['collage_source','private_artist_image'].includes((await store.operation(id))?.result?.purpose))return reply({error:'NOT_FOUND'},404);
@@ -108,12 +108,12 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
         if(asset.url)return Response.redirect(trustedMediaURL(asset.url,true),302);
         return new Response(asset.bytes,{headers:{'Content-Type':asset.mime,'Cache-Control':'public, max-age=86400, immutable','X-Content-Type-Options':'nosniff'}});
       }
-      if (setup) { const appearance=await setupAppearance(store,createProvider(),env); if(appearance.phase!=='appearance')return reply(appearance); const banner=await setupBanner(store,createProvider(),env); return reply(banner.phase==='banner' ? await accountSetup(store,createProvider(),env,now()) : banner); }
-      if (social) {const result=await socialStep(store,createProvider(),env,now());console.info('SOCIAL_STEP_STATUS',JSON.stringify({status:result.status,failureCode:result.failureCode,nextAt:result.nextAt}));return reply(result);}
-      if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { ...await store.publicRuntime(), editorial:{...publicArtistDirection(),project:await publicProjectStatus(store)}, media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
+      if (setup) { const appearance=await setupAppearance(store,createProvider(store),env); if(appearance.phase!=='appearance')return reply(appearance); const banner=await setupBanner(store,createProvider(store),env); return reply(banner.phase==='banner' ? await accountSetup(store,createProvider(store),env,now()) : banner); }
+      if (social) {const result=await socialStep(store,createProvider(store),env,now());console.info('SOCIAL_STEP_STATUS',JSON.stringify({status:result.status,failureCode:result.failureCode,nextAt:result.nextAt}));return reply(result);}
+      if (publicRead) { const account=await accountStatus(store,env); return reply({ events: await store.publicJournal(), enabled: env.AGENT_ENABLED === 'true', runtime: { compute:env.ALIDADE_COMPUTE==='local'?'local_queue':'gemini', ...await store.publicRuntime(), editorial:{...publicArtistDirection(),project:await publicProjectStatus(store)}, media:mediaCapabilities(env), xRepliesEnabled:env.X_ENABLED==='true'&&env.X_REPLIES_ENABLED==='true', accounts: { connected: account.registrationVerified, username: account.registrationVerified ? env.X_EXPECTED_USERNAME?.replace(/^@/,'') : null } } }); }
       if (!tick && request.method === 'GET') return reply({ ...await store.status(), accounts:await accountStatus(store,env), enabled:env.AGENT_ENABLED==='true' });
       if(tick && url.pathname==='/api/tick' && await store.latest('studio_revision')) {
-       const provider=createProvider(),at=now();
+       const provider=createProvider(store),at=now();
        const opportunity=await toolOpportunityStep(store,provider,at);
        if(opportunity.reason||opportunity.failureCode)console.info('TOOL_OPPORTUNITY_DETAIL',JSON.stringify(opportunity));
        if(!['tool_work_outstanding','tool_opportunity_checked'].includes(opportunity.status)){console.info('TOOL_STEP_STATUS',JSON.stringify(opportunity));return reply(opportunity);}
@@ -121,7 +121,7 @@ export function createHandler({ env, openStore, createProvider, now = () => new 
       }
       // A one-time capability transition must not wait behind an already completed hourly tick.
       if(tick && await store.latest('observation') && !(await store.latest('reflect'))?.text?.includes('experience-v1')) id='experience-v1';
-      return reply(await cloudRun(store, createProvider(), kind, id));
+      return reply(await cloudRun(store, createProvider(store), kind, id));
     } catch (error) {
       const conflicts = ['UNRESOLVED_OPERATION', 'ALREADY_BORN', 'NOT_BORN', 'OPERATION_CONFLICT', 'DAILY_ALLOWANCE_EXHAUSTED','STALE_VERSION','ITEM_CLOSED','OPTED_OUT','IDEMPOTENCY_CONFLICT'];
       if (conflicts.includes(error.message)) return reply({ error: error.message }, 409);

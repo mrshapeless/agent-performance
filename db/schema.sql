@@ -130,3 +130,18 @@ CREATE TABLE IF NOT EXISTS agent_taste_feedback (
 CREATE TABLE IF NOT EXISTS agent_tool_projects (id text PRIMARY KEY, tool text NOT NULL CHECK(tool IN ('grok','cursor')),goal_id text NOT NULL DEFAULT '', brief jsonb NOT NULL,state text NOT NULL CHECK(state IN ('queued','running','returned','reviewed')),result text,review jsonb,created timestamptz NOT NULL DEFAULT now(),updated timestamptz NOT NULL DEFAULT now());
 ALTER TABLE agent_tool_projects ADD COLUMN IF NOT EXISTS quality_evidence jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE agent_tool_projects ADD COLUMN IF NOT EXISTS deliveries jsonb NOT NULL DEFAULT '[]';
+
+-- Private local-compute inbox. Never part of public runtime/journal output.
+CREATE TABLE IF NOT EXISTS agent_local_inference (
+ id text PRIMARY KEY,
+ input jsonb NOT NULL,
+ operation_id text UNIQUE,
+ state text NOT NULL CHECK(state IN ('queued','running','complete')),
+ result jsonb,
+ lease_token text,
+ lease_until timestamptz,
+ attempts integer NOT NULL DEFAULT 0,
+ created timestamptz NOT NULL DEFAULT now(),
+ updated timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_local_inference_pending ON agent_local_inference(state,created);

@@ -73,6 +73,9 @@
     },
     "api/tool-projects.mjs": {
       "maxDuration": 120
+    },
+    "api/local-worker.mjs": {
+      "maxDuration": 30
     }
   },
   "crons": [

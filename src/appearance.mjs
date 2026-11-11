@@ -2,7 +2,7 @@ import {renderDirection} from './audience-direction.mjs';
 import {captureInstruction,openMemeDirection,isOpenMeme} from './visual-contract.mjs';
 // Gemini Nano Banana 2.1 tariffs checked against Google pricing on 2026-10-20.
 export class AppearanceImage {
-  constructor(env,fetcher=fetch){this.key=env.GEMINI_API_KEY;this.fetcher=fetcher;if(!this.key)throw Error('GEMINI_NOT_CONFIGURED');}
+  constructor(env,fetcher=fetch){if(env.ALIDADE_COMPUTE==='local')throw Error('LOCAL_IMAGE_ADAPTER_REQUIRED');this.key=env.GEMINI_API_KEY;this.fetcher=fetcher;if(!this.key)throw Error('GEMINI_NOT_CONFIGURED');}
   quote(prompt){return Math.ceil((Buffer.byteLength(prompt)+2048)*1.5+8192*30);}
   async generate(prompt,ratio='1:1',references=[],plan=null){
     prompt=isOpenMeme(plan)?openMemeDirection+'\nSCENE: '+prompt:renderDirection+'\nSCENE: '+prompt+'\n'+captureInstruction;

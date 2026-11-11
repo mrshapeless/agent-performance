@@ -45,7 +45,7 @@ export async function publicWorks(store,id){
   // Draft prompts, private context, provider results and references stay server-side.
   ...(id?{introduction:w.data.final?.introduction??null,conclusion:w.data.final?.conclusion??null,sections:w.plan.sections.map((s,i)=>({heading:w.data.final?.sections[i]?.heading??s.heading,text:w.phase==='published'?w.data.final.sections[i].text:null,assetId:w.data.assets?.[i]??null,alt:s.alt,review:w.data.reviews?.[i]??null})),history:w.data.history??[]}:{}),cover:w.data.assets?.[0]??null}));
 }
-export async function workStep(store,provider,env,services=new MediaProviders(env)){
+export async function workStep(store,provider,env,services=new MediaProviders(env,fetch,store)){
  const studio=await store.latest('studio_revision');if(!studio)return {status:'studio_required'};
  let w=(await store.pool.query("SELECT * FROM agent_works WHERE phase NOT IN ('published','failed') ORDER BY created LIMIT 1")).rows[0];
  if(!w){

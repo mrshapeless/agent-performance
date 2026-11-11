@@ -106,7 +106,7 @@ async function fail(store,job,operation,maximum,error){
 }
 // Each invocation advances one durable phase. Lease prevents overlapping cron deliveries.
 // Paid requests are reserved once; an unknown outcome is never regenerated automatically.
-export async function mediaStep(store,provider,env,services=new MediaProviders(env),xFactory=xClient,targetJobId=null){
+ export async function mediaStep(store,provider,env,services=new MediaProviders(env,fetch,store),xFactory=xClient,targetJobId=null){
  await reconcileCreativeRevision(store);
  const token=randomUUID();
  const job=await store.transaction(async c=>{
@@ -357,6 +357,7 @@ export async function mediaStep(store,provider,env,services=new MediaProviders(e
   const ready=!status.processing_info||status.processing_info.state==='succeeded';
   await patch(store,job,ready?'ready':'processing_x');return {status:ready?'media_ready':'x_media_processing'};
  }catch(error){
+  if(error.message==='LOCAL_INFERENCE_PENDING'){await patch(store,job,job.state);return {status:'local_inference_pending'};}
   if(error.collageOperation){op=error.collageOperation;maximum=error.collageMaximum;}
   if(['UNRESOLVED_OPERATION','DAILY_ALLOWANCE_EXHAUSTED'].includes(error.message)){await patch(store,job,job.state);return {status:'media_waiting_for_allowance_or_lane'};}
   // Failed read/poll calls may be retried; paid generation/review calls may not.

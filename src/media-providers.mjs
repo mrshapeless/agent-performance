@@ -3,13 +3,14 @@ import {visualDirection,captureInstruction,openMemeDirection,isOpenMeme} from '.
 import {loadReferences,referenceImageInstruction,referenceCatalog} from './visual-references.mjs';
 import {AppearanceImage} from './appearance.mjs';
 import {composeCollage} from './collage.mjs';
+import {LocalInference} from './local-inference.mjs';
 
 export const VIDEO_MODEL='google/veo-3.1-fast';
 export const CHARACTER_MODEL='google/nano-banana';
 export const CHARACTER_STYLE_REFERENCE='https://alidade.art/series/afterimage-03.jpg';
 export const CHARACTER_ASSET='broadcast-avatar-v1';
 export const MAX_VIDEO_BYTES=14_000_000;
-export function mediaCapabilities(env){return {image:!!env.GEMINI_API_KEY,character:!!env.REPLICATE_API_TOKEN,video:!!(env.REPLICATE_API_TOKEN&&env.BLOB_READ_WRITE_TOKEN)};}
+export function mediaCapabilities(env){if(env.ALIDADE_COMPUTE==='local')return {image:true,character:false,video:false};return {image:!!env.GEMINI_API_KEY,character:!!env.REPLICATE_API_TOKEN,video:!!(env.REPLICATE_API_TOKEN&&env.BLOB_READ_WRITE_TOKEN)};}
 export function trustedMediaURL(value,blob=false){
  const u=new URL(value);const ok=blob?u.hostname.endsWith('.public.blob.vercel-storage.com'):(u.hostname==='replicate.delivery'||u.hostname.endsWith('.replicate.delivery'));
  if(u.protocol!=='https:'||u.username||u.password||u.port||!ok)throw Error('MEDIA_UNTRUSTED_URL');return u.href;
@@ -24,10 +25,16 @@ export async function readMedia(url,fetcher=fetch,blob=false){
  return {bytes,mime:'video/mp4'};
 }
 export class MediaProviders {
- constructor(env,fetcher=fetch){this.env=env;this.fetcher=fetcher;}
- imageQuote(prompt){return new AppearanceImage(this.env,this.fetcher).quote(prompt);}
+ constructor(env,fetcher=fetch,store=null){this.env=env;this.fetcher=fetcher;this.store=store;}
+ imageQuote(prompt){return this.env.ALIDADE_COMPUTE==='local'?0:new AppearanceImage(this.env,this.fetcher).quote(prompt);}
  references(ids){return loadReferences(ids,this.fetcher);}
- image(prompt,ratio,refs=[],plan=null){return new AppearanceImage(this.env,this.fetcher).generate(refs.length?(isOpenMeme(plan)?openMemeDirection:referenceImageInstruction)+' STYLE-ONLY REFERENCES: do not import any person, face, costume, location or object from the reference images. Render only the cast and subjects explicitly requested in the following commission. If no person is requested, no person or body part may appear. Your chosen work: '+prompt:prompt,ratio,refs,plan);}
+ image(prompt,ratio,refs=[],plan=null){
+  if(this.env.ALIDADE_COMPUTE==='local'){
+   if(!this.store)throw Error('LOCAL_IMAGE_STORE_REQUIRED');
+   return new LocalInference(this.store).image((isOpenMeme(plan)?openMemeDirection:renderDirection+' '+captureInstruction)+' SCENE: '+prompt,ratio,plan);
+  }
+  return new AppearanceImage(this.env,this.fetcher).generate(refs.length?(isOpenMeme(plan)?openMemeDirection:referenceImageInstruction)+' STYLE-ONLY REFERENCES: do not import any person, face, costume, location or object from the reference images. Render only the cast and subjects explicitly requested in the following commission. If no person is requested, no person or body part may appear. Your chosen work: '+prompt:prompt,ratio,refs,plan);
+ }
  collage(layout,sources,ratio){return composeCollage(layout,sources,ratio);}
  // Conservative upper reservation, not a claim of final provider billing.
  videoQuote(){return 4_000_000;}
@@ -56,6 +63,7 @@ export class MediaProviders {
   return {bytes,mime:'image/jpeg'};
  }
  async replicate(method,path,body){
+  if(this.env.ALIDADE_COMPUTE==='local')throw Error('LOCAL_VIDEO_OR_IDENTITY_NOT_CONFIGURED');
   if(!this.env.REPLICATE_API_TOKEN)throw Error('REPLICATE_NOT_CONFIGURED');
   const r=await this.fetcher('https://api.replicate.com/v1/'+path,{method,headers:{Authorization:'Bearer '+this.env.REPLICATE_API_TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(25000)});
   if(!r.ok)throw Error('REPLICATE_HTTP_'+r.status);return r.json();

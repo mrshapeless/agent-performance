@@ -74,7 +74,7 @@ export function acceptsPackage(v){
   return v.decision==='publish'&&!v.propOnly&&!v.captionRescuesImage&&!v.misleadingLiteralClaim&&v.completeInDeliveredForm&&v.claims.every(c=>c.supported);
 }
 
-export async function reviewDeliveredPackage(store,provider,env,job,manuscript,services=new MediaProviders(env)){
+export async function reviewDeliveredPackage(store,provider,env,job,manuscript,services=new MediaProviders(env,fetch,store)){
   // Hash exact reader-visible input. An edited body or different image invalidates review.
   const hash=createHash('sha256').update(JSON.stringify([PROJECT_POLICY,job.data.assetId,manuscript])).digest('hex');
   const id='artist-package-'+hash;
