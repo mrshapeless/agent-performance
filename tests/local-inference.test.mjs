@@ -9,7 +9,7 @@ import {enqueueInference,claimInference,returnInference,workerAuthorized,LocalIn
 import {createLocalWorkerHandler} from '../api/local-worker.mjs';
 import {cloudRun} from '../src/cloud.mjs';
 async function fixture(t){const db=new PGlite();t.after(()=>db.close());await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));const client={query:async(s,a)=>{const r=await db.query(s,a);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};return new PostgresStore({query:client.query,connect:async()=>client});}
-const input={system:'Synthetic system',prompt:'Synthetic prompt',schema:null,media:[],operationId:null};
+const input={system:'Synthetic system',prompt:'Synthetic prompt',schema:null,role:null,media:[],operationId:null};
 test('durable inference deduplicates and fences stale workers',async t=>{
  const s=await fixture(t),id=await enqueueInference(s,input);assert.equal(await enqueueInference(s,input),id);
  const first=await claimInference(s);assert.equal(first.id,id);assert.equal(await claimInference(s),null);

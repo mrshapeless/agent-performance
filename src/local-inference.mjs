@@ -36,12 +36,12 @@ export async function returnInference(store,{id,leaseToken,result}) {
  });
 }
 export class LocalInference {
- constructor(store,{timeoutMs=90000,pollMs=1000}={}){this.store=store;this.timeoutMs=timeoutMs;this.pollMs=pollMs;}
+ constructor(store,{timeoutMs=90000,pollMs=1000}={}){this.store=store;this.timeoutMs=timeoutMs;this.pollMs=pollMs;this.local=true;}
  quote(){return 0;}
  async generate(system,prompt,media=null,schema=null,references=[]) {
   const pixels=[...(media?[media]:[]),...references];
   if(pixels.some(m=>!['image/png','image/jpeg','image/webp'].includes(m.mime)||!m.bytes))throw Error('LOCAL_MEDIA_UNSUPPORTED');
-  const input={system,prompt,schema,media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
+  const input={system,prompt,schema,role:schema?.properties?.accepted?'critic':null,media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
   return this.waitInput(input);
  }
  async image(prompt,ratio,plan){

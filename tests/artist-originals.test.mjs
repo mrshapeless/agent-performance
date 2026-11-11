@@ -38,6 +38,20 @@ test('artist draft preserves a long manuscript and never compresses it into a ca
  assert.equal(acceptsArtistReview({...verdict,meaningInArtifact:false}),false);
  assert.equal(isOpenMeme({artistWork:{},preparationCycle:'artist',stylePolicy:'reference'}),false);
 });
+test('local intentions need an independent state/evidence review before deferral or production',()=>fixture(async({provider,run,store,counts})=>{
+ provider.local=true;
+ const original=provider.generate;
+ provider.generate=async(s,p,a,schema)=>schema!==projectSchema&&schema.properties.accepted?{costMicrodollars:0,value:{accepted:false,evidence:'The candidate restarts a published work.',reason:'Publication receipts establish completion; no clips were supplied.'}}:original(s,p,a,schema);
+ assert.equal((await run()).status,'artist_project_developed');
+ assert.equal((await run()).status,'artist_intention_reviewed');
+ assert.equal((await run()).status,'artist_intention_rejected');
+ assert.equal((await store.latest('artist_project_checkpoint')).state,'shelved');
+ assert.equal(counts().posts,0);
+ assert.equal((await run()).status,'artist_project_developed');
+ const checkpoint=await store.latest('artist_project_checkpoint');
+ const next=await store.operation(checkpoint.projectId+'-intention');
+ assert.equal(next.result.switchContext.shelved.critique.accepted,false);
+}));
 test('artist work flows from new commission through verified media to one verified original',()=>fixture(async({store,run,ready,prepare,counts})=>{
  assert.equal((await run()).status,'artist_project_developed');await prepare();
  assert.equal(await store.latest('x_post'),null);await ready();assert.equal((await run()).status,'artist_package_reviewed');assert.equal((await run()).status,'published');
