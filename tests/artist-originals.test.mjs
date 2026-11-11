@@ -7,7 +7,7 @@ import {artistOriginalStep,validateArtistDraft,acceptsArtistReview} from '../src
 import {campaignWindow} from '../src/artist-campaign.mjs';
 import {VISUAL_CONTRACT,isOpenMeme} from '../src/visual-contract.mjs';
 import {reconcileX} from '../src/integrations.mjs';
-import {acceptsPackage,projectSchema,packageReviewSchema,privateArtistProjects,requestProjectRevision} from '../src/artist-projects.mjs';
+import {acceptsPackage,projectSchema,packageReviewSchema,privateArtistProjects,requestProjectRevision,repeatsShelved} from '../src/artist-projects.mjs';
 import {isCurrentCreativePlan,CREATIVE_REVISION} from '../src/creative-revision.mjs';
 import {XClient} from '../src/x.mjs';
 const env={GEMINI_API_KEY:'fixture'};
@@ -47,11 +47,27 @@ test('local intentions need an independent state/evidence review before deferral
  assert.equal((await run()).status,'artist_intention_rejected');
  assert.equal((await store.latest('artist_project_checkpoint')).state,'shelved');
  assert.equal(counts().posts,0);
- assert.equal((await run()).status,'artist_project_developed');
+ assert.equal((await run()).status,'artist_repeated_topic_skipped');
  const checkpoint=await store.latest('artist_project_checkpoint');
  const next=await store.operation(checkpoint.projectId+'-intention');
  assert.equal(next.result.switchContext.shelved.critique.accepted,false);
 }));
+test('rejected topics are excluded without transmitting historical criticism as new rules',()=>fixture(async({provider,run,store})=>{
+ provider.local=true;let stage=0;const prompts=[];
+ provider.generate=async(s,p,a,schema)=>{prompts.push({s,p});return {costMicrodollars:0,value:schema===projectSchema?(stage++===0?intention:{...intention,title:'Rain',question:'Can a puddle keep the sky?'}):{accepted:false,evidence:'Synthetic conflict',reason:'Synthetic rejection'}};};
+ await run();await run();await run();
+ assert.equal((await run()).status,'artist_project_developed');
+ const prompt=prompts.at(-1).p;
+ assert.ok(prompt.includes('excludedTopics'));assert.ok(!prompt.includes('Synthetic rejection'));
+ const editor=prompts[1].s;
+ assert.ok(editor.includes('Lo-fi permits blur, refraction'));assert.ok(editor.includes('UNPRODUCED'));
+ assert.equal((await store.latest('artist_project_checkpoint')).title,'Rain');
+}));
+test('repeat guard handles punctuation and permits a genuinely new topic',()=>{
+ const history=[{state:'shelved',title:'The Held Note!',question:'What changes?'}];
+ assert.equal(repeatsShelved({title:'the held note',question:'Different wording'},history),true);
+ assert.equal(repeatsShelved({title:'Rain',question:'Which way does it fall?'},history),false);
+});
 test('artist work flows from new commission through verified media to one verified original',()=>fixture(async({store,run,ready,prepare,counts})=>{
  assert.equal((await run()).status,'artist_project_developed');await prepare();
  assert.equal(await store.latest('x_post'),null);await ready();assert.equal((await run()).status,'artist_package_reviewed');assert.equal((await run()).status,'published');
@@ -79,10 +95,10 @@ test('verification failure keeps submission pending and recovers exact text plus
  x.recentPosts=async()=>[{id:'123',text:draft.manuscript,attachments:{media_keys:['3_999']}}];
  assert.equal((await reconcileX(store,x)).status,'reconciled_published');assert.equal(counts().posts,1);
 }));
-test('known concept rejection has bounded recovery rather than permanent silence',()=>fixture(async({provider,run,db,counts})=>{
- let n=0;provider.generate=async(_s,_p,_a,schema)=>{if(schema===projectSchema)return {costMicrodollars:1,value:intention};n++;return {costMicrodollars:1,value:schema.properties.accepted?{...verdict,accepted:false}:draft};};
- for(let i=0;i<6;i++)await run();assert.equal((await run()).status,'artist_editorial_cooldown');assert.equal(n,4);
- await db.query("UPDATE agent_events SET created=$1 WHERE kind='artist_publication_blocked'",[new Date(Date.now()-61*60000).toISOString()]);
+test('concept rejection starts a different idea next cycle without an hourly cooldown',()=>fixture(async({provider,run,store,counts})=>{
+ let n=0,ideas=0;provider.generate=async(_s,_p,_a,schema)=>{if(schema===projectSchema)return {costMicrodollars:1,value:ideas++?{...intention,title:'Rain',question:'Where does rain go?'}:intention};n++;return {costMicrodollars:1,value:schema.properties.accepted?{...verdict,accepted:false}:draft};};
+ for(let i=0;i<6;i++)await run();assert.equal((await run()).status,'artist_project_developed');assert.equal(n,4);
+ assert.equal((await store.latest('artist_project_checkpoint')).title,'Rain');
  assert.equal((await run()).status,'artist_work_prepared');assert.equal(n,5);assert.equal(counts().posts,0);
 }));
 test('X readback checks author, complete text and attachment',async()=>{
@@ -204,7 +220,7 @@ test('a rejected revision is shelved automatically and a different idea reaches 
  await run();const second=await store.latest('artist_project_checkpoint');
  await projectCheckpoint(store,second.projectId,'editorial_revision_required',{title:'Synthetic revised idea',critique:{reason:'Still missing evidence'},nextAction:'Revise'});
  const original=provider.generate;let planner,writer;
- provider.generate=async(s,p,a,schema)=>{if(schema===projectSchema)planner=p;if(schema.properties.manuscript)writer=p;return original(s,p,a,schema);};
+ provider.generate=async(s,p,a,schema)=>{if(schema===projectSchema){planner=p;return {costMicrodollars:1,value:{...intention,title:'Rain',question:'Which way does the rain fall?'}};}if(schema.properties.manuscript)writer=p;return original(s,p,a,schema);};
  await run();const third=await store.latest('artist_project_checkpoint');
  assert.notEqual(third.projectId,second.projectId);
  const next=(await store.operation(third.projectId+'-intention')).result;
