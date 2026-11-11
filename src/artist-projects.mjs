@@ -74,6 +74,11 @@ export async function projectCursor(store,provider,direction,now){
     await projectCheckpoint(store,id,'shelved',{failureCode:op.result?.failureCode??'INVALID_PROJECT',nextAction:'Preserve the failed inference and start a fresh proposal on the next cycle.'});
     return {status:'artist_preparation_failed'};
   }
+  // Apply the same guard to an inference started before this deployment.
+  if(repeatsShelved(op.result,[op.result.switchContext?.shelved].filter(Boolean))){
+    await projectCheckpoint(store,id,'shelved',{title:op.result.title,question:op.result.question,failureCode:'REPEATED_SHELVED_TOPIC',nextAction:'Start a different topic; retain the completed inference without reviewing or publishing it.'});
+    return {status:'artist_repeated_topic_skipped'};
+  }
   if(provider.local){
     const reviewId=id+'-intention-local-review-v3';let review=await store.operation(reviewId);
     if(!review){
