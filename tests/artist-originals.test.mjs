@@ -375,3 +375,14 @@ test('settled local material failures exhaust bounded attempts instead of holdin
  assert.equal((await store.latest('artist_project_checkpoint')).state,'blocked');
  assert.equal((await store.latest('artist_preparation_failed')).failureCode,'LOCAL_INFERENCE_FAILED');
 }));
+
+test('pending capability review resumes itself instead of falling back to the legacy review',()=>fixture(async({store,provider})=>{
+ provider.local=true;
+ await projectCursor(store,provider,direction,new Date());await projectCursor(store,provider,direction,new Date());
+ const project=await projectCursor(store,provider,direction,new Date());
+ const id=project.id+'-intention-local-review-v4-capabilities';
+ await store.begin(id,'step',()=>({maximum:0}));
+ assert.equal((await projectCursor(store,provider,direction,new Date(),{image:true,character:false,video:false})).status,'artist_intention_review_pending');
+ await store.complete(id,0,{action:'artist_intention_review',accepted:false,reason:'Required executor unavailable'});
+ assert.equal((await projectCursor(store,provider,direction,new Date(),{image:true,character:false,video:false})).status,'artist_intention_rejected');
+}));
