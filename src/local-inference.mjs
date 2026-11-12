@@ -31,7 +31,8 @@ export async function claimInference(store) {
  });
 }
 export async function returnInference(store,{id,leaseToken,result}) {
- if(!/^[a-f0-9]{64}$/.test(id??'')||!result||typeof result.value!=='object'||result.value===null||result.costMicrodollars!==0||JSON.stringify(result).length>2_000_000)throw Error('INVALID_LOCAL_RESULT');
+ const terminalFailure=result?.failure?.code==='HERMES_REPAIR_FAILED'&&result.value===undefined;
+ if(!/^[a-f0-9]{64}$/.test(id??'')||!result||(!terminalFailure&&(typeof result.value!=='object'||result.value===null||result.failure!==undefined))||result.costMicrodollars!==0||JSON.stringify(result).length>2_000_000)throw Error('INVALID_LOCAL_RESULT');
  return store.transaction(async c=>{
   const row=(await c.query('SELECT state,lease_token,result FROM agent_local_inference WHERE id=$1 FOR UPDATE',[id])).rows[0];
   if(!row)throw Error('UNKNOWN_LOCAL_JOB');
@@ -65,7 +66,10 @@ export class LocalInference {
   const id=saved?.id??await enqueueInference(this.store,input,this.store.localOperationId??null),deadline=Date.now()+this.timeoutMs;
   do {
    const row=(await this.store.pool.query('SELECT state,result FROM agent_local_inference WHERE id=$1',[id])).rows[0];
-   if(row?.state==='complete')return row.result;
+   if(row?.state==='complete'){
+    if(row.result?.failure){const error=Error('LOCAL_INFERENCE_FAILED');error.failureCode=row.result.failure.code;throw error;}
+    return row.result;
+   }
    await new Promise(r=>setTimeout(r,this.pollMs));
   }while(Date.now()<deadline);
   const error=Error('LOCAL_INFERENCE_PENDING');error.code='LOCAL_INFERENCE_PENDING';throw error;

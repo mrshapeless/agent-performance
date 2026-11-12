@@ -67,3 +67,20 @@ test('complete artistic material uses planner while critics and short drafts sta
  assert.equal(inferenceRole({properties:{alternatives:{type:'array'},selected:{type:'integer'}}}),null);
  assert.equal(inferenceRole(null),null);
 });
+
+test('terminal local generation failure settles only inference and cannot masquerade as a draft',async t=>{
+ const base=await fixture(t),s=new LocalInferenceStore(base.pool);
+ await s.pool.query("INSERT INTO agent_operations(id,kind,day,amount,status) VALUES('failed-material','step',current_date,0,'pending'),('x-publish-untouched','step',current_date,0,'pending')");
+ const id=await enqueueInference(s,{...input,operationId:'failed-material'},'failed-material');
+ const claim=await claimInference(s),result={failure:{code:'HERMES_REPAIR_FAILED'},costMicrodollars:0};
+ await assert.rejects(returnInference(s,{id,leaseToken:'stale',result}),/STALE_LEASE/);
+ await returnInference(s,{id,leaseToken:claim.leaseToken,result});
+ assert.equal((await returnInference(s,{id,leaseToken:claim.leaseToken,result})).replay,true);
+ await s.begin('failed-material','step',()=>assert.fail());
+ await assert.rejects(new LocalInference(s).generate(input.system,input.prompt),/LOCAL_INFERENCE_FAILED/);
+ await s.complete('failed-material',0,{action:'artist_preparation_failed',failureCode:'LOCAL_INFERENCE_FAILED'});
+ assert.equal((await s.operation('failed-material')).status,'complete');
+ assert.equal((await s.operation('x-publish-untouched')).status,'pending');
+ assert.equal(await claimInference(s),null);
+ await assert.rejects(returnInference(s,{id,leaseToken:claim.leaseToken,result:{...result,value:{accepted:true}}}),/INVALID_LOCAL_RESULT/);
+});

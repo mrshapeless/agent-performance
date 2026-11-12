@@ -61,10 +61,10 @@ export async function artistOriginalStep(store,provider,env,now,x,direction=load
    const req=await store.begin(id,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:'artist_preparation_pending'};
    let cost=req.maximum;
    try{const r=await provider.generate(constitution,prompt,null,artistDraftSchema);cost=r.costMicrodollars;const value=validateArtistDraft(r.value,env);await store.complete(id,cost,{action:'artist_draft_internal',...value});await projectCheckpoint(store,baseRoot,'material',{title:r.value.title});return {status:'artist_work_prepared'};}
-   catch(e){await store.complete(id,cost,{action:'artist_preparation_failed',failureCode:/^Gemini HTTP \d{3}/.exec(e.message)?.[0]??'INVALID_ARTIST_DRAFT'});return {status:'artist_preparation_failed'};}
+   catch(e){await store.complete(id,cost,{action:'artist_preparation_failed',failureCode:e.message==='LOCAL_INFERENCE_FAILED'?'LOCAL_INFERENCE_FAILED':/^Gemini HTTP \d{3}/.exec(e.message)?.[0]??'INVALID_ARTIST_DRAFT'});return {status:'artist_preparation_failed'};}
   }
   if(draft.status!=='complete')return {status:'artist_preparation_pending'};
-  if(draft.result?.action!=='artist_draft_internal'){if(draft.result?.failureCode==='INVALID_ARTIST_DRAFT')continue;return {status:'artist_preparation_failed'};}
+  if(draft.result?.action!=='artist_draft_internal'){if(['INVALID_ARTIST_DRAFT','LOCAL_INFERENCE_FAILED'].includes(draft.result?.failureCode))continue;return {status:'artist_preparation_failed'};}
   let reviewId=id+'-review',review=await store.operation(reviewId);
   if(review?.result?.action==='artist_review_failed'){reviewId=id+'-review-bounded-retry';review=await store.operation(reviewId);}
   if(!review){

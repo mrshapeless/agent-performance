@@ -366,3 +366,12 @@ test('material editor receives accepted intention and can reject a substituted a
  for(let i=0;i<4;i++)await run();
  assert.equal(checked,true);assert.equal(counts().posts,0);
 }));
+
+test('settled local material failures exhaust bounded attempts instead of holding the lane forever',()=>fixture(async({provider,run,store,counts})=>{
+ const generate=provider.generate;let failures=0;
+ provider.generate=async(s,p,a,schema)=>{if(schema===artistDraftSchema){failures++;throw Error('LOCAL_INFERENCE_FAILED');}return generate(s,p,a,schema);};
+ await run();await run();await run();await run();
+ assert.equal(failures,2);assert.equal(counts().posts,0);
+ assert.equal((await store.latest('artist_project_checkpoint')).state,'blocked');
+ assert.equal((await store.latest('artist_preparation_failed')).failureCode,'LOCAL_INFERENCE_FAILED');
+}));
