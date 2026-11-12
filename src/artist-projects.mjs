@@ -48,10 +48,12 @@ export async function projectCursor(store,provider,direction,now,productionCapab
     id='artist-project-'+PROJECT_POLICY+'-'+createHash('sha256').update(id).digest('hex').slice(0,16);
   }
   let op=await store.operation(id+'-intention');
+  const shelved=(await store.pool.query("SELECT payload FROM agent_events WHERE kind='artist_project_checkpoint' AND payload::jsonb->>'state'='shelved' ORDER BY seq DESC")).rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload).filter(p=>p.projectId!==id);
   if(!op){
     const recent=(await store.pool.query("SELECT payload FROM agent_events WHERE kind='artist_project_checkpoint' ORDER BY seq DESC LIMIT 6")).rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
     const switchContext=checkpoint?.state==='shelved'?{instruction:'Choose a genuinely different artistic question and construction. Do not rename, paraphrase or continue the shelved topic. Prefer a work whose required evidence and production can actually be completed with available materials. Preserve editorial standards; do not invent evidence.',shelved:checkpoint}:null;
-    const topicHistory=recent.map(({projectId,state,title,question})=>({projectId,state,title,question}));
+    const topics=new Map();for(const p of [...shelved,...recent])if(!topics.has(p.projectId))topics.set(p.projectId,p);
+    const topicHistory=[...topics.values()].map(({projectId,state,title,question})=>({projectId,state,title,question}));
     const plannerSwitch=switchContext?{instruction:switchContext.instruction,excludedTopics:topicHistory.filter(p=>p.state==='shelved')}:null;
     const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 5")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
     const completedCampaign=loadArtistCampaign();
@@ -66,7 +68,7 @@ export async function projectCursor(store,provider,direction,now,productionCapab
       if(!['develop','defer'].includes(v?.decision)||!['title','question','reasonToExist','development','neededEvidence'].every(k=>bounded(v[k],2000))||!Number.isInteger(v.nextReviewHours)||v.nextReviewHours<1||v.nextReviewHours>2)throw Error('INVALID_PROJECT');
       const revisionContext=checkpoint?.state==='revision_requested'?{projectId:checkpoint.projectId,critique:checkpoint.critique??null,nextAction:checkpoint.nextAction??null}:null;
       await store.complete(id+'-intention',cost,{action:'artist_project_internal',policy:PROJECT_POLICY,projectId:id,...v,revisionContext,switchContext,nextReviewAt:new Date(now.getTime()+v.nextReviewHours*3600000).toISOString()});
-      if(repeatsShelved(v,recent)){
+      if(repeatsShelved(v,shelved)){
         await projectCheckpoint(store,id,'shelved',{title:v.title,question:v.question,failureCode:'REPEATED_SHELVED_TOPIC',nextAction:'Generate a different topic on the next cycle; no review or deferral for this duplicate.'});
         return {status:'artist_repeated_topic_skipped'};
       }
@@ -96,7 +98,10 @@ export async function projectCursor(store,provider,direction,now,productionCapab
     return {status:'artist_project_reconsideration'};
   }
   // Apply the same guard to an inference started before this deployment.
-  if(repeatsShelved(op.result,[op.result.switchContext?.shelved].filter(Boolean))){
+  const repeated=repeatsShelved(op.result,[...shelved,op.result.switchContext?.shelved].filter(Boolean));
+  // Let already admitted inference settle before closing its owning project.
+  const pendingRepeat=repeated&&(await store.pool.query("SELECT id FROM agent_operations WHERE status='pending' AND position($1 in id)>0 LIMIT 1",[id])).rows.length>0;
+  if(repeated&&!pendingRepeat){
     await projectCheckpoint(store,id,'shelved',{title:op.result.title,question:op.result.question,failureCode:'REPEATED_SHELVED_TOPIC',nextAction:'Start a different topic; retain the completed inference without reviewing or publishing it.'});
     return {status:'artist_repeated_topic_skipped'};
   }

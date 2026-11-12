@@ -68,6 +68,26 @@ test('repeat guard handles punctuation and permits a genuinely new topic',()=>{
  assert.equal(repeatsShelved({title:'the held note',question:'Different wording'},history),true);
  assert.equal(repeatsShelved({title:'Rain',question:'Which way does it fall?'},history),false);
 });
+test('retired topics remain excluded after unrelated checkpoint traffic',()=>fixture(async({store,run,counts})=>{
+ const {projectCheckpoint}=await import('../src/artist-projects.mjs');
+ await projectCheckpoint(store,'old-retired','shelved',{title:intention.title,question:intention.question});
+ for(let i=0;i<8;i++)await projectCheckpoint(store,'traffic-'+i,'shelved',{title:'Unrelated '+i,question:'Other question '+i});
+ assert.equal((await run()).status,'artist_repeated_topic_skipped');
+ assert.equal((await store.latest('artist_project_checkpoint')).failureCode,'REPEATED_SHELVED_TOPIC');
+ assert.equal(counts().posts,0);
+}));
+test('history reconciliation lets admitted inference settle before shelving a repeat',()=>fixture(async({store,run,provider})=>{
+ const {projectCheckpoint}=await import('../src/artist-projects.mjs');
+ await run();const current=await store.latest('artist_project_checkpoint');
+ await projectCursor(store,provider,direction,new Date());
+ await projectCheckpoint(store,'previous-retired','shelved',{title:intention.title,question:intention.question});
+ await projectCheckpoint(store,current.projectId,'intention',{title:intention.title,nextAction:'Resume admitted synthetic inference'});
+ const pending='x-plan-'+current.projectId+'-0';await store.begin(pending,'step',()=>({maximum:0}));
+ assert.equal((await projectCursor(store,provider,direction,new Date())).id,current.projectId);
+ assert.equal((await store.operation(pending)).status,'pending');
+ await store.complete(pending,0,{action:'artist_preparation_failed'});
+ assert.equal((await projectCursor(store,provider,direction,new Date())).status,'artist_repeated_topic_skipped');
+}));
 test('artist work flows from new commission through verified media to one verified original',()=>fixture(async({store,run,ready,prepare,counts})=>{
  assert.equal((await run()).status,'artist_project_developed');await prepare();
  assert.equal(await store.latest('x_post'),null);await ready();assert.equal((await run()).status,'artist_package_reviewed');assert.equal((await run()).status,'published');
