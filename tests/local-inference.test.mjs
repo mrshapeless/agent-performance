@@ -55,3 +55,13 @@ test('request timeout resumes saved inference after restart without repeating ge
  assert.equal(result.status,'complete');assert.equal(await claimInference(s),null);
  assert.equal((await cloudRun(restarted,new LocalInference(restarted),'birth','local-birth')).replay,true);
 });
+
+test('complete artistic material uses planner while critics and short drafts stay separate',async()=>{
+ const {inferenceRole}=await import('../src/local-inference.mjs');
+ const {artistDraftSchema,artistReviewSchema}=await import('../src/artist-originals.mjs');
+ assert.equal(inferenceRole(artistDraftSchema),'planner');
+ assert.equal(inferenceRole(artistReviewSchema),'critic');
+ assert.equal(inferenceRole({properties:{question:{type:'string'}}}),'planner');
+ assert.equal(inferenceRole({properties:{alternatives:{type:'array'},selected:{type:'integer'}}}),null);
+ assert.equal(inferenceRole(null),null);
+});

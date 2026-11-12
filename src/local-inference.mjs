@@ -8,6 +8,13 @@ export function workerAuthorized(header,hash) {
 }
 const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
 const digest=v=>createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
+export function inferenceRole(schema){
+ const p=schema?.properties;
+ if(p?.accepted)return 'critic';
+ // A complete authored work includes artistic planning, not just caption drafting.
+ if(p?.question||(p?.intention&&p?.alternatives&&p?.selectedId&&p?.manuscript))return 'planner';
+ return null;
+}
 export async function enqueueInference(store,input,operationId=null) {
  if(typeof input.system!=='string'||typeof input.prompt!=='string'||JSON.stringify(input).length>12_000_000)throw Error('INVALID_LOCAL_INPUT');
  const id=digest(input);
@@ -41,7 +48,7 @@ export class LocalInference {
  async generate(system,prompt,media=null,schema=null,references=[]) {
   const pixels=[...(media?[media]:[]),...references];
   if(pixels.some(m=>!['image/png','image/jpeg','image/webp'].includes(m.mime)||!m.bytes))throw Error('LOCAL_MEDIA_UNSUPPORTED');
-  const input={system,prompt,schema,role:schema?.properties?.accepted?'critic':schema?.properties?.question?'planner':null,media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
+  const input={system,prompt,schema,role:inferenceRole(schema),media:pixels.map((m,i)=>({mime:m.mime,data:Buffer.from(m.bytes).toString('base64'),label:media&&i===0?'CANDIDATE':'REFERENCE '+(media?i:i+1)+' (not the candidate)'})),operationId:this.store.localOperationId??null};
   return this.waitInput(input);
  }
  async image(prompt,ratio,plan){
