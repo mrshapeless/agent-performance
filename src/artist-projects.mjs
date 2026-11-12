@@ -10,6 +10,7 @@ export function pilotInspectionComplete(path=new URL('../private/artist-pilot.js
   try{const v=JSON.parse(readFileSync(path,'utf8'));return v.policy===PROJECT_POLICY&&v.reviewed===true&&bounded(v.assetId,200)&&bounded(v.manuscriptHash,64)&&/^[a-f0-9]{64}$/.test(v.manuscriptHash)&&bounded(v.observation,2500)&&Number.isFinite(Date.parse(v.reviewedAt));}catch{return false;}
 }
 const str={type:'string'};
+const boundedText=maxLength=>({type:'string',minLength:1,maxLength});
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const bounded=(v,n)=>typeof v==='string'&&v.trim().length>0&&v.length<=n;
 const topicKey=v=>String(v??'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
@@ -105,7 +106,7 @@ export async function projectCursor(store,provider,direction,now){
       const prompt=intentionEditor+' Room for the Sky is complete. Do not resume shelved breathing/hesitation essays. '+JSON.stringify({operatorBrief:direction.brief,candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published,completedCampaign:loadArtistCampaign()});
       const req=await store.begin(reviewId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
       if(req.replay)return {status:'artist_intention_review_pending'};
-      const answer=await provider.generate(intentionEditor,prompt,null,object({accepted:{type:'boolean'},evidence:str,reason:str}));
+      const answer=await provider.generate(intentionEditor,prompt,null,object({accepted:{type:'boolean'},evidence:boundedText(4000),reason:boundedText(4000)}));
       if(typeof answer.value?.accepted!=='boolean'||!bounded(answer.value.evidence,4000)||!bounded(answer.value.reason,4000))throw Error('INVALID_INTENTION_REVIEW');
       await store.complete(reviewId,answer.costMicrodollars,{action:'artist_intention_review',...answer.value});
       return {status:'artist_intention_reviewed'};
@@ -127,7 +128,7 @@ export async function projectCheckpoint(store,id,state,extra={}){
   await record(store,id+'-checkpoint-'+state+'-'+fingerprint,{action:'artist_project_checkpoint',policy:PROJECT_POLICY,projectId:id,state,...extra});
 }
 
-export const packageReviewSchema=object({decision:{type:'string',enum:['publish','revise','reject']},literalReading:str,textContribution:str,discoverableDevelopment:str,artistConnection:str,visibleEvidence:{type:'array',minItems:1,maxItems:6,items:object({location:str,observation:str})},claims:{type:'array',maxItems:20,items:object({quote:str,kind:{type:'string',enum:['fiction','metaphor','fact','process']},supported:{type:'boolean'},evidence:str})},propOnly:{type:'boolean'},captionRescuesImage:{type:'boolean'},misleadingLiteralClaim:{type:'boolean'},completeInDeliveredForm:{type:'boolean'},reason:str});
+export const packageReviewSchema=object({decision:{type:'string',enum:['publish','revise','reject']},literalReading:boundedText(2500),textContribution:boundedText(2500),discoverableDevelopment:boundedText(2500),artistConnection:boundedText(2500),visibleEvidence:{type:'array',minItems:1,maxItems:6,items:object({location:boundedText(300),observation:boundedText(1200)})},claims:{type:'array',maxItems:20,items:object({quote:boundedText(12000),kind:{type:'string',enum:['fiction','metaphor','fact','process']},supported:{type:'boolean'},evidence:boundedText(1500)})},propOnly:{type:'boolean'},captionRescuesImage:{type:'boolean'},misleadingLiteralClaim:{type:'boolean'},completeInDeliveredForm:{type:'boolean'},reason:boundedText(2500)});
 export function acceptsPackage(v){
   if(!v||!['publish','revise','reject'].includes(v.decision)||!['literalReading','textContribution','discoverableDevelopment','artistConnection','reason'].every(k=>bounded(v[k],2500)))throw Error('INVALID_PACKAGE_REVIEW');
   if(!['propOnly','captionRescuesImage','misleadingLiteralClaim','completeInDeliveredForm'].every(k=>typeof v[k]==='boolean')||!Array.isArray(v.visibleEvidence)||!v.visibleEvidence.length||v.visibleEvidence.some(e=>!bounded(e.location,300)||!bounded(e.observation,1200))||!Array.isArray(v.claims)||v.claims.some(c=>!bounded(c.quote,12000)||!['fiction','metaphor','fact','process'].includes(c.kind)||typeof c.supported!=='boolean'||!bounded(c.evidence,1500)))throw Error('INVALID_PACKAGE_REVIEW');
@@ -183,7 +184,7 @@ export async function proseHandoff(store,projectId){
   if(current?.projectId!==projectId||current.state!=='execution_required')throw Error('PROJECT_NOT_AWAITING_EXECUTION');
   const material=await store.operation(current.materialId);
   const draft=material?.result?.draft;
-  const review=await store.operation(current.materialId+'-review');
+  const review=(await store.operation(current.materialId+'-review-bounded-retry'))??await store.operation(current.materialId+'-review');
   if(material?.status!=='complete'||material.result.action!=='artist_draft_internal'||draft?.medium!=='essay'||!bounded(draft.manuscript,12000)||review?.result?.action!=='artist_concept_review'||review.result.accepted!==true)throw Error('COMPLETE_PROSE_REQUIRED');
   const manuscriptHash=createHash('sha256').update(draft.manuscript).digest('hex');
   const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\n'+draft.manuscript).digest('hex'));
@@ -197,7 +198,7 @@ export async function imageManuscript(store,projectId){
   const current=await store.latest('artist_project_checkpoint');
   if(current?.projectId!==projectId||current.state!=='execution_required')throw Error('PROJECT_NOT_AWAITING_EXECUTION');
   const material=await store.operation(current.materialId),draft=material?.result?.draft;
-  const concept=await store.operation(current.materialId+'-review');
+  const concept=(await store.operation(current.materialId+'-review-bounded-retry'))??await store.operation(current.materialId+'-review');
   if(material?.status!=='complete'||material.result.action!=='artist_draft_internal'||draft?.medium!=='image'||!bounded(draft.manuscript,12000)||concept?.result?.accepted!==true)throw Error('COMPLETE_IMAGE_MANUSCRIPT_REQUIRED');
   const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\nimage\n'+draft.manuscript).digest('hex'));
   if(independent?.result?.action!=='artist_prose_review_internal'||independent.result.accepted!==true)throw Error('INDEPENDENT_PROSE_REVIEW_REQUIRED');
@@ -297,7 +298,7 @@ export async function requestProjectRevision(store,id){
     const cycle=block?.root===id?block.cycle:id;
     const attempts=[];
     for(let attempt=0;attempt<2;attempt++){
-      const review=await store.operation('x-plan-'+cycle+'-'+attempt+'-review');
+      const review=(await store.operation('x-plan-'+cycle+'-'+attempt+'-review-bounded-retry'))??await store.operation('x-plan-'+cycle+'-'+attempt+'-review');
       if(review?.status==='complete'&&review.result?.action==='artist_concept_review'&&review.result.accepted===false)attempts.push({attempt,review:review.result});
     }
     if(attempts.length)critique={reason:'Concept attempts rejected; address their actual saved evidence before proposing new material.',attempts};

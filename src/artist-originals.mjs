@@ -14,7 +14,7 @@ const boundedString=maxLength=>({type:'string',minLength:1,maxLength});
 const visual=object({id:string,concept:string,visualMechanism:string,composition:string,viewerExperience:string,renderPrompt:string,personalStake:string,renderer:{type:'string',enum:['single','character']}});
 export const artistDraftSchema=object({title:boundedString(1400),intention:boundedString(1400),development:boundedString(1400),manuscript:boundedString(12000),formatReason:boundedString(1400),medium:{type:'string',enum:['image','video','song','music_film','essay','process','sequence']},duration:{type:'integer',minimum:0,maximum:3600},ratio:{type:'string',enum:['1:1','16:9','9:16']},alt:boundedString(500),alternatives:{type:'array',items:visual,minItems:3,maxItems:3},selectedId:string,diversityComparison:boundedString(1400)});
 const checks=['standaloneWork','meaningInArtifact','honestClaims','distinctFromRecent','formatComplete'];
-export const artistReviewSchema=object({accepted:{type:'boolean'},...Object.fromEntries(checks.map(k=>[k,{type:'boolean'}])),evidence:string,reason:string});
+export const artistReviewSchema=object({accepted:{type:'boolean'},...Object.fromEntries(checks.map(k=>[k,{type:'boolean'}])),evidence:boundedString(2000),reason:boundedString(1600)});
 const nonempty=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
 export function validateArtistDraft(v,env){
  if(!v||!['image','video','song','music_film','essay','process','sequence'].includes(v.medium)||!Number.isInteger(v.duration)||v.duration<0||v.duration>3600||!['title','intention','development','formatReason','diversityComparison'].every(k=>nonempty(v[k],1400))||!nonempty(v.manuscript,12000))throw Error('INVALID_ARTIST_DRAFT');
@@ -64,13 +64,14 @@ export async function artistOriginalStep(store,provider,env,now,x,direction=load
   }
   if(draft.status!=='complete')return {status:'artist_preparation_pending'};
   if(draft.result?.action!=='artist_draft_internal'){if(draft.result?.failureCode==='INVALID_ARTIST_DRAFT')continue;return {status:'artist_preparation_failed'};}
-  let review=await store.operation(id+'-review');
+  let reviewId=id+'-review',review=await store.operation(reviewId);
+  if(review?.result?.action==='artist_review_failed'){reviewId=id+'-review-bounded-retry';review=await store.operation(reviewId);}
   if(!review){
    const prompt=projectDirection+' Independently edit the complete material, without adapting it to any platform limit. Accept only when each criterion is supported; cite concrete relationships and compare actual prior captions without inventing prior pixels. Reject a portrait whose music prop is its only artist connection, a cryptic sentence supplying absent meaning, or literal claims about material behavior unsupported by evidence. For process writing, absent real before/after evidence is a rejection. This is a proposal and manuscript review before media production: do not require generated pixels or treat imagined future scenes as claims of completed production. Reject concrete internal contradictions or unsupported claims presented as factual history, citing exact text. Do not speculate that a visual detail is impossible to render; actual media receives its own inspection. No medium is preferred: previous still images do not establish a static-image preference or justify rejecting video, sequence, music or temporal development. Do not replace the proposed medium with your preferred one. Concept assessment is not pixel inspection. Do not rewrite the manuscript. '+JSON.stringify({draft:draft.result.draft,recent:recent.map(r=>r.payload.text)});
-   const req=await store.begin(id+'-review','step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:'artist_review_pending'};
+   const req=await store.begin(reviewId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));if(req.replay)return {status:'artist_review_pending'};
    let cost=req.maximum;
-   try{const r=await provider.generate(constitution,prompt,null,artistReviewSchema);cost=r.costMicrodollars;const accepted=acceptsArtistReview(r.value);await store.complete(id+'-review',cost,{action:'artist_concept_review',...r.value,accepted});return {status:'artist_concept_reviewed'};}
-   catch{await store.complete(id+'-review',cost,{action:'artist_review_failed'});return {status:'artist_review_failed'};}
+   try{const r=await provider.generate(constitution,prompt,null,artistReviewSchema);cost=r.costMicrodollars;const accepted=acceptsArtistReview(r.value);await store.complete(reviewId,cost,{action:'artist_concept_review',...r.value,accepted});return {status:'artist_concept_reviewed'};}
+   catch{await store.complete(reviewId,cost,{action:'artist_review_failed'});return {status:'artist_review_failed'};}
   }
   if(review.status!=='complete')return {status:'artist_review_pending'};
   if(review.result?.action!=='artist_concept_review')return {status:'artist_review_failed'};

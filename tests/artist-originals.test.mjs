@@ -316,3 +316,8 @@ test('generation schema carries server text bounds before local repair returns a
  assert.equal(artistDraftSchema.properties.manuscript.maxLength,12000);
  assert.equal(artistDraftSchema.properties.alt.maxLength,500);
 });
+
+test('malformed concept review retries once, preserves failure and cannot loop',()=>fixture(async({provider,run,counts})=>{
+ const original=provider.generate;let reviews=0;provider.generate=async(s,p,a,schema)=>{if(schema.properties.standaloneWork){reviews++;return {costMicrodollars:1,value:{...verdict,reason:'x'.repeat(1601)}};}return original(s,p,a,schema);};
+ for(let i=0;i<10;i++)await run();assert.equal(reviews,2);assert.equal(counts().posts,0);
+}));
