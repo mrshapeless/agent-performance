@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {constitution} from './domain.mjs';
-import {loadArtistDirection} from './artist-direction.mjs';
+import {loadArtistDirection,browserCommission} from './artist-direction.mjs';
 import {loadArtistCampaign,campaignWindow} from './artist-campaign.mjs';
 import {mediaCapabilities} from './media-providers.mjs';
 import {CREATIVE_REVISION} from './creative-revision.mjs';
@@ -36,6 +36,10 @@ async function record(store,id,value){const req=await store.begin(id,'step',()=>
 
 export async function artistOriginalStep(store,provider,env,now,x,direction=loadArtistDirection(),campaign=loadArtistCampaign(),services,pilotReady=pilotInspectionComplete()){
  if(!direction)return {status:'artist_direction_required'};
+ const commission=browserCommission(direction);
+ // socialStep reconciles uncertain X writes first. Keep saved inference intact,
+ // but never continue unrelated work in place of the operator's commission.
+ if(commission)return commission;
  if(!campaign)return {status:'artist_campaign_state_required'};
  const recent=(await store.pool.query("SELECT seq,payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 12")).rows.map(r=>({...r,payload:typeof r.payload==='string'?JSON.parse(r.payload):r.payload}));
  const project=await projectCursor(store,provider,direction,now,provider.local?mediaCapabilities(env):null);

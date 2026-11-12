@@ -1,7 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artistReleaseStep,publicArtistDirection,ARTIST_DIRECTION_REVISION} from '../src/artist-direction.mjs';
+import {artistReleaseStep,publicArtistDirection,ARTIST_DIRECTION_REVISION,browserCommission} from '../src/artist-direction.mjs';
+import {artistOriginalStep} from '../src/artist-originals.mjs';
 import {socialStep} from '../src/integrations.mjs';
+
+const commission={id:'synthetic-request',state:'active',medium:'video',tool:'grok_chrome',executor:'browser'};
+test('browser video request prevents any unrelated planning, generation or publication',async()=>{
+ const forbidden=new Proxy({}, {get(){throw Error('Unexpected autonomous work');}});
+ const result=await artistOriginalStep(forbidden,forbidden,{},new Date(),forbidden,{brief:'Synthetic',commission},null);
+ assert.equal(result.status,'artist_browser_execution_required');
+ assert.equal(result.medium,'video');
+ const publicStatus=publicArtistDirection({brief:'Synthetic',commission:{...commission,privatePrompt:'SECRET'}});
+ assert.equal(publicStatus.execution.tool,'grok_chrome');
+ assert.ok(!JSON.stringify(publicStatus).includes('SECRET'));
+ assert.ok(!JSON.stringify(publicStatus).includes(commission.id));
+});
+test('wrong format, partial completion and malformed commission never release the constraint',()=>{
+ assert.equal(browserCommission({commission:{...commission,state:'complete'}}).status,'artist_commission_invalid');
+ assert.equal(browserCommission({commission:{...commission,state:'complete',verifiedPublication:{medium:'image',tool:'grok_chrome',url:'https://x.com/example/status/123'}}}).status,'artist_commission_invalid');
+ assert.equal(browserCommission({commission:{...commission,tool:'unknown'}}).status,'artist_commission_invalid');
+ assert.equal(browserCommission({commission:{state:'complete',verifiedPublication:{url:'https://x.com/example/status/123'}}}).status,'artist_commission_invalid');
+ assert.equal(browserCommission({commission:{...commission,state:'complete',verifiedPublication:{medium:'video',tool:'grok_chrome',url:'https://x.com/example/status/123'}}}).status,'artist_commission_invalid');
+ assert.equal(browserCommission({commission:{...commission,state:'complete',verifiedPublication:{verified:true,medium:'video',tool:'grok_chrome',url:'https://x.com/example/status/123'}}}),null);
+ assert.equal(browserCommission({brief:'Synthetic'}),null);
+});
 
 test('artist status exposes only an allowlisted receipt, never private creative content',()=>{
  const v=publicArtistDirection({brief:'PRIVATE synthetic manuscript',projectId:'private-project',manuscript:'PRIVATE draft'});
