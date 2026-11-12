@@ -206,8 +206,8 @@ export async function imageManuscript(store,projectId){
   const material=await store.operation(current.materialId),draft=material?.result?.draft;
   const concept=(await store.operation(current.materialId+'-review-bounded-retry'))??await store.operation(current.materialId+'-review');
   if(material?.status!=='complete'||material.result.action!=='artist_draft_internal'||draft?.medium!=='image'||!bounded(draft.manuscript,12000)||concept?.result?.accepted!==true)throw Error('COMPLETE_IMAGE_MANUSCRIPT_REQUIRED');
-  const independent=await store.operation('artist-prose-review-'+createHash('sha256').update(PROJECT_POLICY+'\nimage\n'+draft.manuscript).digest('hex'));
-  if(independent?.result?.action!=='artist_prose_review_internal'||independent.result.accepted!==true)throw Error('INDEPENDENT_PROSE_REVIEW_REQUIRED');
+  // This is production handoff only. imageHandoff still requires independent
+  // review of the exact complete text together with the imported pixels.
   return {projectId,materialId:current.materialId,title:draft.title,manuscript:draft.manuscript,manuscriptHash:createHash('sha256').update(draft.manuscript).digest('hex')};
 }
 

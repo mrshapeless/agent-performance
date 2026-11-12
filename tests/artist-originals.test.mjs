@@ -224,16 +224,24 @@ test('revision critique survives intention generation and reaches the actual man
  await run();assert.match(writerPrompt,/Do not repeat the unsupported synthetic factual claim/);assert.match(writerPrompt,/Remove this claim or obtain evidence/);
 }));
 
-test('long image manuscript receives independent claim review before execution handoff',()=>fixture(async({provider,run,store,counts,db})=>{
+test('long image claims are reviewed with actual pixels before publication handoff',()=>fixture(async({provider,run,store,counts,db})=>{
+ const sharp=(await import('sharp')).default;
+ const {importImagePackage,imageHandoff}=await import('../src/artist-projects.mjs');
  const original=provider.generate,full='Most virtual singers always ignore the room. '.repeat(10);let reads=0;
  provider.generate=async(s,p,a,schema)=>{
   if(schema.properties.manuscript)return {costMicrodollars:1,value:{...draft,medium:'image',manuscript:full}};
-  if(schema===packageReviewSchema){reads++;assert.match(p,/preliminary text-only check/);assert.doesNotMatch(p,/renderPrompt/);return {costMicrodollars:1,value:{...packageVerdict,decision:'revise',claims:[{quote:'Most virtual singers',kind:'fact',supported:false,evidence:'No evidence supports this population-wide claim.'}]}};}
+  if(schema===packageReviewSchema){reads++;assert.ok(a);assert.match(p,/Most virtual singers/);assert.doesNotMatch(p,/renderPrompt/);return {costMicrodollars:1,value:{...packageVerdict,decision:'revise',claims:[{quote:'Most virtual singers',kind:'fact',supported:false,evidence:'No evidence supports this population-wide claim.'}]}};}
   return original(s,p,a,schema);
  };
- await run();await run();await run();assert.equal((await run()).status,'artist_prose_revision_required');
+ await run();await run();await run();assert.equal((await run()).status,'artist_format_delivery_required');
+ const project=(await store.latest('artist_project_checkpoint')).projectId;
+ assert.equal(reads,0);
+ const bytes=await sharp({create:{width:300,height:300,channels:3,background:'#987654'}}).png().toBuffer();
+ const imported=await importImagePackage(store,provider,env,project,bytes.toString('base64'));
+ assert.equal(imported.accepted,false);
  const checkpoint=await store.latest('artist_project_checkpoint');assert.equal(checkpoint.state,'editorial_revision_required');assert.equal(checkpoint.critique.claims[0].supported,false);
- await run();assert.equal(reads,1);assert.equal(counts().posts,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM agent_media_jobs')).rows[0].n,0);
+ await assert.rejects(imageHandoff(store,project,imported.assetId),/NOT_AWAITING/);
+ assert.equal(reads,1);assert.equal(counts().posts,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM agent_media_jobs')).rows[0].n,0);
 }));
 
 test('a rejected revision is shelved automatically and a different idea reaches the writer',()=>fixture(async({store,provider,run,counts})=>{
