@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {PostgresStore} from '../src/postgres.mjs';
-import {artistOriginalStep,validateArtistDraft,acceptsArtistReview,artistDraftSchema} from '../src/artist-originals.mjs';
+import {artistOriginalStep,validateArtistDraft,acceptsArtistReview,artistDraftSchema,artistReviewSchema} from '../src/artist-originals.mjs';
 import {campaignWindow} from '../src/artist-campaign.mjs';
 import {VISUAL_CONTRACT,isOpenMeme} from '../src/visual-contract.mjs';
 import {reconcileX} from '../src/integrations.mjs';
@@ -346,4 +346,19 @@ test('capability deployment preserves an admitted project with material already 
  assert.equal(counts().calls,before);
  assert.equal(await store.operation(project.id+'-intention-local-review-v4-capabilities'),null);
  assert.equal((await store.operation('x-plan-'+project.id+'-0')).status,'pending');
+}));
+
+test('material editor receives accepted intention and can reject a substituted artifact',()=>fixture(async({provider,run,counts})=>{
+ const generate=provider.generate;let checked=false;
+ provider.generate=async(s,p,a,schema)=>{
+  if(schema===artistReviewSchema){
+   assert.ok(p.includes('"acceptedIntention":'));
+   assert.ok(p.includes(intention.question));
+   assert.ok(p.includes('indispensable temporal, audible'));
+   checked=true;return {costMicrodollars:0,value:{...verdict,accepted:false,formatComplete:false}};
+  }
+  return generate(s,p,a,schema);
+ };
+ for(let i=0;i<4;i++)await run();
+ assert.equal(checked,true);assert.equal(counts().posts,0);
 }));
