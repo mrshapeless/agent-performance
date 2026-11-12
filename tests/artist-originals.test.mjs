@@ -311,6 +311,7 @@ test('image readback tolerates recompression but rejects substitutions and unexp
 });
 
 test('generation schema carries server text bounds before local repair returns a draft',()=>{
+ for(const k of ['title','question','reasonToExist','development','neededEvidence']){assert.equal(projectSchema.properties[k].minLength,1);assert.equal(projectSchema.properties[k].maxLength,2000);}
  for(const k of ['title','intention','development','formatReason','diversityComparison']){assert.equal(artistDraftSchema.properties[k].maxLength,1400); assert.throws(()=>validateArtistDraft({...draft,[k]:'a'.repeat(1401)},env),/INVALID_ARTIST_DRAFT/);}
  assert.equal(artistDraftSchema.properties.manuscript.maxLength,12000);
  assert.equal(artistDraftSchema.properties.alt.maxLength,500);
