@@ -333,3 +333,17 @@ test('planner and independent editor receive actual production capabilities befo
  assert.ok(prompts[0].includes('not artistic genre preferences'));
  assert.ok(prompts[1].includes('Do not assume an operator will supply missing media or sound'));
 }));
+
+test('capability deployment preserves an admitted project with material already pending',()=>fixture(async({store,provider,counts})=>{
+ provider.local=true;
+ await projectCursor(store,provider,direction,new Date());
+ await projectCursor(store,provider,direction,new Date());
+ const project=await projectCursor(store,provider,direction,new Date());
+ await store.begin('x-plan-'+project.id+'-0','step',()=>({maximum:0}));
+ const before=counts().calls;
+ const resumed=await projectCursor(store,provider,direction,new Date(),{image:true,character:false,video:false});
+ assert.equal(resumed.id,project.id);
+ assert.equal(counts().calls,before);
+ assert.equal(await store.operation(project.id+'-intention-local-review-v4-capabilities'),null);
+ assert.equal((await store.operation('x-plan-'+project.id+'-0')).status,'pending');
+}));

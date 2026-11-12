@@ -101,7 +101,10 @@ export async function projectCursor(store,provider,direction,now,productionCapab
     return {status:'artist_repeated_topic_skipped'};
   }
   if(provider.local){
-    const reviewId=id+(productionCapabilities?'-intention-local-review-v4-capabilities':'-intention-local-review-v3');let review=await store.operation(reviewId);
+    // Finish work already admitted under the previous review before starting a
+    // new policy operation. A pending material owns the serialized agent lane.
+    const legacyReview=await store.operation(id+'-intention-local-review-v3');
+    const reviewId=id+(productionCapabilities&&!legacyReview?'-intention-local-review-v4-capabilities':'-intention-local-review-v3');let review=legacyReview??await store.operation(reviewId);
     if(!review){
       const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 8")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
       const prompt=intentionEditor+(productionCapabilities?' For the current publication task, also check whether indispensable production and inspection are available in productionCapabilities. Reject a proposal that requires an unavailable executor; explain the concrete missing capability, not an artistic or genre ban. Do not assume an operator will supply missing media or sound, and do not substitute another medium. ':'')+' Room for the Sky is complete. Do not resume shelved breathing/hesitation essays. '+JSON.stringify({operatorBrief:direction.brief,productionCapabilities,candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published,completedCampaign:loadArtistCampaign()});
