@@ -29,7 +29,7 @@ async function record(store,id,value){
 
 // A durable project cursor is independent of the last X post and its cadence.
 // Full manuscripts and unmet production needs remain in the authenticated studio.
-export async function projectCursor(store,provider,direction,now){
+export async function projectCursor(store,provider,direction,now,productionCapabilities=null){
   let checkpoint=await store.latest('artist_project_checkpoint');
   const deferPolicy=await store.latest('artist_defer_policy');
   const deferBlocked=deferPolicy?.blocked===true||(!deferPolicy&&checkpoint?.state==='deferred_complete');
@@ -55,7 +55,8 @@ export async function projectCursor(store,provider,direction,now){
     const plannerSwitch=switchContext?{instruction:switchContext.instruction,excludedTopics:topicHistory.filter(p=>p.state==='shelved')}:null;
     const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 5")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
     const completedCampaign=loadArtistCampaign();
-    const prompt=projectDirection+' Deferral is limited to 1 or 2 hours. Two consecutive idle periods are forbidden. '+(deferBlocked?'The previous idle period has been used: choose develop, with concrete production or research work. Rejected proposals do not reset this restriction. ':'')+' Propose a NEW work, not a critique or a summary of rejected work. Excluded topics are only a do-not-repeat list, never examples to imitate. Historical critics do not create new artistic rules. Publication receipts below are authoritative: these works are finished. The native campaign ledger is equally authoritative, even when its posts are absent from the selected x_post records. Do not infer that the completed Room for the Sky film lacks finished audio or requires another listening/production cycle. Do not resume or re-stage published works. Only text/metadata are provided; do not claim you saw their pixels, contact sheets, clips or tests. '+JSON.stringify({artistBrief:direction.brief,previousProjects:topicHistory,published,completedCampaign,switchContext:plannerSwitch});
+    const productionContext=productionCapabilities?{productionCapabilities,instruction:'Develop a complete new work that can actually be produced and inspected with these currently available executors. Do not choose an indispensable unavailable medium and assume an operator or an unapproved cloud fallback will provide it. These are current capabilities, not artistic genre preferences. Prose is available. Do not substitute the format of an already accepted work.'}:null;
+    const prompt=projectDirection+' Deferral is limited to 1 or 2 hours. Two consecutive idle periods are forbidden. '+(deferBlocked?'The previous idle period has been used: choose develop, with concrete production or research work. Rejected proposals do not reset this restriction. ':'')+' Propose a NEW work, not a critique or a summary of rejected work. Excluded topics are only a do-not-repeat list, never examples to imitate. Historical critics do not create new artistic rules. Publication receipts below are authoritative: these works are finished. The native campaign ledger is equally authoritative, even when its posts are absent from the selected x_post records. Do not infer that the completed Room for the Sky film lacks finished audio or requires another listening/production cycle. Do not resume or re-stage published works. Only text/metadata are provided; do not claim you saw their pixels, contact sheets, clips or tests. '+JSON.stringify({artistBrief:direction.brief,previousProjects:topicHistory,published,completedCampaign,productionContext,switchContext:plannerSwitch});
     const req=await store.begin(id+'-intention','step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
     if(req.replay)return {status:'artist_project_pending'};
     let cost=req.maximum;
@@ -100,10 +101,10 @@ export async function projectCursor(store,provider,direction,now){
     return {status:'artist_repeated_topic_skipped'};
   }
   if(provider.local){
-    const reviewId=id+'-intention-local-review-v3';let review=await store.operation(reviewId);
+    const reviewId=id+(productionCapabilities?'-intention-local-review-v4-capabilities':'-intention-local-review-v3');let review=await store.operation(reviewId);
     if(!review){
       const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 8")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
-      const prompt=intentionEditor+' Room for the Sky is complete. Do not resume shelved breathing/hesitation essays. '+JSON.stringify({operatorBrief:direction.brief,candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published,completedCampaign:loadArtistCampaign()});
+      const prompt=intentionEditor+(productionCapabilities?' For the current publication task, also check whether indispensable production and inspection are available in productionCapabilities. Reject a proposal that requires an unavailable executor; explain the concrete missing capability, not an artistic or genre ban. Do not assume an operator will supply missing media or sound, and do not substitute another medium. ':'')+' Room for the Sky is complete. Do not resume shelved breathing/hesitation essays. '+JSON.stringify({operatorBrief:direction.brief,productionCapabilities,candidate:{title:op.result.title,question:op.result.question,development:op.result.development,neededEvidence:op.result.neededEvidence},published,completedCampaign:loadArtistCampaign()});
       const req=await store.begin(reviewId,'step',()=>({prompt,maximum:provider.quote(constitution,prompt)}));
       if(req.replay)return {status:'artist_intention_review_pending'};
       const answer=await provider.generate(intentionEditor,prompt,null,object({accepted:{type:'boolean'},evidence:boundedText(4000),reason:boundedText(4000)}));

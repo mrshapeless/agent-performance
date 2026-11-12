@@ -321,3 +321,15 @@ test('malformed concept review retries once, preserves failure and cannot loop',
  const original=provider.generate;let reviews=0;provider.generate=async(s,p,a,schema)=>{if(schema.properties.standaloneWork){reviews++;return {costMicrodollars:1,value:{...verdict,reason:'x'.repeat(1601)}};}return original(s,p,a,schema);};
  for(let i=0;i<10;i++)await run();assert.equal(reviews,2);assert.equal(counts().posts,0);
 }));
+
+test('planner and independent editor receive actual production capabilities before material',()=>fixture(async({store,provider})=>{
+ provider.local=true;const prompts=[];const generate=provider.generate;
+ provider.generate=async(s,p,a,schema)=>{prompts.push(p);return generate(s,p,a,schema);};
+ const capabilities={image:true,character:false,video:false};
+ await projectCursor(store,provider,direction,new Date(),capabilities);
+ await projectCursor(store,provider,direction,new Date(),capabilities);
+ assert.equal(prompts.length,2);
+ for(const p of prompts)assert.ok(p.includes('"productionCapabilities":{"image":true,"character":false,"video":false}'));
+ assert.ok(prompts[0].includes('not artistic genre preferences'));
+ assert.ok(prompts[1].includes('Do not assume an operator will supply missing media or sound'));
+}));
