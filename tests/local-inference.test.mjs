@@ -61,6 +61,8 @@ test('complete artistic material uses planner while critics and short drafts sta
  const {artistDraftSchema,artistReviewSchema}=await import('../src/artist-originals.mjs');
  assert.equal(inferenceRole(artistDraftSchema),'planner');
  assert.equal(inferenceRole(artistReviewSchema),'critic');
+ const {packageReviewSchema}=await import('../src/artist-projects.mjs');
+ assert.equal(inferenceRole(packageReviewSchema),'critic');
  assert.equal(inferenceRole({properties:{question:{type:'string'}}}),'planner');
  assert.equal(inferenceRole({properties:{alternatives:{type:'array'},selected:{type:'integer'}}}),null);
  assert.equal(inferenceRole(null),null);

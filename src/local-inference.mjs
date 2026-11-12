@@ -10,7 +10,7 @@ const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Obje
 const digest=v=>createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
 export function inferenceRole(schema){
  const p=schema?.properties;
- if(p?.accepted)return 'critic';
+ if(p?.accepted||(p?.decision&&p?.claims&&p?.completeInDeliveredForm))return 'critic';
  // A complete authored work includes artistic planning, not just caption drafting.
  if(p?.question||(p?.intention&&p?.alternatives&&p?.selectedId&&p?.manuscript))return 'planner';
  return null;
