@@ -53,7 +53,9 @@ export async function projectCursor(store,provider,direction,now,productionCapab
     const recent=(await store.pool.query("SELECT payload FROM agent_events WHERE kind='artist_project_checkpoint' ORDER BY seq DESC LIMIT 6")).rows.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
     const switchContext=checkpoint?.state==='shelved'?{instruction:'Choose a genuinely different artistic question and construction. Do not rename, paraphrase or continue the shelved topic. Prefer a work whose required evidence and production can actually be completed with available materials. Preserve editorial standards; do not invent evidence.',shelved:checkpoint}:null;
     const topics=new Map();for(const p of [...shelved,...recent])if(!topics.has(p.projectId))topics.set(p.projectId,p);
-    const topicHistory=[...topics.values()].map(({projectId,state,title,question})=>({projectId,state,title,question}));
+    // Keep the complete guard history above, but do not prime the writer by
+    // repeating full rejected proposals as apparent examples to imitate.
+    const topicHistory=[...topics.values()].map(({projectId,state,title})=>({projectId,state,title}));
     const plannerSwitch=switchContext?{instruction:switchContext.instruction,excludedTopics:topicHistory.filter(p=>p.state==='shelved')}:null;
     const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 5")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
     const completedCampaign=loadArtistCampaign();
@@ -63,7 +65,7 @@ export async function projectCursor(store,provider,direction,now,productionCapab
     if(req.replay)return {status:'artist_project_pending'};
     let cost=req.maximum;
     try{
-      const r=await provider.generate(projectDirection,prompt,null,projectSchema);cost=r.costMicrodollars;
+      const r=await provider.generate(projectDirection+' This call selects a NEW project. previousProjects and excludedTopics are retired negative examples, never candidate answers. Do not reuse their titles, subjects, or question templates. Begin from an unrelated setting and concrete physical situation, within the supplied production capabilities. Choose your own artistic form; this is no genre quota.',prompt,null,projectSchema);cost=r.costMicrodollars;
       const v={...r.value,nextReviewHours:Math.min(r.value?.nextReviewHours,2)};
       if(!['develop','defer'].includes(v?.decision)||!['title','question','reasonToExist','development','neededEvidence'].every(k=>bounded(v[k],2000))||!Number.isInteger(v.nextReviewHours)||v.nextReviewHours<1||v.nextReviewHours>2)throw Error('INVALID_PROJECT');
       const revisionContext=checkpoint?.state==='revision_requested'?{projectId:checkpoint.projectId,critique:checkpoint.critique??null,nextAction:checkpoint.nextAction??null}:null;
