@@ -346,6 +346,10 @@ test('capability deployment preserves an admitted project with material already 
  assert.equal(counts().calls,before);
  assert.equal(await store.operation(project.id+'-intention-local-review-v4-capabilities'),null);
  assert.equal((await store.operation('x-plan-'+project.id+'-0')).status,'pending');
+ await store.complete('x-plan-'+project.id+'-0',0,{action:'artist_draft_internal'});
+ assert.equal((await projectCursor(store,provider,direction,new Date(),{image:true,character:false,video:false})).status,'artist_intention_reviewed');
+ assert.equal(counts().calls,before+1);
+ assert.equal((await store.operation(project.id+'-intention-local-review-v4-capabilities')).status,'complete');
 }));
 
 test('material editor receives accepted intention and can reject a substituted artifact',()=>fixture(async({provider,run,counts})=>{

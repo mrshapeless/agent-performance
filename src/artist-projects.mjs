@@ -103,7 +103,9 @@ export async function projectCursor(store,provider,direction,now,productionCapab
   if(provider.local){
     // Finish work already admitted under the previous review before starting a
     // new policy operation. A pending material owns the serialized agent lane.
-    const legacyReview=await store.operation(id+'-intention-local-review-v3');
+    const previousReview=await store.operation(id+'-intention-local-review-v3');
+    const inFlight=productionCapabilities&&previousReview?(await store.pool.query("SELECT id FROM agent_operations WHERE status='pending' AND position($1 in id)>0 LIMIT 1",[id])).rows.length>0:false;
+    const legacyReview=!productionCapabilities||inFlight?previousReview:null;
     const reviewId=id+(productionCapabilities&&!legacyReview?'-intention-local-review-v4-capabilities':'-intention-local-review-v3');let review=legacyReview??await store.operation(reviewId);
     if(!review){
       const published=(await store.pool.query("SELECT payload,created FROM agent_events WHERE kind='x_post' ORDER BY seq DESC LIMIT 8")).rows.map(r=>({created:r.created,...(typeof r.payload==='string'?JSON.parse(r.payload):r.payload)}));
