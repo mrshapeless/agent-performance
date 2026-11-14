@@ -329,7 +329,7 @@ test('creative revision sees the same busy tools as semantic validation',async()
   if(schema===critiqueSchema){const c=critique();c.assessments[0].materiallyRepeated=true;return {costMicrodollars:1,value:c};}
   if(p.startsWith('Revise this executable')){
    revisionChecked=true;assert.ok(!schema.properties.action.enum.includes('research'));
-   assert.ok(schema.properties.action.enum.includes('prototype'));
+   assert.ok(!schema.properties.action.enum.includes('prototype'));
    return {costMicrodollars:1,value:{...candidate(),proposal:'A materially revised synthetic work.'}};
   }
   return {costMicrodollars:1,value:candidate()};
@@ -375,4 +375,11 @@ test('reviewed external result triggers reflection without six posts and resumes
   assert.equal((await resultDrivenWorkspaceStep(s,provider,new Date(now.getTime()+7200000))).status,'workspace_provider_blocked');
   assert.equal(calls,1);assert.equal((await db.query("SELECT id FROM agent_operations WHERE id LIKE '%-results-%-snapshot'")).rows.length,before.length);
  }finally{await db.close();}
+});
+
+test('disabled Cursor cannot be proposed even with an empty external queue',()=>{
+ const snapshot={studio,evidence:[],toolProjects:[]};
+ assert.ok(!candidateContract(snapshot).properties.action.enum.includes('prototype'));
+ assert.ok(candidateContract(snapshot).properties.action.enum.includes('research'));
+ assert.throws(()=>validateCandidate(candidate('prototype'),snapshot),/INVALID/);
 });

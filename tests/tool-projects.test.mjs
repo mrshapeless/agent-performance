@@ -69,24 +69,29 @@ test('empty opportunity check is bounded per hour and can honestly defer without
 });
 
 
-test('restored Cursor executes new briefs but abandoned history cannot restart',async()=>{
- const {validateToolBrief,toolBriefSchema}=await import('../src/tool-projects.mjs');
- assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok','cursor']);
- const brief={tool:'cursor',question:'What changes when a visitor scrubs time?',brief:'Build a small timing study.',success:'Scrubbing visibly changes the frame.',why:'Test timing.'};
- assert.equal(validateToolBrief(brief).tool,'cursor');
+test('disabled Cursor is retired idempotently without losing history and cannot block Grok',async()=>{
+ const {validateToolBrief,toolBriefSchema,toolOpportunityStep,reconcileDisabledToolProjects}=await import('../src/tool-projects.mjs');
+ assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok']);
+ const brief={tool:'cursor',question:'Test?',brief:'Synthetic brief',success:'Synthetic check',why:'Synthetic purpose'};
+ assert.throws(()=>validateToolBrief(brief),/INVALID_TOOL_BRIEF/);
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
- const store={pool:{query:(q,a)=>db.query(q,a)}};
+ const c={query:async(q,a)=>{const r=await db.query(q,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
+ const store=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
  try{
-  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review) VALUES('old','cursor','{}','reviewed','saved partial report',$1)",[JSON.stringify({decision:'abandon'})]);
-  const call=(action,id)=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action,id,result:'fake'})}),store,{});
-  for(const action of ['start','revise','result','review']){const r=await call(action,'old');assert.equal(r.status,409);assert.equal((await r.json()).error,'PROJECT_ABANDONED');}
-  assert.equal(await enqueueToolProject(store.pool,'new',brief),'new');
-  assert.equal(await enqueueToolProject(store.pool,'duplicate',brief),'new');
-  assert.equal((await (await call('start','new')).json()).claimed,true);
-  assert.equal((await call('start','new')).status,409);
-  await toolProjectAPI(new Request('https://example.org/api/tool-projects'),store,{});
-  const rows=(await db.query('SELECT * FROM agent_tool_projects ORDER BY id')).rows;
-  assert.equal(rows.find(r=>r.id==='new').state,'running');assert.equal(rows.find(r=>r.id==='old').result,'saved partial report');
+  await store.begin('birth','birth',()=>({maximum:0}));await store.complete('birth',0,{name:'Synthetic'});
+  for(const state of ['queued','running','returned','reviewed'])await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review) VALUES($1,'cursor','{}',$2,'preserved report',$3)",[state,state,state==='reviewed'?JSON.stringify({decision:'revise'}):null]);
+  await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review) VALUES('accepted','cursor','{}','reviewed','accepted report',$1)",[JSON.stringify({decision:'accept'})]);
+  const provider={quote:()=>1,generate:async(_c,prompt,_m,schema)=>{calls++;assert.deepEqual(schema.properties.tool.enum,['grok','none']);assert.match(prompt,/Grok research only/);return {costMicrodollars:1,value:{decision:'queue',reason:'A useful research question',...brief,tool:'grok'}};}};
+  assert.equal((await toolOpportunityStep(store,provider,new Date('2026-11-14T13:00:00Z'))).status,'tool_project_queued');
+  assert.equal(calls,1);
+  assert.equal((await reconcileDisabledToolProjects(store)).rows.length,0);
+  for(const state of ['queued','running','returned','reviewed']){
+   const row=(await db.query('SELECT * FROM agent_tool_projects WHERE id=$1',[state])).rows[0];assert.equal(row.review.decision,'abandon');assert.equal(row.result,'preserved report');assert.equal(row.deliveries.length,state==='reviewed'?1:0);
+   for(const action of ['start','revise','result','review'])assert.equal((await toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify({action,id:state,result:'overwrite'})}),store,provider)).status,409);
+  }
+  assert.equal((await db.query("SELECT review FROM agent_tool_projects WHERE id='accepted'")).rows[0].review.decision,'accept');
+  await assert.rejects(enqueueToolProject(store.pool,'new-cursor',brief),/INVALID_TOOL_BRIEF/);
+  assert.equal((await toolOpportunityStep(store,provider,new Date('2026-11-14T14:00:00Z'))).status,'tool_work_outstanding');assert.equal(calls,1);
  }finally{await db.close();}
 });
 
