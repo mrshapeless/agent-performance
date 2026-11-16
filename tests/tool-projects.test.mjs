@@ -163,3 +163,24 @@ test('scope migration retires unstarted legacy work once, preserves history and 
   assert.equal(queued.length,1);assert.equal(queued[0].brief.researchScope,researchScope);assert.equal(queued[0].brief.deliveryContract.version,2);
  }finally{await db.close();}
 });
+
+test('local pending inference is not failed or duplicated and a rejected brief has one bounded repair',async()=>{
+ const {toolOpportunityStep,researchScope}=await import('../src/tool-projects.mjs');
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const c={query:async(q,a)=>{const r=await db.query(q,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
+ const store=new PostgresStore({query:c.query,connect:async()=>c});
+ try{
+  await store.begin('birth','birth',()=>({maximum:0}));await store.complete('birth',0,{name:'Synthetic'});
+  const now=new Date('2026-11-16T22:00:00Z'),id='tool-opportunity-v2-'+Math.floor(now/3600000);let calls=0;
+  const pending={quote:()=>0,generate:async()=>{calls++;throw Object.assign(Error('LOCAL_INFERENCE_PENDING'),{code:'LOCAL_INFERENCE_PENDING'});}};
+  assert.equal((await toolOpportunityStep(store,pending,now)).status,'tool_opportunity_pending');
+  assert.equal((await store.operation(id)).status,'pending');
+  await toolOpportunityStep(store,pending,now);assert.equal(calls,1);
+  await store.complete(id,0,{action:'tool_project_failed',failureCode:'INVALID_TOOL_BRIEF'});
+  const invalid={quote:()=>0,generate:async()=>{calls++;return {costMicrodollars:0,value:{decision:'queue',reason:'An old schema response',tool:'grok',question:'Old',brief:'Old',success:'Old',why:'Old'}};}};
+  assert.equal((await toolOpportunityStep(store,invalid,now)).status,'tool_opportunity_failed');
+  await toolOpportunityStep(store,invalid,now);assert.equal(calls,2);
+  assert.equal((await store.operation(id+'-scope-repair')).status,'complete');
+  assert.equal((await db.query('SELECT * FROM agent_tool_projects')).rows.length,0);
+ }finally{await db.close();}
+});

@@ -59,8 +59,10 @@ export async function toolOpportunityStep(store,provider,now=new Date()){
  await reconcileDisabledToolProjects(store);await reconcileResearchScope(store);
  const pending=(await store.pool.query("SELECT id,tool,state FROM agent_tool_projects WHERE tool='grok' AND (state IN ('queued','running','returned') OR (state='reviewed' AND review->>'decision'='revise' AND jsonb_array_length(deliveries)<2)) ORDER BY created LIMIT 1")).rows[0];
  if(pending)return {status:'tool_work_outstanding',id:pending.id};
- const id='tool-opportunity-v2-'+Math.floor(now.getTime()/3600000);
- const previous=await store.operation(id);
+ let id='tool-opportunity-v2-'+Math.floor(now.getTime()/3600000);
+ let previous=await store.operation(id);
+ // A verified rejected brief may be repaired once; pending inference is never duplicated.
+ if(previous?.status==='complete'&&previous.result?.failureCode==='INVALID_TOOL_BRIEF'){id+='-scope-repair';previous=await store.operation(id);}
  if(previous)return {status:'tool_opportunity_checked',replay:true,...(previous.result?.reason?{reason:previous.result.reason}:{}),...(previous.result?.failureCode?{failureCode:previous.result.failureCode}:{})};
  const goals=(await store.pool.query("SELECT id,status,objective,success,updated FROM agent_goals ORDER BY updated DESC LIMIT 6")).rows;
  const past=(await store.pool.query("SELECT id,tool,brief,review,left(result,1800) AS result FROM agent_tool_projects ORDER BY updated DESC LIMIT 4")).rows;
@@ -80,7 +82,7 @@ export async function toolOpportunityStep(store,provider,now=new Date()){
   const brief=validateToolBrief(v);let projectId;
   await store.complete(id,cost,{action:'tool_project_chosen',summary:'Agent selected useful external work; execution and acceptance remain unconfirmed.'},null,async c=>{projectId=await enqueueToolProject(c,id,brief);});
   return {status:'tool_project_queued',id:projectId};
- }catch(error){const code=/^Gemini HTTP (\d{3})/.exec(error?.message??'')?.[1];await store.complete(id,cost,{action:'tool_project_failed',failureCode:code?'GEMINI_HTTP_'+code:['INVALID_TOOL_OPPORTUNITY','INVALID_TOOL_BRIEF'].includes(error.message)?error.message:'TOOL_SELECTION_FAILED',summary:'External task selection failed; no result claimed.'});return {status:'tool_opportunity_failed'};}
+ }catch(error){if(error?.code==='LOCAL_INFERENCE_PENDING'||error?.message==='LOCAL_INFERENCE_PENDING')return {status:'tool_opportunity_pending',reason:'Local planner is still running; resume the same inference without duplication.'};const code=/^Gemini HTTP (\d{3})/.exec(error?.message??'')?.[1];await store.complete(id,cost,{action:'tool_project_failed',failureCode:code?'GEMINI_HTTP_'+code:['INVALID_TOOL_OPPORTUNITY','INVALID_TOOL_BRIEF'].includes(error.message)?error.message:'TOOL_SELECTION_FAILED',summary:'External task selection failed; no result claimed.'});return {status:'tool_opportunity_failed'};}
 }
 export async function toolProjectAPI(request,store,provider){
  const reply=(v,s=200)=>Response.json(v,{status:s,headers:{'Cache-Control':'no-store'}});
