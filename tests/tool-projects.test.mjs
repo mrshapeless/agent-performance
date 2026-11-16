@@ -24,7 +24,7 @@ test('tool result returns to memory only after agent review; duplicate return ca
  const s=new PostgresStore({query:c.query,connect:async()=>c});
  try{
   await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});
-  const brief={tool:'grok',question:'Can a pause change a scene?',brief:'Make a small browser scene.',success:'Pause visibly changes the scene.',why:'Explore attention.'};
+  const brief={tool:'grok',researchScope:'fresh-x-narratives-v1',question:'Can a pause change a scene?',brief:'Make a small browser scene.',success:'Pause visibly changes the scene.',why:'Explore attention.'};
   assert.equal(await s.transaction(c=>enqueueToolProject(c,'test-one',brief)),'test-one');
   assert.equal(await s.transaction(c=>enqueueToolProject(c,'test-two',brief)),'test-one');
   const call=b=>toolProjectAPI(new Request('https://example.org/api/tool-projects',{method:'POST',body:JSON.stringify(b)}),s,{quote:()=>1,generate:async()=>({costMicrodollars:1,value:{decision:'revise',reason:'The report does not establish the pause interaction.',nextStep:'Verify the interaction and return actual observations.'}})});
@@ -38,7 +38,7 @@ test('tool result returns to memory only after agent review; duplicate return ca
   assert.match((await s.latest('workspace_note')).text,/Verify the interaction/);
   assert.equal((await s.pool.query('SELECT state FROM agent_tool_projects')).rows[0].state,'reviewed');
   const saved=(await s.pool.query('SELECT brief FROM agent_tool_projects')).rows[0].brief;
-  assert.equal(saved.deliveryContract.version,1);
+  assert.equal(saved.deliveryContract.version,2);
   await call({action:'revise',id:'test-one'});
   const revision=(await s.pool.query('SELECT * FROM agent_tool_projects')).rows[0];
   assert.equal(revision.state,'running');assert.equal(revision.result,null);
@@ -54,7 +54,7 @@ test('production tick selects external work without posts or workspace success, 
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};const s=new PostgresStore({query:c.query,connect:async()=>c});let calls=0;
  try{await s.begin('birth','birth',()=>({maximum:0}));await s.complete('birth',0,{name:'Synthetic'});await s.transaction(c=>s.append(c,'studio_revision',{summary:'Active studio'}));
- const provider={quote:()=>1,generate:async()=>{calls++;return {costMicrodollars:1,value:{decision:'queue',reason:'Concrete unanswered interaction question',tool:'grok',question:'What makes a pause meaningful?',brief:'Compare three public interactive works with links and test implications.',success:'Three checked sources and one falsifiable next experiment.',why:'Choose interaction before building.'}}}};
+ const provider={quote:()=>1,generate:async()=>{calls++;return {costMicrodollars:1,value:{decision:'queue',reason:'Concrete unanswered interaction question',tool:'grok',researchScope:'fresh-x-narratives-v1',question:'What makes a pause meaningful?',brief:'Compare three public interactive works with links and test implications.',success:'Three checked sources and one falsifiable next experiment.',why:'Choose interaction before building.'}}}};
  const h=createHandler({env:{CRON_SECRET:'s'.repeat(40),AGENT_ENABLED:'true',VERCEL_ENV:'production'},openStore:async()=>s,createProvider:()=>provider,now:()=>new Date('2026-11-04T20:00:00Z')});
  const response=await h(new Request('https://example.test/api/tick',{headers:{authorization:'Bearer '+'s'.repeat(40)}}));assert.equal(response.status,200);assert.equal((await response.json()).status,'tool_project_queued');assert.equal(calls,1);
  const {toolOpportunityStep}=await import('../src/tool-projects.mjs');assert.equal((await toolOpportunityStep(s,provider,new Date('2026-11-04T23:00:00Z'))).status,'tool_work_outstanding');assert.equal(calls,1);assert.equal((await db.query('SELECT * FROM agent_tool_projects')).rows.length,1);
@@ -72,7 +72,7 @@ test('empty opportunity check is bounded per hour and can honestly defer without
 test('disabled Cursor is retired idempotently without losing history and cannot block Grok',async()=>{
  const {validateToolBrief,toolBriefSchema,toolOpportunityStep,reconcileDisabledToolProjects}=await import('../src/tool-projects.mjs');
  assert.deepEqual(toolBriefSchema.properties.tool.enum,['grok']);
- const brief={tool:'cursor',question:'Test?',brief:'Synthetic brief',success:'Synthetic check',why:'Synthetic purpose'};
+ const brief={tool:'cursor',researchScope:'fresh-x-narratives-v1',question:'Test?',brief:'Synthetic brief',success:'Synthetic check',why:'Synthetic purpose'};
  assert.throws(()=>validateToolBrief(brief),/INVALID_TOOL_BRIEF/);
  const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
  const c={query:async(q,a)=>{const r=await db.query(q,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
@@ -134,5 +134,32 @@ test('known failed reviews can retry once without replaying uncertain operations
   assert.equal((await (await call()).json()).status,'review_failed');assert.equal(calls,1);
   assert.equal((await (await call()).json()).replay,true);assert.equal(calls,1);
   assert.equal((await db.query("SELECT result FROM agent_tool_projects WHERE id='retry-test'")).rows[0].result,'preserved result');
+ }finally{await db.close();}
+});
+
+test('scope migration retires unstarted legacy work once, preserves history and allows fresh X research',async()=>{
+ const {researchScope,reconcileResearchScope,toolOpportunityStep,validateToolBrief}=await import('../src/tool-projects.mjs');
+ const db=new PGlite();await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));
+ const c={query:async(q,a)=>{const r=await db.query(q,a);return {...r,rowCount:r.affectedRows||r.rows.length}},release(){}};
+ const store=new PostgresStore({query:c.query,connect:async()=>c});
+ try{
+  for(const state of ['queued','running','returned','reviewed'])await db.query("INSERT INTO agent_tool_projects(id,tool,brief,state,result,review) VALUES($1,'grok',$2,$1,'preserved source report',$3)",[state,JSON.stringify({question:'Historical render specification'}),state==='reviewed'?JSON.stringify({decision:'accept'}):null]);
+  assert.deepEqual((await reconcileResearchScope(store)).rows.map(r=>r.id),['queued']);
+  assert.equal((await reconcileResearchScope(store)).rows.length,0);
+  const rows=(await db.query('SELECT * FROM agent_tool_projects')).rows;
+  assert.equal(rows.find(r=>r.id==='queued').review.decision,'abandon');
+  assert.equal(rows.find(r=>r.id==='queued').brief.question,'Historical render specification');
+  for(const state of ['running','returned','reviewed'])assert.equal(rows.find(r=>r.id===state).state,state);
+  assert.ok(rows.every(r=>r.result==='preserved source report'));
+  await db.query("DELETE FROM agent_tool_projects WHERE state IN ('running','returned')");
+  await store.begin('birth','birth',()=>({maximum:0}));await store.complete('birth',0,{name:'Synthetic'});
+  const brief={tool:'grok',researchScope,question:'Which current gaming conversation offers an original video idea?',brief:'Compare original X conversations from the last 24 hours; inspect posts, media and reactions, verify dates and URLs, identify one creative implication.',success:'Checked primary posts and counterexamples with a concrete original idea.',why:'Respond to a current conversation rather than repeat a visual treatment.'};
+  assert.throws(()=>validateToolBrief({...brief,researchScope:undefined}),/INVALID_TOOL_BRIEF/);
+  let calls=0;const provider={quote:()=>1,generate:async(_c,prompt)=>{calls++;assert.match(prompt,/fresh X narratives/);assert.match(prompt,/last 24 hours/);assert.doesNotMatch(prompt,/potential Alidade website work/);return {costMicrodollars:1,value:{decision:'queue',reason:'Discover current conversations',...brief}};}};
+  const now=new Date('2026-11-16T23:00:00Z');
+  assert.equal((await toolOpportunityStep(store,provider,now)).status,'tool_project_queued');
+  assert.equal((await toolOpportunityStep(store,provider,now)).status,'tool_work_outstanding');assert.equal(calls,1);
+  const queued=(await db.query("SELECT brief FROM agent_tool_projects WHERE state='queued'")).rows;
+  assert.equal(queued.length,1);assert.equal(queued[0].brief.researchScope,researchScope);assert.equal(queued[0].brief.deliveryContract.version,2);
  }finally{await db.close();}
 });
