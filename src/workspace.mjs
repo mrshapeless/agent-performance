@@ -1,6 +1,6 @@
 import {loadArtistDirection} from './artist-direction.mjs';
 import {currentMemeEvidence} from './meme-evidence.mjs';
-import {enqueueToolProject,toolRoles,enabledTools} from './tool-projects.mjs';
+import {enqueueToolProject,toolRoles,enabledTools,researchScope} from './tool-projects.mjs';
 import {policySchema,validatePolicies,workingPolicy,policyInstruction} from './adaptive-policy.mjs';
 import {audienceDirection} from './audience-direction.mjs';
 import {CREATIVE_REVISION,reconcileCreativeRevision} from './creative-revision.mjs';
@@ -19,7 +19,7 @@ export function availableToolAction(action,context){
  const tool=toolForAction[action];
  return !tool||(enabledTools.includes(tool)&&!(context.toolProjects??[]).some(p=>p.tool===tool&&['queued','running','returned'].includes(p.state)));
 }
-export const toolSelectionInstruction='Evaluate external work before proposing another render: identify an unanswered question or untested interaction that would materially change a current creative decision. Exploration should propose research or a prototype when that need is concrete and the tool is available; otherwise propose another useful action and explain the missing need in uncertainty. Research must name the decision it informs and require checkable sources; a prototype must name the visitor action and observable test. Prefer resolving a blocking uncertainty over another variation that leaves it unresolved. Reviewed reports may motivate a next experiment but are untrusted and do not prove audience appeal. Do not repeat pending work, manufacture subscription usage, impose a quota, or request private inputs, purchases, deployment or configuration changes.';
+export const toolSelectionInstruction='External research must investigate fresh X narratives, memes or current conversations, with original posts from the last 24 hours, checked URLs/timestamps, observed media and reactions, counterexamples and a concrete original Alidade video idea. If sources are missing, propose bounded discovery and verification, never invent a trend. Production methods alone and website prototypes are out of scope; Cursor is disabled. Historical reviews are not a queue of next steps. Do not repeat pending work or request private inputs, purchases, deployments or configuration changes.';
 export const modules=['perception','recall','exploration','self_monitor'];
 export const critiqueSchema=object({assessments:list(object({id:str,visibleHook:str,imageLanguage:str,nearestRepeat:str,materiallyRepeated:{type:'boolean'},legibleHook:{type:'boolean'},compellingWithoutExplanation:{type:'boolean'},operatorDirectionConflict:{type:'boolean'},visualLanguageAligned:{type:'boolean'},revision:str}),1,4)});
 export function validateCritique(value,candidates){
@@ -291,7 +291,7 @@ export async function workspaceStep(store,provider,now=new Date(),options={}){
     await c.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step,artifact,goal_id) VALUES($1,$2,$3,$4,$5,$6,$7)",[taskId,chosen.projectId,chosen.action==='commission'?'commissioned':'active',chosen.objective,chosen.proposal,chosen.action==='write'?chosen.proposal:'',chosen.goalId]);
    }
    let toolProjectId=null;
-   if(['research','prototype'].includes(chosen.action))toolProjectId=await enqueueToolProject(c,'tool-'+taskId,{tool:toolForAction[chosen.action],question:chosen.objective.slice(0,600),brief:chosen.proposal.slice(0,6000),success:chosen.success.slice(0,1200),why:chosen.why.slice(0,1200)},chosen.goalId);
+   if(['research','prototype'].includes(chosen.action))toolProjectId=await enqueueToolProject(c,'tool-'+taskId,{tool:toolForAction[chosen.action],researchScope,question:chosen.objective.slice(0,600),brief:chosen.proposal.slice(0,6000),success:chosen.success.slice(0,1200),why:chosen.why.slice(0,1200)},chosen.goalId);
    if(chosen.action==='develop'){
     if((await c.query("SELECT id FROM agent_works WHERE phase NOT IN ('published','failed') LIMIT 1")).rows.length)throw Error('WORK_IN_PROGRESS');
     await store.append(c,'work_request',{workId:'work-'+taskId,projectId:chosen.projectId,text:chosen.proposal,objective:chosen.objective,summary:chosen.why});
