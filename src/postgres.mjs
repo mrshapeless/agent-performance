@@ -141,11 +141,11 @@ export class PostgresStore {
       cognitionHealth, blocked: cognitionHealth.status==='failed'||cognitionHealth.status==='stale'||(!!started && Date.now() - Date.parse(started) > 120_000),
       lastCompletedAt: last?.created ?? null, strategyRevisions: revision, schedule: 'hourly', reflectionEvery: 6 };
   }
-  async publicJournal() {
+  async publicJournal(memoryOnly=false) {
     const { rows } = await this.pool.query(`SELECT * FROM (
       (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind='identity' ORDER BY seq DESC LIMIT 1)
       UNION ALL
-      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','workspace_broadcast','workspace_outcome','workspace_note','work_started','work_progress','work_published','work_failed','hourly_planning_failed','hourly_review_failed','hourly_editorial_blocked','meme_research_required','artist_preparation_failed','artist_review_failed','artist_publication_blocked','artist_publish_rejected') ORDER BY seq DESC LIMIT 50)
+      (SELECT seq,kind,payload,created,digest FROM agent_events WHERE kind IN ('draft_text','wait','reflect','appearance_brief','appearance_image','x_draft','x_post','account_profile','account_connection','x_failed','observation','dialogue','x_reply','audience_alert','observation_error','record_note','banner_brief','banner_image','art_image','art_video','media_review','media_started','media_failed','studio_revision','studio_failed','cognitive_decision','cognition_failed','workspace_broadcast','workspace_outcome','workspace_note','work_started','work_progress','work_published','work_failed','hourly_planning_failed','hourly_review_failed','hourly_editorial_blocked','meme_research_required','artist_preparation_failed','artist_review_failed','artist_publication_blocked','artist_publish_rejected') ${memoryOnly ? "AND kind IN ('identity','record_note','x_post','x_reply','reflect','workspace_broadcast','workspace_note','workspace_outcome','art_image','art_video','media_review','work_published')" : ''} ORDER BY seq DESC LIMIT ${memoryOnly ? 500 : 50})
       ) public_records ORDER BY seq DESC`);
     return rows.map(row => {
       const p = JSON.parse(row.payload);

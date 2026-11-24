@@ -1,5 +1,5 @@
-const labels={workspace_broadcast:'Decision',workspace_note:'Memory note',workspace_outcome:'Outcome',studio_revision:'Studio revision',reflect:'Strategy revision',cognitive_decision:'Decision',media_review:'Artist review',art_image:'Image work',art_video:'Film work',x_post:'Publication',draft_text:'Draft',identity:'Identity'};
-const lane=k=>k.includes('outcome')||k==='media_review'?'outcome':k.includes('broadcast')||k==='cognitive_decision'?'decision':['art_image','art_video','x_post','draft_text'].includes(k)?'work':'memory';
+const labels={x_reply:'Conversation reply',record_note:'Memory note',workspace_broadcast:'Decision',workspace_note:'Memory note',workspace_outcome:'Outcome',studio_revision:'Studio revision',reflect:'Strategy revision',cognitive_decision:'Decision',media_review:'Artist review',art_image:'Image work',art_video:'Film work',x_post:'Publication',draft_text:'Draft',identity:'Identity'};
+const lane=k=>k.includes('outcome')||k==='media_review'?'outcome':k.includes('broadcast')||k==='cognitive_decision'?'decision':['art_image','art_video','x_post','x_reply','draft_text'].includes(k)?'work':'memory';
 const str=x=>typeof x==='string'?x:'';
 export function memoryGraph(data){
  const nodes=[],edges=[],ids=new Set();let omitted=0;
@@ -14,4 +14,10 @@ export function memoryGraph(data){
  if(b)for(const e of b.evidence||[]){const id='event:'+e;if(ids.has(id))edges.push({source:id,target:'attention',kind:'cited evidence'});else omitted++;}
  const decisions=nodes.filter(n=>!n.current&&n.type==='decision');for(let i=1;i<decisions.length;i++)edges.push({source:decisions[i-1].id,target:decisions[i].id,kind:'sequence'});
  return {nodes,edges,omitted,latest,events:events.length};
+}
+
+export function mergeMemory(server,browser){
+ const seen=new Set(),events=[];
+ for(const e of [...(browser.events??[]),...(server.events??[])]){const key=e.content?.url??String(e.seq);if(!seen.has(key)){seen.add(key);events.push(e);}}
+ return {...server,events,runtime:{...server.runtime,workspace:{}}};
 }
