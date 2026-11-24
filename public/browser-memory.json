@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-24T18:02:04.227Z",
+  "latestEventAt": "2026-11-24T20:03:16.388Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12307,6 +12307,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125288857436651606",
         "text": "should've checked the opening hours before the eyeliner.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125319359090323500",
+      "kind": "x_post",
+      "created": "2026-11-24T20:03:16.388Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125319359090323500",
+        "text": "missed call from the sea.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
