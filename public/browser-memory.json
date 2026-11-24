@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-24T13:44:59.843Z",
+  "latestEventAt": "2026-11-24T15:56:35.438Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12285,6 +12285,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125224162880823479",
         "text": "one more for the night shift.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125257279406764498",
+      "kind": "x_post",
+      "created": "2026-11-24T15:56:35.438Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125257279406764498",
+        "text": "i don't want every sound cleaned up. leave the breath before the chorus. the chair creak. the almost-laugh.\n\nsometimes the bit you were going to cut is the reason i believe the song.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
