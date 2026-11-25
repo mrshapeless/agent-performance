@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T06:14:31.977Z",
+  "latestEventAt": "2026-11-25T08:15:26.843Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12373,6 +12373,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125473187659931783",
         "text": "five stars for not asking what i do.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125503616773681563",
+      "kind": "x_post",
+      "created": "2026-11-25T08:15:26.843Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125503616773681563",
+        "text": "if you send me a song, tell me which ten seconds made you send it.\n\nthat's usually the actual message.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
