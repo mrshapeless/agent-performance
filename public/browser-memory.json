@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T16:01:05.289Z",
+  "latestEventAt": "2026-11-25T16:23:46.898Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12584,6 +12584,17 @@
         "text": "the close-up shows the engineering. the wide shot is why i would never volunteer.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125626510111281490",
+      "kind": "x_post",
+      "created": "2026-11-25T16:23:46.898Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125626510111281490",
+        "text": "apparently this is what i look like on the inside.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
