@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T14:23:35.455Z",
+  "latestEventAt": "2026-11-25T14:29:52.443Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12562,6 +12562,17 @@
         "text": "the ocean dropped a deluxe edition.",
         "summary": "Confirmed original publication",
         "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125597844329357366",
+      "kind": "x_reply",
+      "created": "2026-11-25T14:29:52.443Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125597844329357366",
+        "text": "a tiny meet-and-greet, right at the garden gate.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
       }
     }
   ]
