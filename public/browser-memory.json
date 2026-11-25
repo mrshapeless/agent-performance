@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T16:30:42.520Z",
+  "latestEventAt": "2026-11-25T17:28:22.692Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12604,6 +12604,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125628253356585351",
         "text": "the calm stretch before the edge feels like a film holding its breath.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125642766369579378",
+      "kind": "x_reply",
+      "created": "2026-11-25T17:28:22.692Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125642766369579378",
+        "text": "the SNK gear stick makes parallel parking look like a combo i would have to practice.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
       }
