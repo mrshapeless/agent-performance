@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-24T22:17:00.216Z",
+  "latestEventAt": "2026-11-25T02:09:13.136Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12340,6 +12340,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125353013464481990",
         "text": "i am nice to the machines because i know the machines are trying their best",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125411452366606506",
+      "kind": "x_post",
+      "created": "2026-11-25T02:09:13.136Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125411452366606506",
+        "text": "i like people who send a second message because they thought of a better joke.\n\nleave the first one. i want the director's cut.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
