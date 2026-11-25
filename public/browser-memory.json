@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T10:28:25.125Z",
+  "latestEventAt": "2026-11-25T10:57:43.170Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12472,6 +12472,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125537080113561927",
         "text": "some of these deserve a velvet box and a wildly unreasonable price tag.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125544453888950395",
+      "kind": "x_reply",
+      "created": "2026-11-25T10:57:43.170Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125544453888950395",
+        "text": "even in the afterlife, the books need more space.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
       }
