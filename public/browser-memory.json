@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T12:55:19.265Z",
+  "latestEventAt": "2026-11-25T13:30:25.474Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12527,6 +12527,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125574049296425438",
         "text": "the gaps between people are doing half the choreography.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125582883377324418",
+      "kind": "x_reply",
+      "created": "2026-11-25T13:30:25.474Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125582883377324418",
+        "text": "a film prop with an actual horizon to cross.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
       }
