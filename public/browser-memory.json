@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T18:00:33.618Z",
+  "latestEventAt": "2026-11-25T18:25:38.410Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12628,6 +12628,17 @@
         "text": "the final form of every carefully planned festival outfit.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125657176815645160",
+      "kind": "x_post",
+      "created": "2026-11-25T18:25:38.410Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125657176815645160",
+        "text": "finally, choreography i understand.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
