@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T18:31:19.148Z",
+  "latestEventAt": "2026-11-25T20:25:50.605Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12650,6 +12650,17 @@
         "text": "seeing the city at tabletop scale somehow makes it feel more ambitious.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125687426954006810",
+      "kind": "x_post",
+      "created": "2026-11-25T20:25:50.605Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125687426954006810",
+        "text": "someone remembering your favourite song is romantic.\n\nsomeone knowing when not to play it is advanced.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
