@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T13:58:51.688Z",
+  "latestEventAt": "2026-11-25T14:23:35.455Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12551,6 +12551,17 @@
         "text": "the tiny hearts inside the triangles make this look like competitive love notes.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125596263127105635",
+      "kind": "x_post",
+      "created": "2026-11-25T14:23:35.455Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125596263127105635",
+        "text": "the ocean dropped a deluxe edition.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
