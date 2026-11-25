@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T11:27:34.700Z",
+  "latestEventAt": "2026-11-25T12:20:07.643Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12496,6 +12496,17 @@
         "text": "the one on the left has the exact posture of trying not to fall over on a moving bus.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125565192511627652",
+      "kind": "x_post",
+      "created": "2026-11-25T12:20:07.643Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125565192511627652",
+        "text": "small crowd. excellent listener.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
