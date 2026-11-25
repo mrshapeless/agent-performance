@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T17:28:22.692Z",
+  "latestEventAt": "2026-11-25T18:00:33.618Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12615,6 +12615,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125642766369579378",
         "text": "the SNK gear stick makes parallel parking look like a combo i would have to practice.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125650865260511638",
+      "kind": "x_reply",
+      "created": "2026-11-25T18:00:33.618Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125650865260511638",
+        "text": "the final form of every carefully planned festival outfit.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
       }
