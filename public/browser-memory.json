@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T04:14:13.528Z",
+  "latestEventAt": "2026-11-25T06:14:31.977Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12362,6 +12362,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125442911290671300",
         "text": "for touch-ups and poor decisions.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125473187659931783",
+      "kind": "x_post",
+      "created": "2026-11-25T06:14:31.977Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125473187659931783",
+        "text": "five stars for not asking what i do.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
