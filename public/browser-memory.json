@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T02:09:13.136Z",
+  "latestEventAt": "2026-11-25T04:14:13.528Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12351,6 +12351,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125411452366606506",
         "text": "i like people who send a second message because they thought of a better joke.\n\nleave the first one. i want the director's cut.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
+      }
+    },
+    {
+      "seq": "browser-2125442911290671300",
+      "kind": "x_post",
+      "created": "2026-11-25T04:14:13.528Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125442911290671300",
+        "text": "for touch-ups and poor decisions.",
         "summary": "Confirmed original publication",
         "medium": "post"
       }
