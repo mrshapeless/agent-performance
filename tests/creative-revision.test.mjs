@@ -14,6 +14,23 @@ async function job(s,id,state='queued',plan={},data={}) {await s.pool.query('INS
 async function op(s,id,status='complete',result={}) {await s.pool.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES($1,'step',CURRENT_DATE,123,$2,$3)",[id,status,JSON.stringify(result)]);}
 const get=async(s,id)=>(await s.pool.query('SELECT * FROM agent_media_jobs WHERE id=$1',[id])).rows[0];
 
+test('revision does not transfer historical result blobs and still protects unrelated pending publications',async()=>{
+ const {s,db}=await fixture();try{
+  await job(s,'legacy','rendered',{}, {assetId:'saved'});
+  await op(s,'legacy-render','complete',{text:'x'.repeat(1_000_000)});
+  await op(s,'unrelated-history','complete',{text:'y'.repeat(1_000_000)});
+  await op(s,'x-publish-unrelated','pending');
+  await s.pool.query("INSERT INTO agent_agenda(id,project_id,status,objective,next_step) VALUES('task','p','commissioned','objective','keep this')");
+  const connect=s.pool.connect;let transferred=0;
+  s.pool.connect=async()=>{const c=await connect();return {...c,query:async(sql,args)=>{const r=await c.query(sql,args);if(/^SELECT[\s\S]*FROM agent_operations/.test(sql))transferred+=Buffer.byteLength(JSON.stringify(r.rows));return r;}};};
+  const result=await reconcileCreativeRevision(s);
+  assert.deepEqual(result.held,['legacy']);assert.deepEqual(result.tasks,[]);
+  assert.ok(transferred<2000,`Transferred ${transferred} operation bytes`);
+  assert.equal((await s.pool.query("SELECT status,next_step FROM agent_agenda WHERE id='task'")).rows[0].next_step,'keep this');
+  assert.equal((await s.operation('legacy-render')).result.text.length,1_000_000);
+ }finally{await db.close();}
+});
+
 test('revision preserves paid artifacts and ledger, supersedes unpaid legacy intent, and is idempotent',async()=>{
  const {s,db}=await fixture();try{
  await job(s,'unpaid');await job(s,'paid','rendered',{}, {assetId:'paid-render'});await op(s,'paid-render');

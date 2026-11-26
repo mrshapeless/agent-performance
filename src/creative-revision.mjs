@@ -7,15 +7,24 @@ export const isCurrentCreativePlan = plan => plan?.creativeRevision === CREATIVE
 // provider request or change its accounting while reconsidering its intention.
 export async function reconcileCreativeRevision(store, now = new Date()) {
   return store.transaction(async c => {
-    const events = (await c.query("SELECT payload FROM agent_events WHERE kind='creative_revision_internal' ORDER BY seq DESC")).rows.map(r => JSON.parse(r.payload));
+    const events = (await c.query("SELECT payload FROM agent_events WHERE kind='creative_revision_internal' AND payload::jsonb->>'revision'=$1 AND payload::jsonb->>'phase' IN ('snapshot','task') ORDER BY seq DESC", [CREATIVE_REVISION])).rows.map(r => JSON.parse(r.payload));
     let migration = events.find(e => e.revision === CREATIVE_REVISION && e.phase === 'snapshot');
     if (!migration) {
       const tasks = (await c.query("SELECT * FROM agent_agenda WHERE status IN ('active','commissioned') ORDER BY id")).rows;
       migration = {revision:CREATIVE_REVISION, phase:'snapshot', tasks};
       await store.append(c, 'creative_revision_internal', migration);
     }
-    const operations = (await c.query('SELECT id,status,result,amount FROM agent_operations')).rows;
     const jobs = (await c.query("SELECT * FROM agent_media_jobs WHERE state NOT IN ('published','failed','rejected','superseded','reconsideration') FOR UPDATE")).rows;
+    // Fetch only the receipt fields needed for unfinished legacy jobs. Completed
+    // history can contain large snapshots; it must not cross the wire each tick.
+    const prefixes = [...new Set(jobs.filter(j => !isCurrentCreativePlan(j.plan)).flatMap(j => [j.id, `x-publish-${j.plan_id.replace(/^x-plan-/, '')}`]))];
+    const operations = prefixes.length ? (await c.query(`SELECT id,status,
+      jsonb_build_object('predictionId',result->'predictionId','action',result->'action') AS result
+      FROM agent_operations o WHERE EXISTS (
+        SELECT 1 FROM unnest($1::text[]) AS p(prefix)
+        WHERE o.id=p.prefix OR left(o.id,length(p.prefix)+1)=p.prefix||'-'
+      )`, [prefixes])).rows : [];
+    const pendingPublication = (await c.query("SELECT id FROM agent_operations WHERE status='pending' AND left(id,10)='x-publish-' LIMIT 1")).rows.length > 0;
     const result = {superseded:[], held:[], deferred:[], tasks:[]};
     for (const job of jobs) {
       if (isCurrentCreativePlan(job.plan)) continue;
@@ -40,7 +49,7 @@ export async function reconcileCreativeRevision(store, now = new Date()) {
     for (const original of migration.tasks) {
       if (done.has(`${original.id}:${original.version}`)) continue;
       // Unknown writes cannot be cancelled: their outcome may already be public.
-      if (operations.some(o => o.status === 'pending' && o.id.startsWith('x-publish-'))) continue;
+      if (pendingPublication) continue;
       const changed = await c.query("UPDATE agent_agenda SET status='active',next_step=$1,version=version+1,updated=now() WHERE id=$2 AND version=$3 AND status IN ('active','commissioned') RETURNING goal_id", ['Reconsider this intention under the current creative direction. Inspect previous work before choosing to revise, replace, or continue; do not automatically recommission it.', original.id, original.version]);
       if (changed.rows.length) {
         if (changed.rows[0].goal_id) await c.query("UPDATE agent_goals SET status='paused',version=version+1,updated=now() WHERE id=$1 AND status='active'", [changed.rows[0].goal_id]);

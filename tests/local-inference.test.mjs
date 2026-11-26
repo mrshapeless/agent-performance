@@ -10,6 +10,19 @@ import {createLocalWorkerHandler} from '../api/local-worker.mjs';
 import {cloudRun} from '../src/cloud.mjs';
 async function fixture(t){const db=new PGlite();t.after(()=>db.close());await db.exec(await readFile(new URL('../db/schema.sql',import.meta.url),'utf8'));const client={query:async(s,a)=>{const r=await db.query(s,a);return {...r,rowCount:r.affectedRows||r.rows.length};},release(){}};return new PostgresStore({query:client.query,connect:async()=>client});}
 const input={system:'Synthetic system',prompt:'Synthetic prompt',schema:null,role:null,media:[],operationId:null};
+
+test('resuming inference does not download saved reference images or historical output',async t=>{
+ const base=await fixture(t),s=new LocalInferenceStore(base.pool);
+ await s.pool.query("INSERT INTO agent_operations(id,kind,day,amount,status,result) VALUES('resume-heavy','step',current_date,0,'pending',$1)",[JSON.stringify({text:'x'.repeat(1_000_000)})]);
+ await enqueueInference(s,{...input,media:[{mime:'image/png',data:'y'.repeat(1_000_000)}]},'resume-heavy');
+ const query=s.pool.query;let transferred=0;
+ s.pool.query=async(sql,args)=>{const r=await query(sql,args);transferred+=Buffer.byteLength(JSON.stringify(r.rows));return r;};
+ const result=await s.begin('resume-heavy','step',()=>assert.fail('must resume'));
+ assert.equal(result.prompt,input.prompt);assert.equal(result.replay,false);
+ assert.ok(transferred<1000,`Unexpected ${transferred} bytes on resume`);
+ const saved=await query('SELECT input FROM agent_local_inference WHERE operation_id=$1',['resume-heavy']);
+ assert.equal(saved.rows[0].input.media[0].data.length,1_000_000);
+});
 test('durable inference deduplicates and fences stale workers',async t=>{
  const s=await fixture(t),id=await enqueueInference(s,input);assert.equal(await enqueueInference(s,input),id);
  const first=await claimInference(s);assert.equal(first.id,id);assert.equal(await claimInference(s),null);

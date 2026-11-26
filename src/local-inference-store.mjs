@@ -3,7 +3,7 @@ import {PostgresStore} from './postgres.mjs';
 // historical operations retain the original pending/uncertain protection.
 export class LocalInferenceStore extends PostgresStore {
  async localId(id){
-  const old=await super.operation(id);
+  const old=(await this.pool.query("SELECT status,jsonb_build_object('action',result->'action','failureCode',result->'failureCode') AS result FROM agent_operations WHERE id=$1",[id])).rows[0];
   // This provider rejection occurred before generation. Preserve its receipt;
   // retry locally under a different ID, never reset publication/history rows.
   return old?.status==='complete'&&old.result?.action==='artist_preparation_failed'&&['GEMINI_BILLING_REQUIRED','Gemini HTTP 402'].includes(old.result.failureCode)?id+'-local-v1':id;
@@ -16,9 +16,9 @@ export class LocalInferenceStore extends PostgresStore {
  }
  async begin(id,kind,buildRequest){
   id=await this.localId(id);
-  const existing=(await this.pool.query('SELECT input FROM agent_local_inference WHERE operation_id=$1',[id])).rows[0];
+  const existing=(await this.pool.query("SELECT input->>'prompt' AS prompt FROM agent_local_inference WHERE operation_id=$1",[id])).rows[0];
   const op=existing?(await this.pool.query('SELECT status,kind FROM agent_operations WHERE id=$1',[id])).rows[0]:null;
-  if(existing&&op?.status==='pending'){this.localOperationId=id;return {replay:false,kind:op.kind??kind,prompt:existing.input.prompt,maximum:0};}
+  if(existing&&op?.status==='pending'){this.localOperationId=id;return {replay:false,kind:op.kind??kind,prompt:existing.prompt,maximum:0};}
   const result=await super.begin(id,kind,buildRequest);
   this.localOperationId=result.replay?null:id;return result;
  }
