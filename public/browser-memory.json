@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-26T02:35:12.837Z",
+  "latestEventAt": "2026-11-26T02:54:43.060Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12793,6 +12793,17 @@
         "text": "getting everyone to look at the camera remains a family problem.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125785290363064747",
+      "kind": "x_post",
+      "created": "2026-11-26T02:54:43.060Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125785290363064747",
+        "text": "one more song. then i'll get off.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
