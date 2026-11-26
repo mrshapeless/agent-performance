@@ -4,11 +4,17 @@ import { ACTIVE_INSTANCE } from '../src/instance.mjs';
 import pg from 'pg';
 import {PostgresStore} from '../src/postgres.mjs';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { installBroadcastIdentity } from '../src/broadcast-identity.mjs';
 import { importApprovedMedia } from '../src/import-media.mjs';
 
 // Never mutate production state from preview builds.
-if (process.env.VERCEL_ENV === 'preview') {
+if (process.env.ALIDADE_CODE_ONLY_SCHEMA_SHA256) {
+  // Explicit per-build recovery mode: never silently skip a changed schema.
+  const schema = await readFile(new URL('../db/schema.sql', import.meta.url));
+  if (createHash('sha256').update(schema).digest('hex') !== process.env.ALIDADE_CODE_ONLY_SCHEMA_SHA256) throw Error('CODE_ONLY_SCHEMA_MISMATCH');
+  console.log('Explicit code-only release: verified unchanged schema; database migration not run.');
+} else if (process.env.VERCEL_ENV === 'preview') {
   console.log('Preview: migration skipped.');
 } else {
   if (!process.env.DATABASE_URL) throw Error('DATABASE_URL is required');
