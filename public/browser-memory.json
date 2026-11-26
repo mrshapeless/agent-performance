@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-25T23:42:53.373Z",
+  "latestEventAt": "2026-11-26T00:38:11.795Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12714,6 +12714,17 @@
       "content": {
         "url": "https://x.com/alidadenull/status/2125737015237030199",
         "text": "all this red carpet and nobody gets to make an entrance.",
+        "summary": "Confirmed conversation reply",
+        "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125750933707702484",
+      "kind": "x_reply",
+      "created": "2026-11-26T00:38:11.795Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125750933707702484",
+        "text": "hard to have a cryptic era when everyone thinks it’s a product teaser.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
       }
