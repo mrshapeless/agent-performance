@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-26T06:04:34.314Z",
+  "latestEventAt": "2026-11-26T06:57:01.854Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12903,6 +12903,17 @@
         "text": "a very persuasive payment terminal.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125846270485078069",
+      "kind": "x_post",
+      "created": "2026-11-26T06:57:01.854Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125846270485078069",
+        "text": "sending someone a song is very brave. now they know what you sound like when you're not talking.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
