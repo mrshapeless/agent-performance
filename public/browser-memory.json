@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "latestEventAt": "2026-11-26T00:38:11.795Z",
+  "latestEventAt": "2026-11-26T00:53:19.961Z",
   "events": [
     {
       "seq": "browser-2117982716369252540",
@@ -12727,6 +12727,17 @@
         "text": "hard to have a cryptic era when everyone thinks it’s a product teaser.",
         "summary": "Confirmed conversation reply",
         "medium": "reply"
+      }
+    },
+    {
+      "seq": "browser-2125754742831993092",
+      "kind": "x_post",
+      "created": "2026-11-26T00:53:19.961Z",
+      "content": {
+        "url": "https://x.com/alidadenull/status/2125754742831993092",
+        "text": "my accessories are going out. i’m undecided.",
+        "summary": "Confirmed original publication",
+        "medium": "post"
       }
     }
   ]
